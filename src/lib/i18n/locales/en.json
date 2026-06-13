@@ -6,12 +6,6 @@
     "password": "Password",
     "signIn": "Sign in",
     "signUp": "Create account",
-    "modePassword": "Password",
-    "modeCode": "Email code",
-    "sendCode": "Send code",
-    "code": "6-digit code",
-    "verify": "Verify",
-    "codeSent": "We sent a code to your email.",
     "checkEmailConfirm": "Check your email to confirm your account.",
     "errorGeneric": "Something went wrong. Please try again."
   },
@@ -25,11 +19,42 @@
     "kg": "kg",
     "lb": "lb",
     "english": "English",
-    "ukrainian": "Українська"
+    "ukrainian": "Українська",
+    "cancel": "Cancel"
   },
   "home": {
-    "placeholderTitle": "Setup complete",
-    "placeholderBody": "Workout logging is coming next.",
+    "title": "Your training",
+    "start": "Start workout",
+    "recent": "Recent workouts",
+    "empty": "No workouts yet. Start your first one!",
+    "inProgress": "In progress",
     "signOut": "Sign out"
+  },
+  "workout": {
+    "title": "Workout",
+    "elapsed": "Elapsed",
+    "finish": "Finish",
+    "addExercise": "Add exercise",
+    "noExercises": "Add your first exercise to begin.",
+    "addSet": "Add set",
+    "reps": "Reps",
+    "weight": "Weight",
+    "rest": "Rest, s",
+    "rpe": "RPE",
+    "set": "Set",
+    "restTimer": "Rest timer",
+    "reset": "Reset",
+    "search": "Search exercise…",
+    "noResults": "Nothing found"
+  },
+  "summary": {
+    "crushed": "You crushed it! 💪",
+    "tonnage": "Tonnage",
+    "sets": "Sets",
+    "reps": "Reps",
+    "exercises": "Exercises",
+    "duration": "Duration",
+    "min": "min",
+    "done": "Done"
   }
 }

@@ -1,14 +1,32 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
+import { listWorkouts, startWorkout, workoutStats } from '@/lib/db/workouts';
 
 export default function HomeScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const qc = useQueryClient();
   const { session, signOut } = useAuth();
+  const userId = session?.user.id;
+
+  const { data: workouts, isLoading } = useQuery({
+    queryKey: ['workouts', userId],
+    queryFn: () => listWorkouts(userId as string),
+    enabled: !!userId,
+  });
+
+  const startMut = useMutation({
+    mutationFn: () => startWorkout(userId as string),
+    onSuccess: (w) => {
+      qc.invalidateQueries({ queryKey: ['workouts', userId] });
+      router.push({ pathname: '/workout/[id]', params: { id: w.id } });
+    },
+  });
 
   const onSignOut = async () => {
     await signOut();
@@ -17,25 +35,67 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-graphite-950">
-      <View className="flex-1 justify-between px-6 py-8">
-        <View className="flex-1 items-center justify-center gap-3">
-          <Text className="text-2xl font-extrabold text-graphite-50">
-            {t('home.placeholderTitle')}
-          </Text>
-          <Text className="text-center text-base text-graphite-400">
-            {t('home.placeholderBody')}
-          </Text>
-          {session?.user?.email && (
-            <Text className="text-sm text-graphite-500">{session.user.email}</Text>
-          )}
+      <View className="flex-1 px-6 pt-4">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
+          <Pressable onPress={onSignOut} hitSlop={8}>
+            <Text className="text-sm text-graphite-400">{t('home.signOut')}</Text>
+          </Pressable>
         </View>
 
         <Pressable
-          onPress={onSignOut}
-          className="items-center rounded-2xl border border-graphite-700 py-4 active:opacity-70"
+          disabled={startMut.isPending}
+          onPress={() => startMut.mutate()}
+          className="mt-6 items-center rounded-2xl bg-accent py-4 active:opacity-80"
         >
-          <Text className="text-base font-semibold text-graphite-100">{t('home.signOut')}</Text>
+          {startMut.isPending ? (
+            <ActivityIndicator color="#0C0E12" />
+          ) : (
+            <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
+          )}
         </Pressable>
+
+        <Text className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+          {t('home.recent')}
+        </Text>
+
+        {isLoading ? (
+          <ActivityIndicator color="#848D9A" />
+        ) : !workouts?.length ? (
+          <Text className="text-base text-graphite-400">{t('home.empty')}</Text>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
+            {workouts.map((w) => {
+              const s = workoutStats(w);
+              const done = !!w.ended_at;
+              const date = new Date(w.started_at).toLocaleDateString();
+              return (
+                <Pressable
+                  key={w.id}
+                  onPress={() =>
+                    router.push(
+                      done
+                        ? { pathname: '/summary/[id]', params: { id: w.id } }
+                        : { pathname: '/workout/[id]', params: { id: w.id } },
+                    )
+                  }
+                  className="rounded-2xl bg-graphite-900 p-4 active:opacity-80"
+                >
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-base font-semibold text-graphite-100">{date}</Text>
+                    {!done && (
+                      <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
+                    )}
+                  </View>
+                  <Text className="mt-1 text-sm text-graphite-400">
+                    {s.exercises} · {s.sets} {t('summary.sets').toLowerCase()} · {Math.round(s.tonnage)}{' '}
+                    {t('common.kg')}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
     </SafeAreaView>
   );

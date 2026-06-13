@@ -1,0 +1,132 @@
+import { supabase } from '@/lib/supabase';
+
+import type { Exercise } from './exercises';
+
+export type SetRow = {
+  id: string;
+  workout_exercise_id: string;
+  reps: number | null;
+  weight: number | null;
+  rest_sec: number | null;
+  rpe: number | null;
+  note: string | null;
+  completed_at: string;
+};
+
+export type WorkoutExercise = {
+  id: string;
+  workout_id: string;
+  exercise_id: string;
+  order_index: number;
+  exercise: Exercise | null;
+  sets: SetRow[];
+};
+
+export type Workout = {
+  id: string;
+  user_id: string;
+  started_at: string;
+  ended_at: string | null;
+  title: string | null;
+  notes: string | null;
+};
+
+export type WorkoutDetail = Workout & { workout_exercises: WorkoutExercise[] };
+
+export type SetInput = {
+  reps?: number | null;
+  weight?: number | null;
+  rest_sec?: number | null;
+  rpe?: number | null;
+};
+
+const DETAIL_SELECT = '*, workout_exercises(*, exercise:exercises(*), sets(*))';
+
+export async function startWorkout(userId: string): Promise<Workout> {
+  const { data, error } = await supabase
+    .from('workouts')
+    .insert({ user_id: userId })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Workout;
+}
+
+export async function getWorkoutDetail(id: string): Promise<WorkoutDetail> {
+  const { data, error } = await supabase.from('workouts').select(DETAIL_SELECT).eq('id', id).single();
+  if (error) throw error;
+  const detail = data as unknown as WorkoutDetail;
+  detail.workout_exercises?.sort((a, b) => a.order_index - b.order_index);
+  detail.workout_exercises?.forEach((we) =>
+    we.sets?.sort((a, b) => a.completed_at.localeCompare(b.completed_at)),
+  );
+  return detail;
+}
+
+export async function listWorkouts(userId: string): Promise<WorkoutDetail[]> {
+  const { data, error } = await supabase
+    .from('workouts')
+    .select(DETAIL_SELECT)
+    .eq('user_id', userId)
+    .order('started_at', { ascending: false })
+    .limit(30);
+  if (error) throw error;
+  return (data ?? []) as unknown as WorkoutDetail[];
+}
+
+export async function addWorkoutExercise(
+  workoutId: string,
+  exerciseId: string,
+  orderIndex: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from('workout_exercises')
+    .insert({ workout_id: workoutId, exercise_id: exerciseId, order_index: orderIndex });
+  if (error) throw error;
+}
+
+export async function addSet(workoutExerciseId: string, input: SetInput): Promise<void> {
+  const { error } = await supabase
+    .from('sets')
+    .insert({ workout_exercise_id: workoutExerciseId, ...input });
+  if (error) throw error;
+}
+
+export async function deleteSet(id: string): Promise<void> {
+  const { error } = await supabase.from('sets').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function finishWorkout(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('workouts')
+    .update({ ended_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export type WorkoutStats = {
+  tonnage: number;
+  sets: number;
+  reps: number;
+  exercises: number;
+  durationMin: number | null;
+};
+
+/** Метрики тренировки — считаем локально для мгновенной пост-тренировочной сводки. */
+export function workoutStats(w: WorkoutDetail): WorkoutStats {
+  let tonnage = 0;
+  let sets = 0;
+  let reps = 0;
+  for (const we of w.workout_exercises ?? []) {
+    for (const s of we.sets ?? []) {
+      sets += 1;
+      reps += s.reps ?? 0;
+      tonnage += (s.weight ?? 0) * (s.reps ?? 0);
+    }
+  }
+  const durationMin = w.ended_at
+    ? Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000))
+    : null;
+  return { tonnage, sets, reps, exercises: w.workout_exercises?.length ?? 0, durationMin };
+}
