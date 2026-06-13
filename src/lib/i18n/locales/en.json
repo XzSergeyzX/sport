@@ -1,4 +1,20 @@
 {
+  "auth": {
+    "title": "Welcome",
+    "subtitle": "Sign in to sync your training across devices.",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signUp": "Create account",
+    "modePassword": "Password",
+    "modeCode": "Email code",
+    "sendCode": "Send code",
+    "code": "6-digit code",
+    "verify": "Verify",
+    "codeSent": "We sent a code to your email.",
+    "checkEmailConfirm": "Check your email to confirm your account.",
+    "errorGeneric": "Something went wrong. Please try again."
+  },
   "onboarding": {
     "languageTitle": "Choose your language",
     "weightTitle": "Preferred weight unit",
@@ -13,6 +29,7 @@
   },
   "home": {
     "placeholderTitle": "Setup complete",
-    "placeholderBody": "Workout logging is coming next."
+    "placeholderBody": "Workout logging is coming next.",
+    "signOut": "Sign out"
   }
 }
