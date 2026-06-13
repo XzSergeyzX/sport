@@ -2,6 +2,9 @@
 module.exports = {
   content: ['./src/**/*.{ts,tsx}'],
   presets: [require('nativewind/preset')],
+  // 'media' ломает веб-рантайм NativeWind (color-scheme observer). Наш UI тёмный
+  // безусловно (явные bg-graphite-*), dark: варианты не используем.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
