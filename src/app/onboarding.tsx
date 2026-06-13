@@ -63,9 +63,20 @@ export default function OnboardingScreen() {
     setSaving(true);
     try {
       if (session?.user) {
-        await supabase
-          .from('profile')
-          .upsert({ user_id: session.user.id, language, units: unit }, { onConflict: 'user_id' });
+        // best-effort: запись в профиль не должна блокировать переход
+        try {
+          await supabase.from('profile').upsert(
+            {
+              user_id: session.user.id,
+              language,
+              units: unit,
+              onboarded_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id' },
+          );
+        } catch {
+          // игнорируем — локальный флаг ниже подстрахует
+        }
       }
       await AsyncStorage.multiSet([
         ['app.language', language],
