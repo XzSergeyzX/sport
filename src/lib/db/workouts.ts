@@ -85,10 +85,18 @@ export async function addWorkoutExercise(
   if (error) throw error;
 }
 
-export async function addSet(workoutExerciseId: string, input: SetInput): Promise<void> {
-  const { error } = await supabase
+export async function addSet(workoutExerciseId: string, input: SetInput): Promise<SetRow> {
+  const { data, error } = await supabase
     .from('sets')
-    .insert({ workout_exercise_id: workoutExerciseId, ...input });
+    .insert({ workout_exercise_id: workoutExerciseId, ...input })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as SetRow;
+}
+
+export async function updateSet(id: string, input: SetInput): Promise<void> {
+  const { error } = await supabase.from('sets').update(input).eq('id', id);
   if (error) throw error;
 }
 

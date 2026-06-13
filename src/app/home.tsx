@@ -88,8 +88,8 @@ export default function HomeScreen() {
                     )}
                   </View>
                   <Text className="mt-1 text-sm text-graphite-400">
-                    {s.exercises} · {s.sets} {t('summary.sets').toLowerCase()} · {Math.round(s.tonnage)}{' '}
-                    {t('common.kg')}
+                    {s.exercises} · {s.sets} {t('summary.sets').toLowerCase()} · {s.reps}{' '}
+                    {t('summary.reps').toLowerCase()}
                   </Text>
                 </Pressable>
               );

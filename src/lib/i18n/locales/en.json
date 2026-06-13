@@ -36,14 +36,14 @@
     "finish": "Finish",
     "addExercise": "Add exercise",
     "noExercises": "Add your first exercise to begin.",
-    "addSet": "Add set",
+    "setDone": "+ Set done",
+    "restNow": "Rest",
+    "restAuto": "Rest is recorded automatically when you tap “Set done”.",
+    "rest": "rest",
     "reps": "Reps",
     "weight": "Weight",
-    "rest": "Rest, s",
     "rpe": "RPE",
     "set": "Set",
-    "restTimer": "Rest timer",
-    "reset": "Reset",
     "search": "Search exercise…",
     "noResults": "Nothing found"
   },
@@ -55,6 +55,7 @@
     "exercises": "Exercises",
     "duration": "Duration",
     "min": "min",
+    "breakdown": "Breakdown",
     "done": "Done"
   }
 }

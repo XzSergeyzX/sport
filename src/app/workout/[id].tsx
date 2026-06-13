@@ -18,12 +18,15 @@ import { exerciseName, searchExercises } from '@/lib/db/exercises';
 import {
   addSet,
   addWorkoutExercise,
+  deleteSet,
   finishWorkout,
   getWorkoutDetail,
   type SetInput,
+  type SetRow as SetRowType,
+  updateSet,
 } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
-import { useWeightUnit } from '@/lib/use-unit';
+import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
 
@@ -55,64 +58,67 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
   );
 }
 
-function RestTimer() {
+function RestNow({ anchor }: { anchor: number | null }) {
   const { t } = useTranslation();
-  const [base, setBase] = useState(Date.now());
   const [sec, setSec] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setSec(Math.floor((Date.now() - base) / 1000)), 500);
+    if (!anchor) {
+      setSec(0);
+      return;
+    }
+    const tick = () => setSec(Math.max(0, Math.floor((Date.now() - anchor) / 1000)));
+    tick();
+    const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [base]);
+  }, [anchor]);
   return (
-    <View className="mt-3 flex-row items-center justify-between rounded-2xl bg-graphite-900 px-4 py-3">
-      <Text className="text-sm text-graphite-400">{t('workout.restTimer')}</Text>
-      <View className="flex-row items-center gap-3">
-        <Text className="text-lg font-bold text-graphite-50">{fmt(sec)}</Text>
-        <Pressable
-          onPress={() => {
-            setBase(Date.now());
-            setSec(0);
-          }}
-          className="rounded-lg bg-graphite-700 px-3 py-1.5"
-        >
-          <Text className="text-xs font-semibold text-graphite-100">{t('workout.reset')}</Text>
-        </Pressable>
+    <View className="mt-3 rounded-2xl bg-graphite-900 px-4 py-3">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-sm text-graphite-400">{t('workout.restNow')}</Text>
+        <Text className="text-lg font-bold text-accent">{anchor ? fmt(sec) : '—'}</Text>
       </View>
+      <Text className="mt-1 text-xs text-graphite-600">{t('workout.restAuto')}</Text>
     </View>
   );
 }
 
-function SetForm({ pending, onAdd }: { pending: boolean; onAdd: (input: SetInput) => void }) {
+function SetRow({
+  index,
+  set,
+  unit,
+  onSave,
+  onDelete,
+}: {
+  index: number;
+  set: SetRowType;
+  unit: WeightUnit;
+  onSave: (id: string, input: SetInput) => void;
+  onDelete: (id: string) => void;
+}) {
   const { t } = useTranslation();
-  const [reps, setReps] = useState('');
-  const [weight, setWeight] = useState('');
-  const [rest, setRest] = useState('');
-  const [rpe, setRpe] = useState('');
+  const [weight, setWeight] = useState(set.weight?.toString() ?? '');
+  const [reps, setReps] = useState(set.reps?.toString() ?? '');
+  const [rpe, setRpe] = useState(set.rpe?.toString() ?? '');
 
-  const submit = () => {
+  const save = () => {
     const repsN = parseNum(reps);
-    const restN = parseNum(rest);
-    onAdd({
-      reps: repsN === null ? null : Math.round(repsN),
+    onSave(set.id, {
       weight: parseNum(weight),
-      rest_sec: restN === null ? null : Math.round(restN),
+      reps: repsN === null ? null : Math.round(repsN),
       rpe: parseNum(rpe),
     });
-    setReps('');
-    setWeight('');
-    setRest('');
-    setRpe('');
   };
 
   const field = (
     value: string,
     onChange: (v: string) => void,
     placeholder: string,
-    keyboardType: KeyboardTypeOptions = 'numeric',
+    keyboardType: KeyboardTypeOptions = 'decimal-pad',
   ) => (
     <TextInput
       value={value}
       onChangeText={onChange}
+      onEndEditing={save}
       placeholder={placeholder}
       placeholderTextColor={PLACEHOLDER}
       keyboardType={keyboardType}
@@ -121,18 +127,21 @@ function SetForm({ pending, onAdd }: { pending: boolean; onAdd: (input: SetInput
   );
 
   return (
-    <View className="mt-3 flex-row items-center gap-2">
-      {field(reps, setReps, t('workout.reps'))}
-      {field(weight, setWeight, t('workout.weight'), 'decimal-pad')}
-      {field(rest, setRest, t('workout.rest'))}
-      {field(rpe, setRpe, t('workout.rpe'), 'decimal-pad')}
-      <Pressable
-        disabled={pending}
-        onPress={submit}
-        className="rounded-lg bg-accent px-3.5 py-2 active:opacity-80"
-      >
-        <Text className="text-base font-bold text-graphite-950">+</Text>
-      </Pressable>
+    <View className="mt-2 rounded-xl bg-graphite-950/40 p-2">
+      <View className="mb-1 flex-row items-center justify-between px-1">
+        <Text className="text-xs text-graphite-500">
+          {t('workout.set')} {index}
+          {set.rest_sec != null ? `  ·  ${t('workout.rest')} ${fmt(set.rest_sec)}` : ''}
+        </Text>
+        <Pressable onPress={() => onDelete(set.id)} hitSlop={8}>
+          <Text className="text-xs text-graphite-600">✕</Text>
+        </Pressable>
+      </View>
+      <View className="flex-row items-center gap-2">
+        {field(weight, setWeight, `${t('workout.weight')}, ${t(`common.${unit}`)}`)}
+        {field(reps, setReps, t('workout.reps'), 'number-pad')}
+        {field(rpe, setRpe, t('workout.rpe'))}
+      </View>
     </View>
   );
 }
@@ -213,11 +222,27 @@ export default function WorkoutScreen() {
   const unit = useWeightUnit();
   const lang = i18n.language;
   const [pickerOpen, setPickerOpen] = useState(false);
+  // момент последнего зафиксированного подхода (для авто-отдыха)
+  const [anchor, setAnchor] = useState<number | null>(null);
 
   const { data: workout, isLoading } = useQuery({
     queryKey: ['workout', workoutId],
     queryFn: () => getWorkoutDetail(workoutId),
   });
+
+  // инициализируем якорь по последнему подходу (на случай перезахода в сессию)
+  useEffect(() => {
+    if (!workout) return;
+    let max = 0;
+    for (const we of workout.workout_exercises) {
+      for (const s of we.sets) {
+        const ts = +new Date(s.completed_at);
+        if (ts > max) max = ts;
+      }
+    }
+    setAnchor(max || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workout?.id]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['workout', workoutId] });
 
@@ -235,6 +260,15 @@ export default function WorkoutScreen() {
     onSuccess: invalidate,
   });
 
+  const updateSetMut = useMutation({
+    mutationFn: (v: { id: string; input: SetInput }) => updateSet(v.id, v.input),
+  });
+
+  const deleteSetMut = useMutation({
+    mutationFn: (setId: string) => deleteSet(setId),
+    onSuccess: invalidate,
+  });
+
   const finishMut = useMutation({
     mutationFn: () => finishWorkout(workoutId),
     onSuccess: () => {
@@ -242,6 +276,13 @@ export default function WorkoutScreen() {
       router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
     },
   });
+
+  const onSetDone = (weId: string) => {
+    const now = Date.now();
+    const rest = anchor ? Math.round((now - anchor) / 1000) : null;
+    addSetMut.mutate({ weId, input: { rest_sec: rest } });
+    setAnchor(now);
+  };
 
   if (isLoading || !workout) {
     return (
@@ -265,10 +306,11 @@ export default function WorkoutScreen() {
         </View>
 
         <ElapsedTimer startedAt={workout.started_at} />
-        <RestTimer />
+        <RestNow anchor={anchor} />
 
         <ScrollView
           className="mt-4 flex-1"
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ gap: 16, paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
         >
@@ -280,24 +322,23 @@ export default function WorkoutScreen() {
               <Text className="text-base font-bold text-graphite-50">
                 {we.exercise ? exerciseName(we.exercise, lang) : '—'}
               </Text>
-              <View className="mt-2 gap-1">
-                {we.sets.map((s, i) => (
-                  <View key={s.id} className="flex-row justify-between">
-                    <Text className="text-sm text-graphite-300">
-                      {t('workout.set')} {i + 1}
-                    </Text>
-                    <Text className="text-sm text-graphite-200">
-                      {s.reps ?? '–'} × {s.weight ?? '–'} {t(`common.${unit}`)}
-                      {s.rpe != null ? `  · RPE ${s.rpe}` : ''}
-                      {s.rest_sec != null ? `  · ${s.rest_sec}s` : ''}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-              <SetForm
-                pending={addSetMut.isPending}
-                onAdd={(input) => addSetMut.mutate({ weId: we.id, input })}
-              />
+              {we.sets.map((s, i) => (
+                <SetRow
+                  key={s.id}
+                  index={i + 1}
+                  set={s}
+                  unit={unit}
+                  onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
+                  onDelete={(setId) => deleteSetMut.mutate(setId)}
+                />
+              ))}
+              <Pressable
+                disabled={addSetMut.isPending}
+                onPress={() => onSetDone(we.id)}
+                className="mt-3 items-center rounded-xl bg-accent py-3 active:opacity-80"
+              >
+                <Text className="text-sm font-bold text-graphite-950">{t('workout.setDone')}</Text>
+              </Pressable>
             </View>
           ))}
         </ScrollView>
