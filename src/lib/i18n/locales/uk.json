@@ -1,0 +1,18 @@
+{
+  "onboarding": {
+    "languageTitle": "Оберіть мову",
+    "weightTitle": "Одиниці ваги",
+    "subtitle": "Це можна змінити пізніше в налаштуваннях.",
+    "next": "Далі"
+  },
+  "common": {
+    "kg": "кг",
+    "lb": "фунти",
+    "english": "English",
+    "ukrainian": "Українська"
+  },
+  "home": {
+    "placeholderTitle": "Налаштування завершено",
+    "placeholderBody": "Журнал тренувань — наступний крок."
+  }
+}

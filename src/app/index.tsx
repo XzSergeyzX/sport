@@ -1,98 +1,114 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import i18n, { type AppLanguage } from '@/lib/i18n';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+type WeightUnit = 'kg' | 'lb';
+
+type SegmentOption<T extends string> = { value: T; label: string };
+
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: SegmentOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
+    <View className="flex-row rounded-2xl bg-graphite-800 p-1">
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            className={`flex-1 items-center rounded-xl py-3 ${selected ? 'bg-graphite-100' : ''}`}
+          >
+            <Text
+              className={`text-base font-semibold ${selected ? 'text-graphite-950' : 'text-graphite-300'}`}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
-export default function HomeScreen() {
+export default function OnboardingScreen() {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const [language, setLanguage] = useState<AppLanguage>(
+    (i18n.language as AppLanguage) === 'uk' ? 'uk' : 'en',
+  );
+  const [unit, setUnit] = useState<WeightUnit>('kg');
+
+  const onChangeLanguage = (next: AppLanguage) => {
+    setLanguage(next);
+    i18n.changeLanguage(next);
+  };
+
+  const onNext = async () => {
+    await AsyncStorage.multiSet([
+      ['app.language', language],
+      ['app.weightUnit', unit],
+      ['app.onboarded', 'true'],
+    ]);
+    router.replace('/home');
+  };
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView className="flex-1 bg-graphite-950">
+      <View className="flex-1 justify-between px-6 py-8">
+        <View className="gap-10">
+          <View className="gap-2 pt-6">
+            <Text className="text-3xl font-extrabold text-graphite-50">Sporty</Text>
+            <Text className="text-base text-graphite-400">{t('onboarding.subtitle')}</Text>
+          </View>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+          <View className="gap-3">
+            <Text className="text-lg font-semibold text-graphite-100">
+              {t('onboarding.languageTitle')}
+            </Text>
+            <Segmented<AppLanguage>
+              value={language}
+              onChange={onChangeLanguage}
+              options={[
+                { value: 'en', label: t('common.english') },
+                { value: 'uk', label: t('common.ukrainian') },
+              ]}
+            />
+          </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+          <View className="gap-3">
+            <Text className="text-lg font-semibold text-graphite-100">
+              {t('onboarding.weightTitle')}
+            </Text>
+            <Segmented<WeightUnit>
+              value={unit}
+              onChange={setUnit}
+              options={[
+                { value: 'kg', label: t('common.kg') },
+                { value: 'lb', label: t('common.lb') },
+              ]}
+            />
+          </View>
+        </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <Pressable
+          onPress={onNext}
+          className="items-center rounded-2xl bg-graphite-50 py-4 active:opacity-80"
+        >
+          <Text className="text-base font-bold text-graphite-950">{t('onboarding.next')}</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-});

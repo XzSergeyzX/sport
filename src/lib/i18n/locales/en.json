@@ -1,0 +1,18 @@
+{
+  "onboarding": {
+    "languageTitle": "Choose your language",
+    "weightTitle": "Preferred weight unit",
+    "subtitle": "You can change this later in settings.",
+    "next": "Next"
+  },
+  "common": {
+    "kg": "kg",
+    "lb": "lb",
+    "english": "English",
+    "ukrainian": "Українська"
+  },
+  "home": {
+    "placeholderTitle": "Setup complete",
+    "placeholderBody": "Workout logging is coming next."
+  }
+}
