@@ -103,7 +103,7 @@ export default function SummaryScreen() {
 
       <View className="px-6 pb-6 pt-2">
         <Pressable
-          onPress={() => router.replace('/home')}
+          onPress={() => router.replace('/workouts')}
           className="items-center rounded-2xl bg-graphite-50 py-4 active:opacity-80"
         >
           <Text className="text-base font-bold text-graphite-950">{t('summary.done')}</Text>

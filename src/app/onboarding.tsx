@@ -5,43 +5,11 @@ import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
-
-type WeightUnit = 'kg' | 'lb';
-type SegmentOption<T extends string> = { value: T; label: string };
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: SegmentOption<T>[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <View className="flex-row rounded-2xl bg-graphite-800 p-1">
-      {options.map((option) => {
-        const selected = option.value === value;
-        return (
-          <Pressable
-            key={option.value}
-            onPress={() => onChange(option.value)}
-            className={`flex-1 items-center rounded-xl py-3 ${selected ? 'bg-graphite-100' : ''}`}
-          >
-            <Text
-              className={`text-base font-semibold ${selected ? 'text-graphite-950' : 'text-graphite-300'}`}
-            >
-              {option.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
+import type { WeightUnit } from '@/lib/use-unit';
 
 export default function OnboardingScreen() {
   const { t } = useTranslation();
@@ -83,7 +51,7 @@ export default function OnboardingScreen() {
         ['app.weightUnit', unit],
         ['app.onboarded', 'true'],
       ]);
-      router.replace('/home');
+      router.replace('/workouts');
     } finally {
       setSaving(false);
     }

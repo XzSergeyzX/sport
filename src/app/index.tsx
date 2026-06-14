@@ -55,5 +55,5 @@ export default function Index() {
   }
 
   if (!session) return <Redirect href="/auth" />;
-  return <Redirect href={target === 'home' ? '/home' : '/onboarding'} />;
+  return <Redirect href={target === 'home' ? '/workouts' : '/onboarding'} />;
 }

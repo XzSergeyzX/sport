@@ -7,11 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth/auth-context';
 import { listWorkouts, startWorkout, workoutStats } from '@/lib/db/workouts';
 
-export default function HomeScreen() {
+export default function WorkoutsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
-  const { session, signOut } = useAuth();
+  const { session } = useAuth();
   const userId = session?.user.id;
 
   const { data: workouts, isLoading } = useQuery({
@@ -28,20 +28,10 @@ export default function HomeScreen() {
     },
   });
 
-  const onSignOut = async () => {
-    await signOut();
-    router.replace('/');
-  };
-
   return (
-    <SafeAreaView className="flex-1 bg-graphite-950">
+    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <View className="flex-1 px-6 pt-4">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
-          <Pressable onPress={onSignOut} hitSlop={8}>
-            <Text className="text-sm text-graphite-400">{t('home.signOut')}</Text>
-          </Pressable>
-        </View>
+        <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
 
         <Pressable
           disabled={startMut.isPending}

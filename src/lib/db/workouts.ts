@@ -74,6 +74,40 @@ export async function listWorkouts(userId: string): Promise<WorkoutDetail[]> {
   return (data ?? []) as unknown as WorkoutDetail[];
 }
 
+/**
+ * Часто/недавно используемые упражнения — для быстрого доступа вверху пикера.
+ * Берём последние ~25 тренировок, считаем частоту + порядок появления (recency),
+ * сортируем: чаще → недавнее. RLS уже ограничивает выборку текущим юзером.
+ */
+export async function getRecentExercises(limit = 8): Promise<Exercise[]> {
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('started_at, workout_exercises(exercise:exercises(*))')
+    .order('started_at', { ascending: false })
+    .limit(25);
+  if (error) throw error;
+
+  const seen = new Map<string, { ex: Exercise; count: number; firstIdx: number }>();
+  let idx = 0;
+  const workouts = (data ?? []) as unknown as {
+    workout_exercises?: { exercise: Exercise | null }[];
+  }[];
+  for (const w of workouts) {
+    for (const we of w.workout_exercises ?? []) {
+      const ex = we.exercise;
+      if (!ex) continue;
+      const cur = seen.get(ex.id);
+      if (cur) cur.count += 1;
+      else seen.set(ex.id, { ex, count: 1, firstIdx: idx });
+      idx += 1;
+    }
+  }
+  return [...seen.values()]
+    .sort((a, b) => b.count - a.count || a.firstIdx - b.firstIdx)
+    .slice(0, limit)
+    .map((v) => v.ex);
+}
+
 export async function addWorkoutExercise(
   workoutId: string,
   exerciseId: string,

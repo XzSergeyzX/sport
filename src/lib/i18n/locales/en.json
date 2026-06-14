@@ -30,6 +30,35 @@
     "inProgress": "In progress",
     "signOut": "Sign out"
   },
+  "tabs": {
+    "workouts": "Workouts",
+    "programs": "Programs",
+    "analytics": "Analytics",
+    "health": "Health",
+    "account": "Account"
+  },
+  "account": {
+    "title": "Account"
+  },
+  "programs": {
+    "title": "Programs",
+    "soonTitle": "Programs are coming",
+    "soonBody": "Build a workout plan or import one — drop text or a file (xlsx/docx/pdf/photo) into the AI chat and it lays it out into exercises. On the workout you only tweak what wasn't done and pick RPE."
+  },
+  "analytics": {
+    "title": "Analytics",
+    "soonTitle": "Analytics are coming",
+    "soonBody": "Tonnage, volume, per-exercise progress, estimated 1RM, PRs and trends — computed on the backend, visualized here."
+  },
+  "health": {
+    "title": "Health",
+    "optional": "optional",
+    "ouraTitle": "OURA Ring",
+    "ouraBody": "Connect OURA to pull readiness, sleep, HRV and (for women) cycle phase — to see how recovery relates to training. Optional: not everyone has a ring.",
+    "connectOura": "Connect OURA",
+    "soonTitle": "Metrics are coming",
+    "soonBody": "Once connected, readiness/sleep and cycle-phase correlations with training ease and success show up here."
+  },
   "workout": {
     "title": "Workout",
     "elapsed": "Elapsed",
@@ -43,9 +72,38 @@
     "reps": "Reps",
     "weight": "Weight",
     "rpe": "RPE",
+    "rpePrompt": "Pick effort (RPE)",
+    "rpeClear": "No RPE",
     "set": "Set",
     "search": "Search exercise…",
-    "noResults": "Nothing found"
+    "noResults": "Nothing found",
+    "frequent": "Frequent"
+  },
+  "rpeZones": {
+    "low": "Low effort",
+    "medium": "Medium",
+    "hard": "Hard"
+  },
+  "rpeHints": {
+    "low": "1–4 · plenty left in the tank",
+    "medium": "5–7 · challenging but controlled",
+    "hard": "8–10 · near your limit"
+  },
+  "clusters": {
+    "upper": "Upper body",
+    "lower": "Lower body",
+    "full": "Full body",
+    "core": "Core",
+    "other": "Other"
+  },
+  "categories": {
+    "general": "GPP",
+    "weightlifting": "Weightlifting",
+    "gymnastics": "Gymnastics",
+    "crossfit": "CrossFit",
+    "armwrestling": "Armwrestling",
+    "kettlebell": "Kettlebell",
+    "other": "Other"
   },
   "summary": {
     "crushed": "You crushed it! 💪",
