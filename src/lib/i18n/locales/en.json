@@ -110,7 +110,8 @@
     "noResults": "Nothing found",
     "frequent": "Frequent",
     "createCustom": "Create “{{name}}”",
-    "customCapped": "Daily limit for new exercises reached. Try again tomorrow."
+    "customCapped": "Daily limit for new exercises reached. Try again tomorrow.",
+    "userAdded": "Added by you"
   },
   "rpeZones": {
     "low": "Low effort",

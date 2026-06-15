@@ -30,7 +30,7 @@ Group exercises into BLOCKS — a block is a cluster trained together:
 
 Return ONLY a JSON object:
 {
-  "title": string,
+  "title": string,            // SHORT concise name, max ~5 words (e.g. "Push day", "Тренування ніг")
   "blocks": [
     {
       "type": "rounds|emom|e2mom|amrap|for_time|superset|interval|single",
@@ -60,7 +60,11 @@ Rules:
 - Weights "8 кг", "22.5-25 кг", "5-10 кг": put the number into weight (range → lower bound).
 - Time holds ("20 сек утримання над головою") → reps null, put the duration into notes.
 - "4x8" → 4 sets of 8. "120*8*3" → 3 sets of 8 at weight 120. Reps range (8-10) → lower bound.
-- Match each exercise to the catalog by meaning (catalog_index), else null. rpe 1..10 or null.
+- catalog_index: set ONLY when the catalog entry is clearly the SAME exercise (same movement
+  AND equipment). For variations, accessory work, band/rubber drills, scapular/holds or anything
+  not obviously present — use null. NEVER force a loose match; a wrong match is worse than null.
+  Unmatched items are saved verbatim as the user's own exercise.
+- rpe 1..10 or null.
 - Output valid JSON only, no markdown, no commentary.`;
 
 type ParsedSet = {

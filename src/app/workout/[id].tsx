@@ -301,7 +301,9 @@ function ExercisePicker({
       className="flex-row items-center justify-between border-b border-graphite-800 py-3 active:opacity-70"
     >
       <Text className="flex-1 text-base text-graphite-100">{exerciseName(ex, lang)}</Text>
-      <Text className="ml-3 text-xs text-graphite-500">{t(categoryKey(ex.category))}</Text>
+      <Text className="ml-3 text-xs text-graphite-500">
+        {ex.is_global ? t(categoryKey(ex.category)) : t('workout.userAdded')}
+      </Text>
     </Pressable>
   );
 
@@ -534,9 +536,15 @@ export default function WorkoutScreen() {
         <Pressable
           onPress={() => setPickerOpen(true)}
           style={{ marginBottom: insets.bottom + 8 }}
-          className="items-center rounded-2xl border border-graphite-700 py-4 active:opacity-70"
+          className="rounded-2xl border border-graphite-700 py-4 active:opacity-70"
         >
-          <Text className="text-base font-semibold text-graphite-100">{t('workout.addExercise')}</Text>
+          <Text
+            numberOfLines={1}
+            style={{ width: '100%', textAlign: 'center' }}
+            className="text-base font-semibold text-graphite-100"
+          >
+            {t('workout.addExercise')}
+          </Text>
         </Pressable>
       </View>
 

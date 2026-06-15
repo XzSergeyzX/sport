@@ -62,11 +62,11 @@ export default function ProgramDetailScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <Stack.Screen options={{ headerShown: false }} />
-      <View className="flex-row items-center px-6 pt-4">
-        <Pressable onPress={() => router.back()} className="pr-4 active:opacity-60">
+      <View className="flex-row items-start px-6 pt-4">
+        <Pressable onPress={() => router.back()} className="pr-4 pt-0.5 active:opacity-60">
           <Text className="text-2xl text-graphite-300">‹</Text>
         </Pressable>
-        <Text className="flex-1 text-xl font-extrabold text-graphite-50" numberOfLines={1}>
+        <Text className="flex-1 text-xl font-extrabold text-graphite-50">
           {program?.title ?? t('programs.title')}
         </Text>
       </View>
