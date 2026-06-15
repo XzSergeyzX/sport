@@ -12,11 +12,12 @@ import {
   type ProgramSet,
   startWorkoutFromProgram,
 } from '@/lib/db/programs';
+import { repsLabel } from '@/lib/i18n/plural';
 import { formatWeight, useWeightUnit } from '@/lib/use-unit';
 
 function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): string {
   const parts: string[] = [];
-  if (s.target_reps != null) parts.push(`${s.target_reps} ${t('workout.reps').toLowerCase()}`);
+  if (s.target_reps != null) parts.push(repsLabel(s.target_reps));
   // вес хранится в кг (канонически), показываем в выбранной единице с конвертацией
   if (s.target_weight != null) parts.push(`${formatWeight(s.target_weight, unit)} ${t(`common.${unit}`)}`);
   if (s.target_rpe != null) parts.push(`RPE ${s.target_rpe}`);

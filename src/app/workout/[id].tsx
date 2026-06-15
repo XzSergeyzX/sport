@@ -39,6 +39,7 @@ import {
 } from '@/lib/db/workouts';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
+import { setsLabel } from '@/lib/i18n/plural';
 import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
@@ -553,7 +554,7 @@ export default function WorkoutScreen() {
                   <View className="flex-1">
                     <Text className="text-base font-bold text-graphite-100">{name}</Text>
                     <Text className="mt-0.5 text-xs text-graphite-500">
-                      {doneSets.length} {t('workout.set').toLowerCase()}
+                      {setsLabel(doneSets.length)}
                       {best?.weight != null
                         ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
                         : ''}
@@ -566,7 +567,17 @@ export default function WorkoutScreen() {
 
             return (
               <View key={we.id} className="rounded-2xl bg-graphite-900 p-4">
-                <Text className="text-base font-bold text-graphite-50">{name}</Text>
+                {we.done_at ? (
+                  <Pressable
+                    onPress={() => setExpanded((e) => ({ ...e, [we.id]: false }))}
+                    className="flex-row items-center justify-between active:opacity-80"
+                  >
+                    <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
+                    <Text className="ml-2 text-graphite-500">▲</Text>
+                  </Pressable>
+                ) : (
+                  <Text className="text-base font-bold text-graphite-50">{name}</Text>
+                )}
                 {we.sets.map((s, i) => (
                   <SetRow
                     key={s.id}

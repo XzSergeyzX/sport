@@ -100,6 +100,7 @@
     "addSet": "Add set",
     "finishExercise": "Finish exercise",
     "reopenExercise": "Reopen",
+    "notDone": "not done",
     "restNow": "Rest",
     "restAuto": "Rest is captured when you mark a set done (✓ or after picking RPE).",
     "rest": "rest",

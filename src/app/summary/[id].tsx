@@ -88,18 +88,28 @@ export default function SummaryScreen() {
                 {we.exercise ? exerciseName(we.exercise, lang) : '—'}
               </Text>
               <View className="mt-2 gap-1">
-                {we.sets.map((set, i) => (
-                  <View key={set.id} className="flex-row justify-between">
-                    <Text className="text-sm text-graphite-400">
-                      {t('workout.set')} {i + 1}
-                    </Text>
-                    <Text className="text-sm text-graphite-200">
-                      {set.weight ?? '–'} {unitLabel} × {set.reps ?? '–'}
-                      {set.rpe != null ? `  · RPE ${set.rpe}` : ''}
-                      {set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''}
-                    </Text>
-                  </View>
-                ))}
+                {we.sets.map((set, i) => {
+                  const done = !!set.logged_at;
+                  return (
+                    <View
+                      key={set.id}
+                      className="flex-row justify-between"
+                      style={{ opacity: done ? 1 : 0.45 }}
+                    >
+                      <Text className="text-sm text-graphite-400">
+                        {t('workout.set')} {i + 1}
+                        {!done ? ` · ${t('workout.notDone')}` : ''}
+                      </Text>
+                      <Text className="text-sm text-graphite-200">
+                        {done
+                          ? `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}${
+                              set.rpe != null ? `  · RPE ${set.rpe}` : ''
+                            }${set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''}`
+                          : '—'}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
           ))}

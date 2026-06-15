@@ -187,15 +187,20 @@ export function workoutStats(w: WorkoutDetail): WorkoutStats {
   let tonnage = 0;
   let sets = 0;
   let reps = 0;
+  let exercises = 0;
   for (const we of w.workout_exercises ?? []) {
+    let anyDone = false;
     for (const s of we.sets ?? []) {
+      if (!s.logged_at) continue; // невыполненные подходы не считаем
+      anyDone = true;
       sets += 1;
       reps += s.reps ?? 0;
       tonnage += (s.weight ?? 0) * (s.reps ?? 0);
     }
+    if (anyDone) exercises += 1;
   }
   const durationMin = w.ended_at
     ? Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000))
     : null;
-  return { tonnage, sets, reps, exercises: w.workout_exercises?.length ?? 0, durationMin };
+  return { tonnage, sets, reps, exercises, durationMin };
 }
