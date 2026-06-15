@@ -16,6 +16,13 @@ function ymd(d: Date): string {
 }
 
 type OuraDay = { day?: string; score?: number; temperature_deviation?: number };
+type OuraSleep = {
+  day?: string;
+  type?: string;
+  average_hrv?: number;
+  lowest_heart_rate?: number;
+  average_breath?: number;
+};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -45,29 +52,38 @@ Deno.serve(async (req) => {
     const range = `start_date=${ymd(start)}&end_date=${ymd(end)}`;
     const headers = { Authorization: `Bearer ${token}` };
 
-    const [rRes, sRes] = await Promise.all([
+    const [rRes, sRes, dRes] = await Promise.all([
       fetch(`https://api.ouraring.com/v2/usercollection/daily_readiness?${range}`, { headers }),
       fetch(`https://api.ouraring.com/v2/usercollection/daily_sleep?${range}`, { headers }),
+      // детальный сон даёт HRV (average_hrv) и пульс покоя (lowest_heart_rate)
+      fetch(`https://api.ouraring.com/v2/usercollection/sleep?${range}`, { headers }),
     ]);
 
     const readiness = rRes.ok ? await rRes.json() : { data: [] };
     const sleep = sRes.ok ? await sRes.json() : { data: [] };
+    const sleepDetail = dRes.ok ? await dRes.json() : { data: [] };
 
     const rDays: OuraDay[] = readiness.data ?? [];
     const sDays: OuraDay[] = sleep.data ?? [];
+    const dDays: OuraSleep[] = sleepDetail.data ?? [];
     const lastR = rDays.length ? rDays[rDays.length - 1] : null;
     const lastS = sDays.length ? sDays[sDays.length - 1] : null;
+    // предпочитаем основной ночной сон (long_sleep), иначе последний документ
+    const longSleeps = dDays.filter((d) => d.type === 'long_sleep');
+    const lastD = (longSleeps.length ? longSleeps : dDays).slice(-1)[0] ?? null;
 
-    if (!lastR && !lastS) return json({ snapshot: null, note: 'no_oura_data' });
+    if (!lastR && !lastS && !lastD) return json({ snapshot: null, note: 'no_oura_data' });
 
-    const day = lastR?.day ?? lastS?.day ?? ymd(end);
+    const day = lastR?.day ?? lastS?.day ?? lastD?.day ?? ymd(end);
     const snapshot = {
       user_id: userId,
       date: day,
       readiness: lastR?.score ?? null,
       sleep_score: lastS?.score ?? null,
+      hrv: lastD?.average_hrv ?? null,
+      rhr: lastD?.lowest_heart_rate ?? null,
       temp: lastR?.temperature_deviation ?? null,
-      raw: { readiness: lastR, sleep: lastS },
+      raw: { readiness: lastR, sleep: lastS, sleepDetail: lastD },
     };
 
     const { error: upErr } = await admin

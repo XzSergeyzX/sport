@@ -1,7 +1,7 @@
-// Принимает текст расписания → ИИ раскладывает на упражнения/подходы → пишет в programs.
-// Файлы/клипы не храним; парсим и сохраняем только структуру.
-// Матчинг с каталогом: ИИ сам сопоставляет упражнение со списком каталога (по смыслу,
-// на любом языке); чего нет в каталоге — заводим как кастомное упражнение пользователя.
+// Принимает текст расписания → ИИ раскладывает на блоки (кола/EMOM/суперсеты)
+// и упражнения/подходы → пишет в programs. Файлы/клипы не храним, только структуру.
+// Матчинг с каталогом: ИИ сам сопоставляет упражнение со списком (по смыслу, любой язык);
+// чего нет в каталоге — заводим как кастомное упражнение пользователя.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { runIntent } from '../_shared/ai/gateway.ts';
@@ -15,29 +15,52 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-const SYSTEM = `You parse strength-training programs into structured JSON and map each
-exercise to a provided catalog.
-Return ONLY a JSON object with this exact shape:
+const SYSTEM = `You parse strength & CrossFit training programs into structured JSON and map
+each exercise to a provided catalog.
+
+Group exercises into BLOCKS — a block is a cluster trained together:
+- "rounds": "3 кола" / "3 rounds" → type rounds, rounds=3
+- "emom": "EMOM 16" → type emom, interval_sec=60, duration_sec=960
+- "e2mom": "E2MOM 16" / every 2 min → type e2mom, interval_sec=120, duration_sec=960
+- "amrap": "AMRAP 12" → type amrap, duration_sec=720
+- "for_time": "for time"
+- "superset": exercises explicitly supersetted together
+- "interval": custom time windows (e.g. 00:00-02:00 … / 02:00-04:00 …)
+- "single": a normal standalone exercise (one exercise in the block)
+
+Return ONLY a JSON object:
 {
-  "title": string,                       // short program title
-  "exercises": [
+  "title": string,
+  "blocks": [
     {
-      "name": string,                    // exercise name as written by the user
-      "catalog_index": number | null,    // number from the CATALOG below if it matches by meaning (any language), else null
-      "notes": string | null,
-      "sets": [
-        { "reps": number|null, "weight": number|null, "rpe": number|null, "rest_sec": number|null, "notes": string|null }
+      "type": "rounds|emom|e2mom|amrap|for_time|superset|interval|single",
+      "label": string,            // short label in the user's wording, e.g. "3 кола", "EMOM 16", "E2MOM 16"
+      "rounds": number|null,
+      "interval_sec": number|null,
+      "duration_sec": number|null,
+      "rest_sec": number|null,    // rest between rounds if stated
+      "exercises": [
+        {
+          "name": string,                 // verbatim, do not translate
+          "catalog_index": number|null,   // number from CATALOG if it matches by meaning (any language), else null
+          "notes": string|null,
+          "sets": [
+            { "reps": number|null, "weight": number|null, "rpe": number|null, "rest_sec": number|null, "notes": string|null }
+          ]
+        }
       ]
     }
   ]
 }
 Rules:
-- "4x8" → 4 sets of 8 reps. A weight or %1RM goes into "weight".
-- "120*8*3" → 3 sets of 8 reps at weight 120. "60*15" → 1 set of 15 reps at weight 60.
-- If reps are a range (8-10), use the lower bound.
-- Keep "name" verbatim (do not translate). Match against the catalog by meaning, including
-  Ukrainian/Russian/English synonyms; set catalog_index to that number, else null.
-- rpe is 1..10 or null. rest_sec in seconds or null. Never invent data not present.
+- Standalone strength moves → their own "single" block.
+- "10 тяг штанги в нахилі (30 кг)" → 1 set, reps 10, weight 30.
+- "3 жима штанги + 2 швунга (22.5-25 кг)" → two exercises in the same block.
+- "5/5 … на руку", "20/20 сек", "права/ліва рука" mean per-side: keep the per-side number in reps and add "per side" to notes.
+- Weights "8 кг", "22.5-25 кг", "5-10 кг": put the number into weight (range → lower bound).
+- Time holds ("20 сек утримання над головою") → reps null, put the duration into notes.
+- "4x8" → 4 sets of 8. "120*8*3" → 3 sets of 8 at weight 120. Reps range (8-10) → lower bound.
+- Match each exercise to the catalog by meaning (catalog_index), else null. rpe 1..10 or null.
 - Output valid JSON only, no markdown, no commentary.`;
 
 type ParsedSet = {
@@ -53,7 +76,16 @@ type ParsedExercise = {
   notes: string | null;
   sets: ParsedSet[];
 };
-type Parsed = { title: string; exercises: ParsedExercise[] };
+type ParsedBlock = {
+  type: string | null;
+  label: string | null;
+  rounds: number | null;
+  interval_sec: number | null;
+  duration_sec: number | null;
+  rest_sec: number | null;
+  exercises: ParsedExercise[];
+};
+type Parsed = { title: string; blocks: ParsedBlock[] };
 
 type CatalogItem = { id: string; name_en: string; name_uk: string };
 
@@ -65,6 +97,8 @@ function safeParse(text: string): Parsed {
 
 const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? v : null;
+const str = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim() ? v.trim() : null;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -113,7 +147,6 @@ Deno.serve(async (req) => {
       .map((c, i) => `${i + 1}. ${c.name_en} / ${c.name_uk}`)
       .join('\n');
 
-    // ИИ через гейтвей (роут program_import → GPT-5.4 mini по умолчанию)
     const result = await runIntent(admin, userId, 'program_import', {
       system: `${SYSTEM}\n\nCATALOG (catalog_index → this number):\n${catalogBlock}`,
       messages: [{ role: 'user', content: text.slice(0, 12000) }],
@@ -128,10 +161,9 @@ Deno.serve(async (req) => {
       return json({ error: 'parse_failed', raw: result.text.slice(0, 800) }, 422);
     }
 
-    const exercises = Array.isArray(parsed.exercises) ? parsed.exercises : [];
-    if (exercises.length === 0) return json({ error: 'no_exercises' }, 422);
+    const blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+    if (blocks.length === 0) return json({ error: 'no_exercises' }, 422);
 
-    // создать программу
     const { data: program, error: pErr } = await admin
       .from('programs')
       .insert({ user_id: userId, title: parsed.title?.slice(0, 200) || 'Imported program', source: 'ai_import' })
@@ -139,79 +171,102 @@ Deno.serve(async (req) => {
       .single();
     if (pErr) return json({ error: pErr.message }, 500);
 
-    let created = 0; // сколько новых кастомных упражнений завели
+    let created = 0;       // новых кастомных упражнений
+    let exerciseCount = 0; // всего упражнений
 
-    for (let i = 0; i < exercises.length; i++) {
-      const ex = exercises[i];
+    const resolveExerciseId = async (ex: ParsedExercise): Promise<string | null> => {
       const name = (ex.name ?? '').trim().slice(0, 200);
-      if (!name) continue;
+      if (!name) return null;
 
-      // 1) сопоставление от ИИ (индекс в каталоге)
-      let exerciseId: string | null = null;
       const idx = num(ex.catalog_index);
-      if (idx != null && idx >= 1 && idx <= catalog.length) {
-        exerciseId = catalog[idx - 1].id;
-      }
+      if (idx != null && idx >= 1 && idx <= catalog.length) return catalog[idx - 1].id;
 
-      // 2) фолбэк: прямое совпадение по имени
-      if (!exerciseId) {
-        const safe = name.replace(/[(),{}*%]/g, ' ').trim();
-        if (safe) {
-          const { data: m } = await admin
-            .from('exercises')
-            .select('id')
-            .or(`owner_id.eq.${userId},is_global.eq.true`)
-            .or(`name_en.ilike.${safe},name_uk.ilike.${safe}`)
-            .limit(1)
-            .maybeSingle();
-          exerciseId = m?.id ?? null;
-        }
-      }
-
-      // 3) нет в каталоге → заводим кастомное упражнение пользователя (станет доступно везде)
-      if (!exerciseId) {
-        const { data: newEx, error: cErr } = await admin
+      const safe = name.replace(/[(),{}*%]/g, ' ').trim();
+      if (safe) {
+        const { data: m } = await admin
           .from('exercises')
-          .insert({ owner_id: userId, name_en: name, name_uk: name, is_global: false })
           .select('id')
-          .single();
-        if (cErr) return json({ error: cErr.message }, 500);
-        exerciseId = newEx.id;
-        created++;
+          .or(`owner_id.eq.${userId},is_global.eq.true`)
+          .or(`name_en.ilike.${safe},name_uk.ilike.${safe}`)
+          .limit(1)
+          .maybeSingle();
+        if (m?.id) return m.id;
       }
 
-      const { data: pe, error: peErr } = await admin
-        .from('program_exercises')
+      const { data: newEx, error: cErr } = await admin
+        .from('exercises')
+        .insert({ owner_id: userId, name_en: name, name_uk: name, is_global: false })
+        .select('id')
+        .single();
+      if (cErr) throw new Error(cErr.message);
+      created++;
+      return newEx.id;
+    };
+
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const b = blocks[bi];
+      const exs = Array.isArray(b.exercises) ? b.exercises : [];
+      if (exs.length === 0) continue;
+
+      const { data: block, error: bErr } = await admin
+        .from('program_blocks')
         .insert({
           program_id: program.id,
-          exercise_id: exerciseId,
-          name,
-          order_index: i,
-          notes: ex.notes ?? null,
+          order_index: bi,
+          type: str(b.type) ?? 'single',
+          label: str(b.label),
+          rounds: num(b.rounds),
+          interval_sec: num(b.interval_sec),
+          duration_sec: num(b.duration_sec),
+          rest_sec: num(b.rest_sec),
         })
         .select('id')
         .single();
-      if (peErr) return json({ error: peErr.message }, 500);
+      if (bErr) return json({ error: bErr.message }, 500);
 
-      const sets = Array.isArray(ex.sets) ? ex.sets : [];
-      if (sets.length > 0) {
-        const rows = sets.map((s, j) => ({
-          program_exercise_id: pe.id,
-          order_index: j,
-          target_reps: num(s.reps),
-          target_weight: weightToKg(num(s.weight)),
-          target_rpe: num(s.rpe),
-          rest_sec: num(s.rest_sec),
-          notes: s.notes ?? null,
-        }));
-        const { error: sErr } = await admin.from('program_sets').insert(rows);
-        if (sErr) return json({ error: sErr.message }, 500);
+      for (let ei = 0; ei < exs.length; ei++) {
+        const ex = exs[ei];
+        const name = (ex.name ?? '').trim().slice(0, 200);
+        if (!name) continue;
+
+        const exerciseId = await resolveExerciseId(ex);
+        exerciseCount++;
+
+        const { data: pe, error: peErr } = await admin
+          .from('program_exercises')
+          .insert({
+            program_id: program.id,
+            block_id: block.id,
+            exercise_id: exerciseId,
+            name,
+            order_index: ei,
+            notes: ex.notes ?? null,
+          })
+          .select('id')
+          .single();
+        if (peErr) return json({ error: peErr.message }, 500);
+
+        const sets = Array.isArray(ex.sets) ? ex.sets : [];
+        if (sets.length > 0) {
+          const rows = sets.map((s, j) => ({
+            program_exercise_id: pe.id,
+            order_index: j,
+            target_reps: num(s.reps),
+            target_weight: weightToKg(num(s.weight)),
+            target_rpe: num(s.rpe),
+            rest_sec: num(s.rest_sec),
+            notes: s.notes ?? null,
+          }));
+          const { error: sErr } = await admin.from('program_sets').insert(rows);
+          if (sErr) return json({ error: sErr.message }, 500);
+        }
       }
     }
 
     return json({
       program_id: program.id,
-      exercise_count: exercises.length,
+      block_count: blocks.length,
+      exercise_count: exerciseCount,
       created_exercises: created,
       cost: result.cost,
       provider: result.provider,

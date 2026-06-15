@@ -5,7 +5,13 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import { getProgramDetail, type ProgramSet, startWorkoutFromProgram } from '@/lib/db/programs';
+import {
+  getProgramDetail,
+  groupProgram,
+  type ProgramBlock,
+  type ProgramSet,
+  startWorkoutFromProgram,
+} from '@/lib/db/programs';
 import { formatWeight, useWeightUnit } from '@/lib/use-unit';
 
 function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): string {
@@ -15,7 +21,18 @@ function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): st
   if (s.target_weight != null) parts.push(`${formatWeight(s.target_weight, unit)} ${t(`common.${unit}`)}`);
   if (s.target_rpe != null) parts.push(`RPE ${s.target_rpe}`);
   if (s.rest_sec != null) parts.push(`${s.rest_sec}s ${t('workout.rest')}`);
+  if (s.notes) parts.push(s.notes);
   return parts.join(' · ') || '—';
+}
+
+// Подзаголовок блока: круги/интервал/отдых, если заданы.
+function blockMeta(b: ProgramBlock, t: (k: string) => string): string {
+  const parts: string[] = [];
+  if (b.rounds != null) parts.push(`${b.rounds}×`);
+  if (b.interval_sec != null) parts.push(`${Math.round(b.interval_sec / 60)} ${t('summary.min')}/коло`);
+  if (b.duration_sec != null) parts.push(`${Math.round(b.duration_sec / 60)} ${t('summary.min')}`);
+  if (b.rest_sec != null) parts.push(`${t('workout.rest')} ${b.rest_sec}s`);
+  return parts.join(' · ');
 }
 
 export default function ProgramDetailScreen() {
@@ -60,30 +77,53 @@ export default function ProgramDetailScreen() {
         </View>
       ) : (
         <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: 40 }}>
-          {program?.program_exercises.map((pe) => (
-            <View key={pe.id} className="mb-3 rounded-2xl bg-graphite-900 p-4">
-              <View className="flex-row items-center justify-between">
-                <Text className="flex-1 text-lg font-semibold text-graphite-100">{pe.name}</Text>
-                {pe.exercise_id == null && (
-                  <Text className="ml-2 text-[10px] uppercase tracking-wide text-amber-500">
-                    {t('programs.unmatched')}
-                  </Text>
-                )}
-              </View>
-              {pe.notes ? <Text className="mt-1 text-sm text-graphite-500">{pe.notes}</Text> : null}
-              <View className="mt-3 gap-2">
-                {pe.program_sets.map((s, i) => (
-                  <View key={s.id} className="flex-row">
-                    <Text className="w-6 text-sm text-graphite-600">{i + 1}</Text>
-                    <Text className="flex-1 text-base text-graphite-300">{setLine(s, unit, t)}</Text>
-                  </View>
-                ))}
-                {pe.program_sets.length === 0 && (
-                  <Text className="text-base text-graphite-600">—</Text>
-                )}
-              </View>
-            </View>
-          ))}
+          {program &&
+            groupProgram(program).map((g, gi) => {
+              const meta = g.block ? blockMeta(g.block, t) : '';
+              const isCluster = !!g.block && (g.block.type !== 'single' || g.exercises.length > 1);
+              return (
+                <View
+                  key={g.block?.id ?? g.exercises[0]?.id ?? gi}
+                  className="mb-3 rounded-2xl bg-graphite-900 p-4"
+                >
+                  {isCluster && (
+                    <View className="mb-3 border-l-2 border-accent pl-3">
+                      <Text className="text-base font-extrabold uppercase tracking-wide text-accent">
+                        {g.block?.label || t(`blockTypes.${g.block?.type ?? 'single'}`)}
+                      </Text>
+                      {meta ? <Text className="mt-0.5 text-xs text-graphite-400">{meta}</Text> : null}
+                    </View>
+                  )}
+
+                  {g.exercises.map((pe, ei) => (
+                    <View key={pe.id} className={ei > 0 ? 'mt-4' : ''}>
+                      <View className="flex-row items-center justify-between">
+                        <Text className="flex-1 text-lg font-semibold text-graphite-100">{pe.name}</Text>
+                        {pe.exercise_id == null && (
+                          <Text className="ml-2 text-[10px] uppercase tracking-wide text-amber-500">
+                            {t('programs.unmatched')}
+                          </Text>
+                        )}
+                      </View>
+                      {pe.notes ? (
+                        <Text className="mt-1 text-sm text-graphite-500">{pe.notes}</Text>
+                      ) : null}
+                      <View className="mt-2 gap-2">
+                        {pe.program_sets.map((s, i) => (
+                          <View key={s.id} className="flex-row">
+                            <Text className="w-6 text-sm text-graphite-600">{i + 1}</Text>
+                            <Text className="flex-1 text-base text-graphite-300">{setLine(s, unit, t)}</Text>
+                          </View>
+                        ))}
+                        {pe.program_sets.length === 0 && (
+                          <Text className="text-base text-graphite-600">—</Text>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
         </ScrollView>
       )}
 

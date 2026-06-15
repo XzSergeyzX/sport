@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-15 (ночь-3) — кроссфит-блоки + OURA HRV/RHR
+
+### ✅ Сделано
+- **Блоки/кластеры в программах** (кола/EMOM/E2MOM/AMRAP/суперсет/интервалы). Миграция `20260615150000_program_blocks.sql` (`program_blocks` + `program_exercises.block_id`). Парсер ИИ теперь группирует упражнения в блоки (тип, label «3 кола»/«EMOM 16», rounds/interval/duration/rest). Деталь программы рендерит блоки с заголовком (акцентная линия) и метой; `groupProgram()` в `db/programs.ts` (legacy без блоков — каждое отдельной группой). Префил тренировки идёт по блокам по порядку.
+- **Подсказка про кластеры** в импорте (hint + placeholder): «пиши 3 кола / EMOM 16 / E2MOM / AMRAP / суперсет». i18n `blockTypes.*`.
+- **OURA HRV + пульс покоя.** `oura-sync` тянет ещё `usercollection/sleep` (детальный) → `average_hrv` → hrv, `lowest_heart_rate` → rhr (берём long_sleep). Вкладка Здоров'я показывает HRV и Пульс спокою.
+- Проверка: `tsc` ✅, web ✅.
+
+### 🚧 TODO (деплой)
+- [ ] `npx supabase db push` (миграция `20260615150000` — блоки)
+- [ ] `npx supabase functions deploy program-import oura-sync`
+- [ ] Перезапустить Metro `npx expo start -c` + Reload (клиентские фичи: блоки, «Створити…», префил-кнопка — нужны свежий бандл)
+
+### ❓ Цикл для Марии — НЕ из OURA
+В публичном OURA API v2 нет эндпоинта фазы цикла. День/фазу считаем сами из дат начала цикла (таблица `cycle_periods` уже есть). Нужен мини-UI логирования дат + расчёт фазы — отдельным шагом.
+Поля, которые реально тянем/можем тянуть из OURA: readiness score (+ contributors), sleep score, **HRV (average_hrv)**, **RHR (lowest_heart_rate)**, темп. отклонение, дыхание (average_breath), активность/шаги, SpO2.
+
+---
+
 ## 2026-06-15 (ночь-2) — кастомные упражнения + старт из программы
 
 ### ✅ Сделано

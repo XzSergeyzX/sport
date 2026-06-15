@@ -17,11 +17,25 @@ export type ProgramSet = {
 export type ProgramExercise = {
   id: string;
   program_id: string;
+  block_id: string | null;
   exercise_id: string | null;
   name: string;
   order_index: number;
   notes: string | null;
   program_sets: ProgramSet[];
+};
+
+export type ProgramBlock = {
+  id: string;
+  program_id: string;
+  order_index: number;
+  type: string | null;
+  label: string | null;
+  rounds: number | null;
+  interval_sec: number | null;
+  duration_sec: number | null;
+  rest_sec: number | null;
+  note: string | null;
 };
 
 export type Program = {
@@ -33,7 +47,13 @@ export type Program = {
   created_at: string;
 };
 
-export type ProgramDetail = Program & { program_exercises: ProgramExercise[] };
+export type ProgramDetail = Program & {
+  program_blocks: ProgramBlock[];
+  program_exercises: ProgramExercise[];
+};
+
+/** Группа для отображения: блок (или null для несгруппированных) + его упражнения по порядку. */
+export type ProgramGroup = { block: ProgramBlock | null; exercises: ProgramExercise[] };
 
 export type ImportResult = {
   program_id: string;
@@ -78,16 +98,37 @@ export async function listPrograms(userId: string): Promise<Program[]> {
 export async function getProgramDetail(id: string): Promise<ProgramDetail> {
   const { data, error } = await supabase
     .from('programs')
-    .select('*, program_exercises(*, program_sets(*))')
+    .select('*, program_blocks(*), program_exercises(*, program_sets(*))')
     .eq('id', id)
     .single();
   if (error) throw error;
   const detail = data as unknown as ProgramDetail;
-  detail.program_exercises?.sort((a, b) => a.order_index - b.order_index);
-  detail.program_exercises?.forEach((pe) =>
+  detail.program_blocks = detail.program_blocks ?? [];
+  detail.program_exercises = detail.program_exercises ?? [];
+  detail.program_exercises.forEach((pe) =>
     pe.program_sets?.sort((a, b) => a.order_index - b.order_index),
   );
   return detail;
+}
+
+/** Сгруппировать по блокам (в порядке блоков), несгруппированные (block_id=null) — отдельными группами. */
+export function groupProgram(detail: ProgramDetail): ProgramGroup[] {
+  const byOrder = (a: { order_index: number }, b: { order_index: number }) =>
+    a.order_index - b.order_index;
+  const groups: ProgramGroup[] = [];
+
+  for (const block of [...detail.program_blocks].sort(byOrder)) {
+    const exercises = detail.program_exercises
+      .filter((pe) => pe.block_id === block.id)
+      .sort(byOrder);
+    if (exercises.length) groups.push({ block, exercises });
+  }
+
+  // legacy/несгруппированные упражнения — каждое как отдельная группа без блока
+  const ungrouped = detail.program_exercises.filter((pe) => !pe.block_id).sort(byOrder);
+  for (const ex of ungrouped) groups.push({ block: null, exercises: [ex] });
+
+  return groups;
 }
 
 export async function deleteProgram(id: string): Promise<void> {
@@ -108,17 +149,19 @@ export async function startWorkoutFromProgram(
   const workout = await startWorkout(userId);
 
   let order = 0;
-  for (const pe of detail.program_exercises) {
-    if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
-    const weId = await addWorkoutExercise(workout.id, pe.exercise_id, order++);
-    for (const ps of pe.program_sets) {
-      const w = fromKg(ps.target_weight, unit);
-      await addSet(weId, {
-        weight: w == null ? null : Math.round(w * 10) / 10,
-        reps: ps.target_reps,
-        rpe: null, // RPE субъективно — заполняется по факту
-        rest_sec: null, // отдых меряется автоматически в сессии
-      });
+  for (const group of groupProgram(detail)) {
+    for (const pe of group.exercises) {
+      if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
+      const weId = await addWorkoutExercise(workout.id, pe.exercise_id, order++);
+      for (const ps of pe.program_sets) {
+        const w = fromKg(ps.target_weight, unit);
+        await addSet(weId, {
+          weight: w == null ? null : Math.round(w * 10) / 10,
+          reps: ps.target_reps,
+          rpe: null, // RPE субъективно — заполняется по факту
+          rest_sec: null, // отдых меряется автоматически в сессии
+        });
+      }
     }
   }
   return workout.id;

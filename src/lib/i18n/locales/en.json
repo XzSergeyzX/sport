@@ -44,8 +44,8 @@
     "title": "Programs",
     "importCta": "Import a program",
     "importTitle": "Import with AI",
-    "importHint": "Paste your training plan as text — the AI lays it out into exercises and sets.",
-    "importPlaceholder": "e.g. Squat 4x8 @100kg, Bench 3x10, Pull-ups 3x max…",
+    "importHint": "Paste your training plan as text — the AI lays it out into exercises and sets. It understands clusters: write “3 rounds”, “EMOM 16”, “E2MOM”, “AMRAP”, “superset”.",
+    "importPlaceholder": "e.g. 3 rounds: 10 KB swings, 15 push-ups · EMOM 16: 5 cleans…",
     "importGo": "Import",
     "yours": "Your programs",
     "empty": "No programs yet.",
@@ -55,6 +55,16 @@
     "errParse": "Couldn't read that plan. Try rephrasing it.",
     "errEmpty": "Paste a plan first.",
     "errGeneric": "Import failed. Please try again."
+  },
+  "blockTypes": {
+    "rounds": "Rounds",
+    "emom": "EMOM",
+    "e2mom": "E2MOM",
+    "amrap": "AMRAP",
+    "for_time": "For time",
+    "superset": "Superset",
+    "interval": "Intervals",
+    "single": "Exercise"
   },
   "analytics": {
     "title": "Analytics",
@@ -74,6 +84,8 @@
     "syncNow": "Sync now",
     "readiness": "Readiness",
     "sleep": "Sleep",
+    "hrv": "HRV (ms)",
+    "rhr": "Resting HR",
     "noData": "No data yet — tap Sync now.",
     "soonTitle": "Metrics are coming",
     "soonBody": "Once connected, readiness/sleep and cycle-phase correlations with training ease and success show up here."

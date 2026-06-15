@@ -107,6 +107,16 @@ export default function HealthScreen() {
                   value={snapshot?.sleep_score != null ? String(snapshot.sleep_score) : '–'}
                 />
               </View>
+              <View className="mt-3 flex-row gap-3">
+                <Metric
+                  label={t('health.hrv')}
+                  value={snapshot?.hrv != null ? String(Math.round(snapshot.hrv)) : '–'}
+                />
+                <Metric
+                  label={t('health.rhr')}
+                  value={snapshot?.rhr != null ? String(Math.round(snapshot.rhr)) : '–'}
+                />
+              </View>
               {!snapshot && <Text className="mt-3 text-sm text-graphite-400">{t('health.noData')}</Text>}
               <Pressable
                 disabled={syncMut.isPending}
