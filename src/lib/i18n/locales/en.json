@@ -40,7 +40,22 @@
   "account": {
     "title": "Account",
     "trackCycle": "Track cycle",
-    "trackCycleHint": "Show menstrual cycle day & phase in Health."
+    "trackCycleHint": "Show menstrual cycle day & phase in Health.",
+    "myExercises": "My exercises"
+  },
+  "exercises": {
+    "title": "My exercises",
+    "empty": "Exercises you add manually or via import will appear here, so you can rename and categorise them.",
+    "editTitle": "Edit exercise",
+    "nameUk": "Name (Ukrainian)",
+    "nameEn": "Name (English)",
+    "cluster": "Group",
+    "category": "Category",
+    "none": "Unset",
+    "save": "Save",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this exercise?",
+    "deleteInUse": "Can't delete — it's used in workouts or programs."
   },
   "programs": {
     "title": "Programs",

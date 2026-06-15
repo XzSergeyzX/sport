@@ -97,6 +97,14 @@ export default function AccountScreen() {
           />
         </View>
 
+        <Pressable
+          onPress={() => router.push('/exercises')}
+          className="mt-6 flex-row items-center justify-between active:opacity-70"
+        >
+          <Text className="text-lg font-semibold text-graphite-100">{t('account.myExercises')}</Text>
+          <Text className="text-xl text-graphite-500">›</Text>
+        </Pressable>
+
         <View className="flex-1" />
 
         <Pressable

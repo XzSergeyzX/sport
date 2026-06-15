@@ -78,6 +78,53 @@ export async function searchExercises(q: string): Promise<Exercise[]> {
   return all.filter((ex) => matchExercise(ex, q));
 }
 
+export const CATEGORY_ORDER: Category[] = [
+  'general',
+  'weightlifting',
+  'gymnastics',
+  'crossfit',
+  'armwrestling',
+  'kettlebell',
+];
+
+export type ExerciseEdit = {
+  name_en: string;
+  name_uk: string;
+  cluster: Cluster | null;
+  category: Category | null;
+};
+
+/** Свои (приватные) упражнения — для экрана управления. */
+export async function listMyExercises(userId: string): Promise<Exercise[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('owner_id', userId)
+    .order('name_uk');
+  if (error) throw error;
+  return (data ?? []) as Exercise[];
+}
+
+/** Переименовать / задать таксономию своему упражнению (RLS пускает только владельца). */
+export async function updateExercise(id: string, patch: ExerciseEdit): Promise<void> {
+  const { error } = await supabase
+    .from('exercises')
+    .update({
+      name_en: patch.name_en.trim().slice(0, 200),
+      name_uk: patch.name_uk.trim().slice(0, 200),
+      cluster: patch.cluster,
+      category: patch.category,
+    })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/** Удалить своё упражнение. Бросит ошибку, если оно используется в тренировках/программах (FK). */
+export async function deleteExercise(id: string): Promise<void> {
+  const { error } = await supabase.from('exercises').delete().eq('id', id);
+  if (error) throw error;
+}
+
 /**
  * Создать своё (приватное) упражнение. RLS делает его видимым только владельцу;
  * дневной лимит на спам — триггер enforce_exercise_daily_cap (код ошибки 'exercise_daily_cap').
