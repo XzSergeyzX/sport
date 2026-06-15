@@ -41,7 +41,10 @@
     "title": "Account",
     "trackCycle": "Track cycle",
     "trackCycleHint": "Show menstrual cycle day & phase in Health.",
-    "myExercises": "My exercises"
+    "myExercises": "My exercises",
+    "disciplines": "My disciplines",
+    "disciplinesHint": "Show specialty dictionaries (armwrestling, weightlifting…) in the exercise picker. Base movements are always shown.",
+    "myGrippers": "My grippers"
   },
   "exercises": {
     "title": "My exercises",
@@ -55,7 +58,10 @@
     "save": "Save",
     "delete": "Delete",
     "deleteConfirm": "Delete this exercise?",
-    "deleteInUse": "Can't delete — it's used in workouts or programs."
+    "deleteInUse": "Can't delete — it's used in workouts or programs.",
+    "metric": "Measured in",
+    "metricReps": "Reps",
+    "metricTime": "Seconds"
   },
   "programs": {
     "title": "Programs",
@@ -199,6 +205,8 @@
     "startTimer": "Start",
     "stopTimer": "Stop",
     "repsShort": "reps",
+    "duration": "Time",
+    "secShort": "s",
     "restNow": "Rest",
     "restAuto": "Rest is captured when you mark a set done (✓ or after picking RPE).",
     "rest": "rest",
@@ -213,7 +221,30 @@
     "frequent": "Frequent",
     "createCustom": "Create “{{name}}”",
     "customCapped": "Daily limit for new exercises reached. Try again tomorrow.",
-    "userAdded": "Added by you"
+    "userAdded": "Added by you",
+    "gripper": "Gripper",
+    "pickGripper": "Pick gripper",
+    "searchGripper": "Search gripper…",
+    "setType": "Set",
+    "noGrippers": "No grippers found."
+  },
+  "setTypes": {
+    "tns": "TNS",
+    "card": "Card set",
+    "block_38": "Block 38 mm",
+    "block_20": "Block 20 mm",
+    "deep": "Deep set"
+  },
+  "grippers": {
+    "title": "My grippers",
+    "empty": "Add the grippers you train with — you'll pick them when logging grip work.",
+    "add": "Add gripper",
+    "editTitle": "Gripper",
+    "name": "Name (e.g. CoC 2.5)",
+    "rgc": "RGC (optional)",
+    "save": "Save",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this gripper?"
   },
   "rpeZones": {
     "low": "Low effort",
@@ -239,6 +270,7 @@
     "crossfit": "CrossFit",
     "armwrestling": "Armwrestling",
     "kettlebell": "Kettlebell",
+    "grip": "Grip strength",
     "other": "Other"
   },
   "summary": {
@@ -248,6 +280,7 @@
     "reps": "Reps",
     "exercises": "Exercises",
     "duration": "Duration",
+    "holdTime": "Hold time",
     "min": "min",
     "breakdown": "Breakdown",
     "done": "Done"

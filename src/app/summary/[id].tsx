@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
-import { getWorkoutDetail, workoutStats } from '@/lib/db/workouts';
+import { getWorkoutDetail, type WorkoutExercise, workoutStats } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { useWeightUnit } from '@/lib/use-unit';
 
@@ -53,6 +53,53 @@ export default function SummaryScreen() {
   const s = workoutStats(workout);
   const unitLabel = t(`common.${unit}`);
 
+  // группируем детали по блокам (кластеры EMOM/E2MOM/суперсети — вместе, как в тренировке)
+  type BGroup = { key: string; label: string | null; items: WorkoutExercise[] };
+  const groups: BGroup[] = [];
+  for (const we of workout.workout_exercises) {
+    const last = groups[groups.length - 1];
+    if (we.block_key && last && last.key === we.block_key) last.items.push(we);
+    else if (we.block_key) groups.push({ key: we.block_key, label: we.block_label, items: [we] });
+    else groups.push({ key: we.id, label: null, items: [we] });
+  }
+
+  // имя + строки подходов одного упражнения (используется и в одиночных, и внутри кластера)
+  const exerciseRows = (we: WorkoutExercise) => (
+    <View>
+      <Text className="text-base font-bold text-graphite-50">
+        {we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—')}
+      </Text>
+      <View className="mt-2 gap-1">
+        {we.sets.map((set, i) => {
+          const done = !!set.logged_at;
+          return (
+            <View
+              key={set.id}
+              className="flex-row justify-between"
+              style={{ opacity: done ? 1 : 0.45 }}
+            >
+              <Text className="text-sm text-graphite-400">
+                {t('workout.set')} {i + 1}
+                {!done ? ` · ${t('workout.notDone')}` : ''}
+              </Text>
+              <Text className="text-sm text-graphite-200">
+                {done
+                  ? `${
+                      set.duration_sec != null
+                        ? `${set.weight != null ? `${set.weight} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
+                        : `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}`
+                    }${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
+                      set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''
+                    }`
+                  : '—'}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView className="flex-1 bg-graphite-950">
       <ScrollView
@@ -72,8 +119,13 @@ export default function SummaryScreen() {
             <Stat label={t('summary.sets')} value={String(s.sets)} />
             <Stat label={t('summary.reps')} value={String(s.reps)} />
           </View>
-          {s.durationMin != null && (
-            <Stat label={t('summary.duration')} value={`${s.durationMin} ${t('summary.min')}`} />
+          {(s.durationMin != null || s.holdSec > 0) && (
+            <View className="flex-row gap-3">
+              {s.durationMin != null && (
+                <Stat label={t('summary.duration')} value={`${s.durationMin} ${t('summary.min')}`} />
+              )}
+              {s.holdSec > 0 && <Stat label={t('summary.holdTime')} value={fmtRest(s.holdSec)} />}
+            </View>
           )}
         </View>
 
@@ -82,37 +134,25 @@ export default function SummaryScreen() {
           <Text className="text-sm font-semibold uppercase tracking-wide text-graphite-500">
             {t('summary.breakdown')}
           </Text>
-          {workout.workout_exercises.map((we) => (
-            <View key={we.id} className="rounded-2xl bg-graphite-900 p-4">
-              <Text className="text-base font-bold text-graphite-50">
-                {we.exercise ? exerciseName(we.exercise, lang) : '—'}
-              </Text>
-              <View className="mt-2 gap-1">
-                {we.sets.map((set, i) => {
-                  const done = !!set.logged_at;
-                  return (
-                    <View
-                      key={set.id}
-                      className="flex-row justify-between"
-                      style={{ opacity: done ? 1 : 0.45 }}
-                    >
-                      <Text className="text-sm text-graphite-400">
-                        {t('workout.set')} {i + 1}
-                        {!done ? ` · ${t('workout.notDone')}` : ''}
-                      </Text>
-                      <Text className="text-sm text-graphite-200">
-                        {done
-                          ? `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}${
-                              set.rpe != null ? `  · RPE ${set.rpe}` : ''
-                            }${set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''}`
-                          : '—'}
-                      </Text>
-                    </View>
-                  );
-                })}
+          {groups.map((g) => {
+            const isCluster = g.label != null || g.items.length > 1;
+            return (
+              <View key={g.key} className="rounded-2xl bg-graphite-900 p-4">
+                {isCluster && (
+                  <View className="mb-3 border-l-2 border-accent pl-3">
+                    <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                      {g.label || t('blockTypes.rounds')}
+                    </Text>
+                  </View>
+                )}
+                <View className="gap-4">
+                  {g.items.map((we) => (
+                    <View key={we.id}>{exerciseRows(we)}</View>
+                  ))}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
 

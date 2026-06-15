@@ -6,10 +6,12 @@ export type SetRow = {
   id: string;
   workout_exercise_id: string;
   reps: number | null;
+  duration_sec: number | null;
   weight: number | null;
   rest_sec: number | null;
   rpe: number | null;
   note: string | null;
+  meta: Record<string, unknown> | null;
   completed_at: string;
   logged_at: string | null;
 };
@@ -43,9 +45,11 @@ export type WorkoutDetail = Workout & { workout_exercises: WorkoutExercise[] };
 
 export type SetInput = {
   reps?: number | null;
+  duration_sec?: number | null;
   weight?: number | null;
   rest_sec?: number | null;
   rpe?: number | null;
+  meta?: Record<string, unknown> | null;
 };
 
 const DETAIL_SELECT = '*, workout_exercises(*, exercise:exercises(*), sets(*))';
@@ -200,6 +204,7 @@ export type WorkoutStats = {
   tonnage: number;
   sets: number;
   reps: number;
+  holdSec: number;
   exercises: number;
   durationMin: number | null;
 };
@@ -209,6 +214,7 @@ export function workoutStats(w: WorkoutDetail): WorkoutStats {
   let tonnage = 0;
   let sets = 0;
   let reps = 0;
+  let holdSec = 0;
   let exercises = 0;
   for (const we of w.workout_exercises ?? []) {
     let anyDone = false;
@@ -217,6 +223,7 @@ export function workoutStats(w: WorkoutDetail): WorkoutStats {
       anyDone = true;
       sets += 1;
       reps += s.reps ?? 0;
+      holdSec += s.duration_sec ?? 0;
       tonnage += (s.weight ?? 0) * (s.reps ?? 0);
     }
     if (anyDone) exercises += 1;
@@ -224,5 +231,5 @@ export function workoutStats(w: WorkoutDetail): WorkoutStats {
   const durationMin = w.ended_at
     ? Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000))
     : null;
-  return { tonnage, sets, reps, exercises, durationMin };
+  return { tonnage, sets, reps, holdSec, exercises, durationMin };
 }

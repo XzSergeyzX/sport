@@ -8,6 +8,7 @@ export type ProgramSet = {
   program_exercise_id: string;
   order_index: number;
   target_reps: number | null;
+  target_duration_sec: number | null;
   target_weight: number | null;
   target_rpe: number | null;
   rest_sec: number | null;
@@ -179,7 +180,12 @@ export async function startWorkoutFromProgram(
     block_interval_sec: number | null;
   };
   const weRows: WeRow[] = [];
-  const setPlan: { weIndex: number; weight: number | null; reps: number | null }[] = [];
+  const setPlan: {
+    weIndex: number;
+    weight: number | null;
+    reps: number | null;
+    durationSec: number | null;
+  }[] = [];
 
   for (const group of groupProgram(detail)) {
     const block = group.block;
@@ -209,6 +215,7 @@ export async function startWorkoutFromProgram(
             weIndex,
             weight: w == null ? null : Math.round(w * 10) / 10,
             reps: ps ? ps.target_reps : null,
+            durationSec: ps ? ps.target_duration_sec : null,
           });
         }
       }
@@ -232,6 +239,7 @@ export async function startWorkoutFromProgram(
     workout_exercise_id: idByIndex.get(p.weIndex) as string,
     weight: p.weight,
     reps: p.reps,
+    duration_sec: p.durationSec,
   }));
   if (setRows.length) {
     const { error: sErr } = await supabase.from('sets').insert(setRows);

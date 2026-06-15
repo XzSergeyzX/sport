@@ -7,7 +7,25 @@ export type Category =
   | 'gymnastics'
   | 'crossfit'
   | 'armwrestling'
-  | 'kettlebell';
+  | 'kettlebell'
+  | 'grip';
+
+/**
+ * Дисципліни-словники: специфічні категорії, які користувач вмикає в Акаунті.
+ * 'general' — це база, видно всім завжди, тому в дисципліни не входить.
+ */
+export type Discipline = Exclude<Category, 'general'>;
+export const DISCIPLINES: Discipline[] = [
+  'weightlifting',
+  'gymnastics',
+  'crossfit',
+  'armwrestling',
+  'kettlebell',
+  'grip',
+];
+
+/** Чем меряется упражнение: повторами ('reps') или временем удержания в секундах ('time'). */
+export type Metric = 'reps' | 'time';
 
 /** Порядок кластеров в пикере (сверху вниз). */
 export const CLUSTER_ORDER: Cluster[] = ['upper', 'lower', 'full', 'core'];
@@ -21,6 +39,9 @@ export type Exercise = {
   aliases: string[];
   cluster: Cluster | null;
   category: Category | null;
+  metric: Metric;
+  is_base: boolean;
+  log_kind: string | null; // null=обычная форма, 'gripper'=поля эспандера
   is_global: boolean;
 };
 
@@ -63,6 +84,50 @@ export async function listExercises(): Promise<Exercise[]> {
   return (data ?? []) as Exercise[];
 }
 
+/**
+ * Видно ли упражнение в режиме просмотра пикера: база — всем; специфика — только если
+ * дисциплина включена; свои (не глобальные) — всегда. Поиск этот фильтр игнорирует.
+ */
+export function isVisible(ex: Exercise, disciplines: string[]): boolean {
+  if (!ex.is_global) return true;
+  if (ex.is_base) return true;
+  return ex.category != null && disciplines.includes(ex.category);
+}
+
+/** Дисциплина упражнения, если её стоит предложить включить (специфика не из базы). */
+export function disciplineToEnable(ex: Exercise, disciplines: string[]): Discipline | null {
+  if (ex.is_base || !ex.is_global || !ex.category || ex.category === 'general') return null;
+  if (disciplines.includes(ex.category)) return null;
+  return ex.category as Discipline;
+}
+
+/** Включённые пользователем дисциплины-словники (profile.disciplines). */
+export async function getDisciplines(userId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('profile')
+    .select('disciplines')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return (data?.disciplines as string[] | null) ?? [];
+}
+
+export async function setDisciplines(userId: string, list: string[]): Promise<void> {
+  const { error } = await supabase
+    .from('profile')
+    .update({ disciplines: list })
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+/** Добавить дисциплину к включённым (если ещё нет). Возвращает обновлённый список. */
+export async function enableDiscipline(userId: string, d: Discipline): Promise<string[]> {
+  const cur = await getDisciplines(userId);
+  if (cur.includes(d)) return cur;
+  const next = [...cur, d];
+  await setDisciplines(userId, next);
+  return next;
+}
+
 /** Совпадение по названию (en/uk) и алиасам — подстрокой, регистронезависимо. */
 export function matchExercise(ex: Exercise, term: string): boolean {
   const t = term.trim().toLowerCase();
@@ -85,6 +150,7 @@ export const CATEGORY_ORDER: Category[] = [
   'crossfit',
   'armwrestling',
   'kettlebell',
+  'grip',
 ];
 
 export type ExerciseEdit = {
@@ -92,7 +158,15 @@ export type ExerciseEdit = {
   name_uk: string;
   cluster: Cluster | null;
   category: Category | null;
+  metric: Metric;
 };
+
+/** Вид установки эспандера (для словника «Сила хвата»). */
+export type GripSetType = 'tns' | 'card' | 'block_38' | 'block_20' | 'deep';
+export const GRIP_SET_TYPES: GripSetType[] = ['tns', 'card', 'block_38', 'block_20', 'deep'];
+
+/** meta-поля подхода для эспандера (хранятся в sets.meta). */
+export type GripMeta = { gripper_id?: string; set_type?: GripSetType };
 
 /** Свои (приватные) упражнения — для экрана управления. */
 export async function listMyExercises(userId: string): Promise<Exercise[]> {
@@ -114,6 +188,7 @@ export async function updateExercise(id: string, patch: ExerciseEdit): Promise<v
       name_uk: patch.name_uk.trim().slice(0, 200),
       cluster: patch.cluster,
       category: patch.category,
+      metric: patch.metric,
     })
     .eq('id', id);
   if (error) throw error;

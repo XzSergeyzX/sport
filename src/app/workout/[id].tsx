@@ -19,11 +19,20 @@ import {
   categoryKey,
   clusterKey,
   createCustomExercise,
+  disciplineToEnable,
+  enableDiscipline,
+  type Exercise,
   exerciseName,
+  getDisciplines,
+  GRIP_SET_TYPES,
+  type GripMeta,
   groupByCluster,
+  isVisible,
   listExercises,
   matchExercise,
+  type Metric,
 } from '@/lib/db/exercises';
+import { type Gripper, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
   addSet,
   addWorkoutExercise,
@@ -133,6 +142,132 @@ function RpePicker({
   );
 }
 
+// Выбор эспандера (каталог брендов + свои сверху) + вида установки. Пишем в sets.meta.
+function GripPicker({
+  visible,
+  value,
+  grippers,
+  onClose,
+  onChange,
+}: {
+  visible: boolean;
+  value: GripMeta;
+  grippers: Gripper[];
+  onClose: () => void;
+  onChange: (meta: GripMeta) => void;
+}) {
+  const { t } = useTranslation();
+  const [term, setTerm] = useState('');
+  useEffect(() => {
+    if (visible) setTerm('');
+  }, [visible]);
+
+  // секции: личные (приоритет, сверху) + глобальные по бренду
+  const sections = useMemo(() => {
+    const q = term.trim().toLowerCase();
+    const match = (g: Gripper) => !q || gripperName(g).toLowerCase().includes(q);
+    const personal = grippers.filter((g) => !g.is_global && match(g));
+    const byBrand = new Map<string, Gripper[]>();
+    for (const g of grippers) {
+      if (!g.is_global || !match(g)) continue;
+      const b = g.brand ?? '—';
+      const arr = byBrand.get(b) ?? [];
+      arr.push(g);
+      byBrand.set(b, arr);
+    }
+    const out: { title: string; items: Gripper[] }[] = [];
+    if (personal.length) out.push({ title: t('account.myGrippers'), items: personal });
+    for (const [b, items] of byBrand) out.push({ title: b, items });
+    return out;
+  }, [grippers, term, t]);
+
+  const line = (g: Gripper) => {
+    const active = value.gripper_id === g.id;
+    const kg = rgcInKg(g);
+    return (
+      <Pressable
+        key={g.id}
+        onPress={() => onChange({ ...value, gripper_id: g.id })}
+        className="flex-row items-center justify-between rounded-xl px-3 py-2.5 active:opacity-80"
+        style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+      >
+        <Text className="text-base font-semibold" style={{ color: active ? '#0B0F14' : '#E5E7EB' }}>
+          {gripperName(g)}
+        </Text>
+        {g.rgc != null && (
+          <Text className="text-xs" style={{ color: active ? '#0B0F14' : '#848D9A' }}>
+            {g.rgc} {g.rgc_unit}
+            {kg != null && g.rgc_unit === 'lb' ? ` · ${Math.round(kg)} kg` : ''}
+          </Text>
+        )}
+      </Pressable>
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose}>
+        <Pressable onPress={() => {}} className="rounded-t-3xl bg-graphite-900 px-5 pb-8 pt-4" style={{ maxHeight: '85%' }}>
+          <View className="mb-3 flex-row items-center justify-between">
+            <Text className="text-base font-bold text-graphite-50">{t('workout.gripper')}</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Text className="text-sm text-graphite-400">{t('common.cancel')}</Text>
+            </Pressable>
+          </View>
+          <TextInput
+            value={term}
+            onChangeText={setTerm}
+            placeholder={t('workout.searchGripper')}
+            placeholderTextColor={PLACEHOLDER}
+            className="rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
+          />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            className="mt-3"
+            style={{ maxHeight: 300 }}
+          >
+            {grippers.length === 0 && (
+              <Text className="text-sm text-graphite-500">{t('workout.noGrippers')}</Text>
+            )}
+            {sections.map((s) => (
+              <View key={s.title} className="mb-2">
+                <Text className="mb-1 mt-1 text-xs font-bold uppercase tracking-wide text-graphite-500">
+                  {s.title}
+                </Text>
+                <View className="gap-1">{s.items.map(line)}</View>
+              </View>
+            ))}
+          </ScrollView>
+          <Text className="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+            {t('workout.setType')}
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {GRIP_SET_TYPES.map((st) => {
+              const active = value.set_type === st;
+              return (
+                <Pressable
+                  key={st}
+                  onPress={() => onChange({ ...value, set_type: st })}
+                  className="rounded-full px-3 py-1.5 active:opacity-80"
+                  style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+                >
+                  <Text className="text-sm" style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>
+                    {t(`setTypes.${st}`)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable onPress={onClose} className="mt-5 items-center rounded-xl bg-graphite-50 py-3 active:opacity-80">
+            <Text className="text-sm font-bold text-graphite-950">{t('summary.done')}</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function ElapsedTimer({ startedAt }: { startedAt: string }) {
   const { t } = useTranslation();
   const calc = () => Math.max(0, Math.floor((Date.now() - +new Date(startedAt)) / 1000));
@@ -217,6 +352,9 @@ function SetRow({
   index,
   set,
   unit,
+  metric,
+  logKind,
+  grippers,
   onSave,
   onToggleDone,
   onDelete,
@@ -225,26 +363,47 @@ function SetRow({
   index: number;
   set: SetRowType;
   unit: WeightUnit;
+  metric: Metric;
+  logKind: string | null;
+  grippers: Gripper[];
   onSave: (id: string, input: SetInput) => void;
   onToggleDone: (set: SetRowType) => void;
   onDelete: (id: string) => void;
   headerLabel?: string;
 }) {
   const { t } = useTranslation();
+  // временной подход: дефолт упражнения = 'time' ИЛИ у подхода уже есть длительность
+  const isTime = metric === 'time' || set.duration_sec != null;
+  const isGripper = logKind === 'gripper';
   const [weight, setWeight] = useState(set.weight?.toString() ?? '');
-  const [reps, setReps] = useState(set.reps?.toString() ?? '');
+  const [amount, setAmount] = useState(
+    (isTime ? set.duration_sec : set.reps)?.toString() ?? '',
+  );
   const [rpe, setRpe] = useState<number | null>(set.rpe ?? null);
   const [rpeOpen, setRpeOpen] = useState(false);
+  const [meta, setMeta] = useState<GripMeta>((set.meta as GripMeta) ?? {});
+  const [gripOpen, setGripOpen] = useState(false);
   const done = !!set.logged_at;
 
-  const save = (nextRpe: number | null = rpe) => {
-    const repsN = parseNum(reps);
+  const save = (nextRpe: number | null = rpe, nextMeta: GripMeta = meta) => {
+    const n = parseNum(amount);
+    const rounded = n === null ? null : Math.round(n);
     onSave(set.id, {
-      weight: parseNum(weight),
-      reps: repsN === null ? null : Math.round(repsN),
+      weight: isGripper ? null : parseNum(weight),
+      reps: isTime ? null : rounded,
+      duration_sec: isTime ? rounded : null,
       rpe: nextRpe,
+      meta: isGripper ? nextMeta : undefined,
     });
   };
+
+  const onChangeMeta = (next: GripMeta) => {
+    setMeta(next);
+    save(rpe, next);
+  };
+
+  const selectedGripper = grippers.find((g) => g.id === meta.gripper_id);
+  const selectedGripperLabel = selectedGripper ? gripperName(selectedGripper) : undefined;
 
   const onPickRpe = (v: number | null) => {
     setRpe(v);
@@ -289,9 +448,41 @@ function SetRow({
           <Text className="text-xs text-graphite-600">✕</Text>
         </Pressable>
       </View>
+      {isGripper && (
+        <View className="mb-2 flex-row gap-2">
+          <Pressable
+            onPress={() => setGripOpen(true)}
+            className="flex-1 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
+          >
+            <Text
+              numberOfLines={1}
+              className="text-center text-sm"
+              style={{ color: selectedGripperLabel ? '#E5E7EB' : PLACEHOLDER }}
+            >
+              {selectedGripperLabel ?? t('workout.pickGripper')}
+            </Text>
+            <Text className="mt-0.5 text-center text-[10px] text-graphite-600">{t('workout.gripper')}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setGripOpen(true)}
+            className="flex-1 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
+          >
+            <Text
+              numberOfLines={1}
+              className="text-center text-sm"
+              style={{ color: meta.set_type ? '#E5E7EB' : PLACEHOLDER }}
+            >
+              {meta.set_type ? t(`setTypes.${meta.set_type}`) : t('workout.setType')}
+            </Text>
+            <Text className="mt-0.5 text-center text-[10px] text-graphite-600">{t('workout.setType')}</Text>
+          </Pressable>
+        </View>
+      )}
       <View className="flex-row items-start gap-2">
-        {field(weight, setWeight, t('workout.weight'), t(`common.${unit}`))}
-        {field(reps, setReps, t('workout.reps'), t('workout.repsShort'), 'number-pad')}
+        {!isGripper && field(weight, setWeight, t('workout.weight'), t(`common.${unit}`))}
+        {isTime
+          ? field(amount, setAmount, t('workout.duration'), t('workout.secShort'), 'number-pad')
+          : field(amount, setAmount, t('workout.reps'), t('workout.repsShort'), 'number-pad')}
         <Pressable
           onPress={() => setRpeOpen(true)}
           className="flex-1 flex-row items-center justify-center gap-1.5 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
@@ -317,20 +508,31 @@ function SetRow({
         </Pressable>
       </View>
       <RpePicker visible={rpeOpen} value={rpe} onClose={() => setRpeOpen(false)} onSelect={onPickRpe} />
+      {isGripper && (
+        <GripPicker
+          visible={gripOpen}
+          value={meta}
+          grippers={grippers}
+          onClose={() => setGripOpen(false)}
+          onChange={onChangeMeta}
+        />
+      )}
     </View>
   );
 }
 
 function ExercisePicker({
   visible,
+  disciplines,
   onClose,
   onSelect,
   onCreate,
   creating,
 }: {
   visible: boolean;
+  disciplines: string[];
   onClose: () => void;
-  onSelect: (exerciseId: string) => void;
+  onSelect: (ex: Exercise) => void;
   onCreate: (name: string) => void;
   creating: boolean;
 }) {
@@ -355,14 +557,18 @@ function ExercisePicker({
   }, [visible]);
 
   const groups = useMemo(() => {
-    const filtered = (data ?? []).filter((ex) => matchExercise(ex, term));
+    const all = data ?? [];
+    // поиск пробивает всё; просмотр — только база + включённые дисциплины + свои
+    const filtered = searching
+      ? all.filter((ex) => matchExercise(ex, term))
+      : all.filter((ex) => isVisible(ex, disciplines));
     return groupByCluster(filtered);
-  }, [data, term]);
+  }, [data, term, searching, disciplines]);
 
   const row = (ex: (typeof groups)[number]['items'][number]) => (
     <Pressable
       key={ex.id}
-      onPress={() => onSelect(ex.id)}
+      onPress={() => onSelect(ex)}
       className="flex-row items-center justify-between border-b border-graphite-800 py-3 active:opacity-70"
     >
       <Text className="flex-1 text-base text-graphite-100">{exerciseName(ex, lang)}</Text>
@@ -477,6 +683,18 @@ export default function WorkoutScreen() {
     enabled: !!session,
   });
 
+  const { data: disciplines } = useQuery({
+    queryKey: ['disciplines', session?.user.id],
+    queryFn: () => getDisciplines(session!.user.id),
+    enabled: !!session,
+  });
+
+  const { data: grippers } = useQuery({
+    queryKey: ['gripper-catalog', session?.user.id],
+    queryFn: () => listGripperCatalog(session!.user.id),
+    enabled: !!session,
+  });
+
   // якорь авто-отдыха = время последнего «сделанного» подхода
   const anchor = useMemo(() => {
     if (!workout) return null;
@@ -527,6 +745,19 @@ export default function WorkoutScreen() {
       );
     },
   });
+
+  const enableDisciplineMut = useMutation({
+    mutationFn: (d: Parameters<typeof enableDiscipline>[1]) =>
+      enableDiscipline(session!.user.id, d),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['disciplines', session?.user.id] }),
+  });
+
+  // выбор упражнения: если оно из ещё не включённой дисциплины — тихо включаем её словник
+  const onPickExercise = (ex: Exercise) => {
+    const d = disciplineToEnable(ex, disciplines ?? []);
+    if (d) enableDisciplineMut.mutate(d);
+    addExerciseMut.mutate(ex.id);
+  };
 
   const addSetMut = useMutation({
     mutationFn: (v: { weId: string; input: SetInput }) => addSet(v.weId, v.input),
@@ -620,6 +851,9 @@ export default function WorkoutScreen() {
             index={i + 1}
             set={s}
             unit={unit}
+            metric={we.exercise?.metric ?? 'reps'}
+            logKind={we.exercise?.log_kind ?? null}
+            grippers={grippers ?? []}
             onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
             onToggleDone={onToggleDone}
             onDelete={(setId) => deleteSetMut.mutate(setId)}
@@ -702,6 +936,9 @@ export default function WorkoutScreen() {
                         index={r + 1}
                         set={s}
                         unit={unit}
+                        metric={it.exercise?.metric ?? 'reps'}
+                        logKind={it.exercise?.log_kind ?? null}
+                        grippers={grippers ?? []}
                         headerLabel={exName(it)}
                         onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
                         onToggleDone={onToggleDone}
@@ -815,8 +1052,9 @@ export default function WorkoutScreen() {
 
       <ExercisePicker
         visible={pickerOpen}
+        disciplines={disciplines ?? []}
         onClose={() => setPickerOpen(false)}
-        onSelect={(exerciseId) => addExerciseMut.mutate(exerciseId)}
+        onSelect={onPickExercise}
         onCreate={(name) => createExerciseMut.mutate(name)}
         creating={createExerciseMut.isPending}
       />

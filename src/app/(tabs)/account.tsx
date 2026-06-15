@@ -2,12 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
+import {
+  categoryKey,
+  type Discipline,
+  DISCIPLINES,
+  getDisciplines,
+  setDisciplines,
+} from '@/lib/db/exercises';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -28,6 +35,23 @@ export default function AccountScreen() {
     mutationFn: (v: boolean) => setTrackCycle(userId as string, v),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['track-cycle', userId] }),
   });
+
+  const { data: disciplines } = useQuery({
+    queryKey: ['disciplines', userId],
+    queryFn: () => getDisciplines(userId as string),
+    enabled: !!userId,
+  });
+  const disciplinesMut = useMutation({
+    mutationFn: (list: string[]) => setDisciplines(userId as string, list),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['disciplines', userId] });
+      qc.invalidateQueries({ queryKey: ['exercises-all'] });
+    },
+  });
+  const toggleDiscipline = (d: Discipline) => {
+    const cur = disciplines ?? [];
+    disciplinesMut.mutate(cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]);
+  };
 
   const [language, setLanguage] = useState<AppLanguage>(
     (i18n.language as AppLanguage) === 'uk' ? 'uk' : 'en',
@@ -50,7 +74,11 @@ export default function AccountScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <View className="flex-1 px-6 pt-4">
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 }}
+        showsVerticalScrollIndicator={false}
+      >
         <Text className="text-2xl font-extrabold text-graphite-50">{t('account.title')}</Text>
         {session?.user.email && (
           <Text className="mt-1 text-sm text-graphite-400">{session.user.email}</Text>
@@ -97,6 +125,28 @@ export default function AccountScreen() {
           />
         </View>
 
+        <View className="mt-6 gap-2">
+          <Text className="text-lg font-semibold text-graphite-100">{t('account.disciplines')}</Text>
+          <Text className="text-sm text-graphite-500">{t('account.disciplinesHint')}</Text>
+          <View className="mt-1 flex-row flex-wrap gap-2">
+            {DISCIPLINES.map((d) => {
+              const active = (disciplines ?? []).includes(d);
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => toggleDiscipline(d)}
+                  className="rounded-full px-3 py-1.5 active:opacity-80"
+                  style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+                >
+                  <Text className="text-sm" style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>
+                    {t(categoryKey(d))}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         <Pressable
           onPress={() => router.push('/exercises')}
           className="mt-6 flex-row items-center justify-between active:opacity-70"
@@ -105,15 +155,21 @@ export default function AccountScreen() {
           <Text className="text-xl text-graphite-500">›</Text>
         </Pressable>
 
-        <View className="flex-1" />
+        <Pressable
+          onPress={() => router.push('/grippers')}
+          className="mt-5 flex-row items-center justify-between active:opacity-70"
+        >
+          <Text className="text-lg font-semibold text-graphite-100">{t('account.myGrippers')}</Text>
+          <Text className="text-xl text-graphite-500">›</Text>
+        </Pressable>
 
         <Pressable
           onPress={onSignOut}
-          className="mb-6 items-center rounded-2xl border border-graphite-700 py-4 active:opacity-70"
+          className="mt-10 items-center rounded-2xl border border-graphite-700 py-4 active:opacity-70"
         >
           <Text className="text-base font-semibold text-graphite-300">{t('home.signOut')}</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

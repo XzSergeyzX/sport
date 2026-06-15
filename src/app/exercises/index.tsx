@@ -17,6 +17,7 @@ import {
   type Exercise,
   exerciseName,
   listMyExercises,
+  type Metric,
   updateExercise,
 } from '@/lib/db/exercises';
 import i18n from '@/lib/i18n';
@@ -44,6 +45,7 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
   const [nameEn, setNameEn] = useState(exercise.name_en);
   const [cluster, setCluster] = useState<Cluster | null>(exercise.cluster);
   const [category, setCategory] = useState<Category | null>(exercise.category);
+  const [metric, setMetric] = useState<Metric>(exercise.metric);
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ['my-exercises'] });
@@ -58,6 +60,7 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
         name_uk: nameUk,
         cluster,
         category,
+        metric,
       }),
     onSuccess: done,
   });
@@ -132,6 +135,22 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
               />
             ))}
             <Chip label={t('exercises.none')} active={category === null} onPress={() => setCategory(null)} />
+          </View>
+
+          <Text className="mt-5 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+            {t('exercises.metric')}
+          </Text>
+          <View className="mt-2 flex-row flex-wrap gap-2">
+            <Chip
+              label={t('exercises.metricReps')}
+              active={metric === 'reps'}
+              onPress={() => setMetric('reps')}
+            />
+            <Chip
+              label={t('exercises.metricTime')}
+              active={metric === 'time'}
+              onPress={() => setMetric('time')}
+            />
           </View>
 
           <Pressable

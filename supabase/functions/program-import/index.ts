@@ -45,7 +45,7 @@ Return ONLY a JSON object:
           "catalog_index": number|null,   // number from CATALOG if it matches by meaning (any language), else null
           "notes": string|null,
           "sets": [
-            { "reps": number|null, "weight": number|null, "rpe": number|null, "rest_sec": number|null, "notes": string|null }
+            { "reps": number|null, "duration_sec": number|null, "weight": number|null, "rpe": number|null, "rest_sec": number|null, "notes": string|null }
           ]
         }
       ]
@@ -65,7 +65,9 @@ Rules:
 - "3 жима штанги + 2 швунга (22.5-25 кг)" → two exercises in the same block.
 - "5/5 … на руку", "20/20 сек", "права/ліва рука" mean per-side: keep the per-side number in reps and add "per side" to notes.
 - Weights "8 кг", "22.5-25 кг", "5-10 кг": put the number into weight (range → lower bound).
-- Time holds ("20 сек утримання над головою") → reps null, put the duration into notes.
+- Time holds / planks / hangs / carries measured in time ("20 сек утримання над головою",
+  "планка 60с", "віс 30 сек") → reps null, put the seconds into duration_sec (the number only).
+  "20/20 сек на руку" → duration_sec 20 + "per side" in notes.
 - "4x8" → 4 sets of 8. "120*8*3" → 3 sets of 8 at weight 120. Reps range (8-10) → lower bound.
 - catalog_index: set ONLY when the catalog entry is clearly the SAME exercise (same movement
   AND equipment). For variations, accessory work, band/rubber drills, scapular/holds or anything
@@ -76,6 +78,7 @@ Rules:
 
 type ParsedSet = {
   reps: number | null;
+  duration_sec: number | null;
   weight: number | null;
   rpe: number | null;
   rest_sec: number | null;
@@ -283,6 +286,7 @@ Deno.serve(async (req) => {
             program_exercise_id: pe.id,
             order_index: j,
             target_reps: num(s.reps),
+            target_duration_sec: num(s.duration_sec),
             target_weight: weightToKg(num(s.weight)),
             target_rpe: num(s.rpe),
             rest_sec: num(s.rest_sec),
