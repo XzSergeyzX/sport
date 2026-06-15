@@ -6,6 +6,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
+import { setWeightUnit } from '@/lib/use-unit';
 
 // Гейт навигации. Источник правды об онбординге — профиль в Supabase
 // (синкается между устройствами). Локальный AsyncStorage — оффлайн-фолбэк.
@@ -31,7 +32,7 @@ export default function Index() {
           i18n.changeLanguage(data.language as AppLanguage);
           await AsyncStorage.setItem('app.language', data.language);
         }
-        if (data?.units) await AsyncStorage.setItem('app.weightUnit', data.units);
+        if (data?.units === 'kg' || data?.units === 'lb') setWeightUnit(data.units);
 
         setTarget(data?.onboarded_at ? 'home' : 'onboarding');
       } catch {

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
-import type { WeightUnit } from '@/lib/use-unit';
+import { setWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 /** Применить и сохранить язык: i18n + AsyncStorage + (best-effort) профиль. */
 export async function applyLanguage(lang: AppLanguage, userId?: string): Promise<void> {
@@ -17,9 +17,9 @@ export async function applyLanguage(lang: AppLanguage, userId?: string): Promise
   }
 }
 
-/** Сохранить единицу веса: AsyncStorage + (best-effort) профиль. */
+/** Сохранить единицу веса: реактивный стор (+ AsyncStorage) + (best-effort) профиль. */
 export async function applyUnit(unit: WeightUnit, userId?: string): Promise<void> {
-  await AsyncStorage.setItem('app.weightUnit', unit);
+  setWeightUnit(unit); // обновляет стор и AsyncStorage
   if (userId) {
     try {
       await supabase.from('profile').update({ units: unit }).eq('user_id', userId);

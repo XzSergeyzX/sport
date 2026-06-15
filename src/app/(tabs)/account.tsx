@@ -1,6 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +8,7 @@ import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
-import type { WeightUnit } from '@/lib/use-unit';
+import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 export default function AccountScreen() {
   const { t } = useTranslation();
@@ -20,13 +19,7 @@ export default function AccountScreen() {
   const [language, setLanguage] = useState<AppLanguage>(
     (i18n.language as AppLanguage) === 'uk' ? 'uk' : 'en',
   );
-  const [unit, setUnit] = useState<WeightUnit>('kg');
-
-  useEffect(() => {
-    AsyncStorage.getItem('app.weightUnit').then((v) => {
-      if (v === 'kg' || v === 'lb') setUnit(v);
-    });
-  }, []);
+  const unit = useWeightUnit();
 
   const onChangeLanguage = (next: AppLanguage) => {
     setLanguage(next);
@@ -34,7 +27,6 @@ export default function AccountScreen() {
   };
 
   const onChangeUnit = (next: WeightUnit) => {
-    setUnit(next);
     void applyUnit(next, userId);
   };
 

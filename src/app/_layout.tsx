@@ -11,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
 import { loadStoredLanguage } from '@/lib/prefs';
+import { initWeightUnit } from '@/lib/use-unit';
 
 const queryClient = new QueryClient();
 
@@ -18,15 +19,15 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   // Восстанавливаем язык до рендера маршрутов: при релоаде на /workouts экран-гейт
   // index не выполняется, поэтому язык нужно поднять здесь, иначе сбрасывается на en.
-  const [langReady, setLangReady] = useState(false);
+  const [prefsReady, setPrefsReady] = useState(false);
   useEffect(() => {
-    loadStoredLanguage().then((lng) => {
+    Promise.all([loadStoredLanguage(), initWeightUnit()]).then(([lng]) => {
       if (lng) i18n.changeLanguage(lng);
-      setLangReady(true);
+      setPrefsReady(true);
     });
   }, []);
 
-  if (!langReady) return null;
+  if (!prefsReady) return null;
 
   return (
     <QueryClientProvider client={queryClient}>

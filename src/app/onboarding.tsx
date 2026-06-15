@@ -9,7 +9,7 @@ import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
-import type { WeightUnit } from '@/lib/use-unit';
+import { setWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 export default function OnboardingScreen() {
   const { t } = useTranslation();
@@ -46,9 +46,9 @@ export default function OnboardingScreen() {
           // игнорируем — локальный флаг ниже подстрахует
         }
       }
+      setWeightUnit(unit); // обновляет реактивный стор + AsyncStorage
       await AsyncStorage.multiSet([
         ['app.language', language],
-        ['app.weightUnit', unit],
         ['app.onboarded', 'true'],
       ]);
       router.replace('/workouts');
