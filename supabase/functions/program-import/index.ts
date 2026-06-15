@@ -41,7 +41,7 @@ Return ONLY a JSON object:
       "rest_sec": number|null,    // rest between rounds if stated
       "exercises": [
         {
-          "name": string,                 // verbatim, do not translate
+          "name": string,                 // CLEAN exercise name (see Naming), do not translate
           "catalog_index": number|null,   // number from CATALOG if it matches by meaning (any language), else null
           "notes": string|null,
           "sets": [
@@ -52,6 +52,13 @@ Return ONLY a JSON object:
     }
   ]
 }
+Naming (the "name" field):
+- A CLEAN exercise name only — the base movement. Strip weights ("8 кг"), reps, set/round
+  counts and other numbers. E.g. "млинів на руку з гирею 8 кг" → "Млини на руку";
+  "10 тяг штанги в нахилі (30 кг)" → "Тяга штанги в нахилі". Prefer singular nominative.
+- Unilateral (per arm/leg: "права/ліва рука", "5/5 … на руку", alternating each minute) →
+  put it in the name: "Жим сидячи однією рукою". Bilateral → no "однією".
+
 Rules:
 - Standalone strength moves → their own "single" block.
 - "10 тяг штанги в нахилі (30 кг)" → 1 set, reps 10, weight 30.

@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { fromKg, type WeightUnit } from '@/lib/use-unit';
 
-import { addSet, addWorkoutExercise, startWorkout } from './workouts';
+import { startWorkout } from './workouts';
 
 export type ProgramSet = {
   id: string;
@@ -166,39 +166,76 @@ export async function startWorkoutFromProgram(
   const detail = await getProgramDetail(programId);
   const workout = await startWorkout(userId);
 
-  let order = 0;
+  // Собираем всё заранее и вставляем пакетно (без десятков последовательных запросов).
+  type WeRow = {
+    workout_id: string;
+    exercise_id: string;
+    order_index: number;
+    display_name: string;
+    block_key: string | null;
+    block_label: string | null;
+    block_rounds: number | null;
+    block_type: string | null;
+    block_interval_sec: number | null;
+  };
+  const weRows: WeRow[] = [];
+  const setPlan: { weIndex: number; weight: number | null; reps: number | null }[] = [];
+
   for (const group of groupProgram(detail)) {
     const block = group.block;
-    // кластер = не одиночный блок, либо в блоке больше одного упражнения
     const isCluster = !!block && (block.type !== 'single' || group.exercises.length > 1);
-    // число раундов: для EMOM/E2MOM считаем = длительность ÷ интервал ÷ кол-во упражнений
+    // EMOM/E2MOM: круги = длительность ÷ интервал ÷ кол-во упражнений; иначе rounds или 1
     const repeat = isCluster ? blockRounds(block!, group.exercises.length) : 1;
-    const blockArg = isCluster
-      ? {
-          key: block!.id,
-          label: block!.label ?? null,
-          rounds: repeat,
-          type: block!.type ?? null,
-          intervalSec: block!.interval_sec ?? null,
-        }
-      : undefined;
 
     for (const pe of group.exercises) {
       if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
-      const weId = await addWorkoutExercise(workout.id, pe.exercise_id, order++, blockArg);
+      const weIndex = weRows.length;
+      weRows.push({
+        workout_id: workout.id,
+        exercise_id: pe.exercise_id,
+        order_index: weIndex,
+        display_name: pe.name,
+        block_key: isCluster ? block!.id : null,
+        block_label: isCluster ? (block!.label ?? null) : null,
+        block_rounds: isCluster ? repeat : null,
+        block_type: isCluster ? (block!.type ?? null) : null,
+        block_interval_sec: isCluster ? (block!.interval_sec ?? null) : null,
+      });
       const baseSets = pe.program_sets.length ? pe.program_sets : [null];
       for (let r = 0; r < repeat; r++) {
         for (const ps of baseSets) {
           const w = ps ? fromKg(ps.target_weight, unit) : null;
-          await addSet(weId, {
+          setPlan.push({
+            weIndex,
             weight: w == null ? null : Math.round(w * 10) / 10,
             reps: ps ? ps.target_reps : null,
-            rpe: null, // RPE субъективно — заполняется по факту
-            rest_sec: null, // отдых меряется автоматически в сессии
           });
         }
       }
     }
+  }
+
+  if (weRows.length === 0) return workout.id;
+
+  // 1 запрос: вставляем упражнения, получаем id (order_index === weIndex)
+  const { data: inserted, error: weErr } = await supabase
+    .from('workout_exercises')
+    .insert(weRows)
+    .select('id, order_index');
+  if (weErr) throw weErr;
+  const idByIndex = new Map<number, string>(
+    (inserted ?? []).map((r) => [r.order_index as number, r.id as string]),
+  );
+
+  // 1 запрос: вставляем все подходы
+  const setRows = setPlan.map((p) => ({
+    workout_exercise_id: idByIndex.get(p.weIndex) as string,
+    weight: p.weight,
+    reps: p.reps,
+  }));
+  if (setRows.length) {
+    const { error: sErr } = await supabase.from('sets').insert(setRows);
+    if (sErr) throw sErr;
   }
   return workout.id;
 }

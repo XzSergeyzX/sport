@@ -258,17 +258,21 @@ function SetRow({
     value: string,
     onChange: (v: string) => void,
     placeholder: string,
+    caption: string,
     keyboardType: KeyboardTypeOptions = 'decimal-pad',
   ) => (
-    <TextInput
-      value={value}
-      onChangeText={onChange}
-      onEndEditing={() => save()}
-      placeholder={placeholder}
-      placeholderTextColor={PLACEHOLDER}
-      keyboardType={keyboardType}
-      className="flex-1 rounded-lg bg-graphite-800 px-2 py-2 text-center text-sm text-graphite-50"
-    />
+    <View className="flex-1">
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        onEndEditing={() => save()}
+        placeholder={placeholder}
+        placeholderTextColor={PLACEHOLDER}
+        keyboardType={keyboardType}
+        className="rounded-lg bg-graphite-800 px-2 py-2 text-center text-sm text-graphite-50"
+      />
+      <Text className="mt-0.5 text-center text-[10px] text-graphite-600">{caption}</Text>
+    </View>
   );
 
   return (
@@ -285,9 +289,9 @@ function SetRow({
           <Text className="text-xs text-graphite-600">✕</Text>
         </Pressable>
       </View>
-      <View className="flex-row items-center gap-2">
-        {field(weight, setWeight, `${t('workout.weight')}, ${t(`common.${unit}`)}`)}
-        {field(reps, setReps, t('workout.reps'), 'number-pad')}
+      <View className="flex-row items-start gap-2">
+        {field(weight, setWeight, t('workout.weight'), t(`common.${unit}`))}
+        {field(reps, setReps, t('workout.reps'), t('workout.repsShort'), 'number-pad')}
         <Pressable
           onPress={() => setRpeOpen(true)}
           className="flex-1 flex-row items-center justify-center gap-1.5 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
@@ -464,10 +468,8 @@ export default function WorkoutScreen() {
   const lang = i18n.language;
   const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
-  // локально развёрнутые завершённые упражнения (по тапу на свёрнутую карточку)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // свёрнутые кластеры (круги/EMOM/суперсеты)
-  const [clusterCol, setClusterCol] = useState<Record<string, boolean>>({});
+  // свёрнутость групп (упражнение или кластер) по ключу; по умолчанию открыт только первый
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const { data: workout, isLoading } = useQuery({
     queryKey: ['workout', workoutId],
@@ -487,6 +489,18 @@ export default function WorkoutScreen() {
         }
     return max || null;
   }, [workout]);
+
+  // при загрузке тренировки: первый блок/упражнение развёрнут, остальные свёрнуты
+  useEffect(() => {
+    if (!workout) return;
+    const keys: string[] = [];
+    for (const we of workout.workout_exercises) {
+      const k = we.block_key ?? we.id;
+      if (!keys.includes(k)) keys.push(k);
+    }
+    setCollapsed(Object.fromEntries(keys.map((k, i) => [k, i !== 0])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workout?.id]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['workout', workoutId] });
 
@@ -555,50 +569,51 @@ export default function WorkoutScreen() {
   });
 
   // одно упражнение-карточка (свёрнутая/развёрнутая). nested — внутри кластера (другой фон).
-  const renderExercise = (we: WorkoutExercise, nested = false) => {
-    const name = we.exercise ? exerciseName(we.exercise, lang) : '—';
-    const collapsed = !!we.done_at && !expanded[we.id];
+  const exName = (we: WorkoutExercise) =>
+    we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—');
+
+  const renderExercise = (we: WorkoutExercise) => {
+    const key = we.id;
+    const isCollapsed = !!collapsed[key];
+    const name = exName(we);
     const doneSets = we.sets.filter((s) => s.logged_at);
     const best = doneSets.reduce<SetRowType | null>(
       (b, s) => ((s.weight ?? 0) > (b?.weight ?? -1) ? s : b),
       null,
     );
-    const cardBg = nested ? 'bg-graphite-800' : 'bg-graphite-900';
 
-    if (collapsed) {
+    if (isCollapsed) {
+      const sub = doneSets.length
+        ? `${setsLabel(doneSets.length)}${
+            best?.weight != null
+              ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
+              : ''
+          }`
+        : setsLabel(we.sets.length);
       return (
         <Pressable
-          key={we.id}
-          onPress={() => setExpanded((e) => ({ ...e, [we.id]: true }))}
-          className={`flex-row items-center justify-between rounded-2xl ${cardBg} p-4 active:opacity-80`}
+          key={key}
+          onPress={() => setCollapsed((c) => ({ ...c, [key]: false }))}
+          className="flex-row items-center justify-between rounded-2xl bg-graphite-900 p-4 active:opacity-80"
         >
           <View className="flex-1">
             <Text className="text-base font-bold text-graphite-100">{name}</Text>
-            <Text className="mt-0.5 text-xs text-graphite-500">
-              {setsLabel(doneSets.length)}
-              {best?.weight != null
-                ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
-                : ''}
-            </Text>
+            <Text className="mt-0.5 text-xs text-graphite-500">{sub}</Text>
           </View>
-          <Text className="ml-2 text-base text-accent">✓</Text>
+          <Text className="ml-2 text-base text-accent">{we.done_at ? '✓' : '▼'}</Text>
         </Pressable>
       );
     }
 
     return (
-      <View key={we.id} className={`rounded-2xl ${cardBg} p-4`}>
-        {we.done_at ? (
-          <Pressable
-            onPress={() => setExpanded((e) => ({ ...e, [we.id]: false }))}
-            className="flex-row items-center justify-between active:opacity-80"
-          >
-            <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
-            <Text className="ml-2 text-graphite-500">▲</Text>
-          </Pressable>
-        ) : (
-          <Text className="text-base font-bold text-graphite-50">{name}</Text>
-        )}
+      <View key={key} className="rounded-2xl bg-graphite-900 p-4">
+        <Pressable
+          onPress={() => setCollapsed((c) => ({ ...c, [key]: true }))}
+          className="flex-row items-center justify-between active:opacity-80"
+        >
+          <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
+          <Text className="ml-2 text-graphite-500">▲</Text>
+        </Pressable>
         {we.sets.map((s, i) => (
           <SetRow
             key={s.id}
@@ -629,7 +644,7 @@ export default function WorkoutScreen() {
             <Pressable
               onPress={() => {
                 finishExerciseMut.mutate({ weId: we.id, done: true });
-                setExpanded((e) => ({ ...e, [we.id]: false }));
+                setCollapsed((c) => ({ ...c, [key]: true }));
               }}
               className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
             >
@@ -643,7 +658,7 @@ export default function WorkoutScreen() {
 
   // кластер (круг/EMOM/суперсет): рендерим раунд-за-раундом — все упражнения одного раунда подряд
   const renderCluster = (g: WGroup) => {
-    const collapsed = clusterCol[g.key];
+    const isCollapsed = !!collapsed[g.key];
     const totalSets = g.items.reduce((n, it) => n + it.sets.length, 0);
     const doneSets = g.items.reduce((n, it) => n + it.sets.filter((s) => s.logged_at).length, 0);
     const maxRounds = g.items.reduce((m, it) => Math.max(m, it.sets.length), 0);
@@ -653,7 +668,7 @@ export default function WorkoutScreen() {
     return (
       <View key={g.key} className="rounded-2xl bg-graphite-900 p-3">
         <Pressable
-          onPress={() => setClusterCol((c) => ({ ...c, [g.key]: !c[g.key] }))}
+          onPress={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
           className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
         >
           <View className="flex-1">
@@ -662,10 +677,10 @@ export default function WorkoutScreen() {
             </Text>
             {g.rounds ? <Text className="mt-0.5 text-xs text-graphite-400">{g.rounds}×</Text> : null}
           </View>
-          <Text className="ml-2 text-graphite-500">{collapsed ? '▼' : '▲'}</Text>
+          <Text className="ml-2 text-graphite-500">{isCollapsed ? '▼' : '▲'}</Text>
         </Pressable>
 
-        {collapsed ? (
+        {isCollapsed ? (
           <Text className="px-3 pt-2 text-xs text-graphite-500">
             {doneSets}/{totalSets} ✓
           </Text>
@@ -687,7 +702,7 @@ export default function WorkoutScreen() {
                         index={r + 1}
                         set={s}
                         unit={unit}
-                        headerLabel={it.exercise ? exerciseName(it.exercise, lang) : '—'}
+                        headerLabel={exName(it)}
                         onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
                         onToggleDone={onToggleDone}
                         onDelete={(setId) => deleteSetMut.mutate(setId)}
@@ -709,7 +724,7 @@ export default function WorkoutScreen() {
                 onPress={() => {
                   const done = !allDone;
                   g.items.forEach((it) => finishExerciseMut.mutate({ weId: it.id, done }));
-                  if (done) setClusterCol((c) => ({ ...c, [g.key]: true }));
+                  setCollapsed((c) => ({ ...c, [g.key]: done }));
                 }}
                 className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
               >

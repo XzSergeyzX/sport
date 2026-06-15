@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
@@ -144,6 +144,19 @@ export default function ProgramDetailScreen() {
           </Pressable>
         </View>
       )}
+
+      <Modal visible={startMut.isPending} transparent animationType="fade">
+        <View
+          className="flex-1 items-center justify-center px-10"
+          style={{ backgroundColor: 'rgba(8,10,14,0.92)' }}
+        >
+          <ActivityIndicator size="large" color="#1FB89A" />
+          <Text className="mt-5 text-lg font-extrabold text-graphite-50">
+            {t('programs.loadingTitle')}
+          </Text>
+          <Text className="mt-2 text-center text-sm text-graphite-400">{t('programs.loadingSub')}</Text>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

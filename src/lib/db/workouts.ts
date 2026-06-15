@@ -25,6 +25,7 @@ export type WorkoutExercise = {
   block_rounds: number | null;
   block_type: string | null;
   block_interval_sec: number | null;
+  display_name: string | null;
   exercise: Exercise | null;
   sets: SetRow[];
 };

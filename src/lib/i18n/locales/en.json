@@ -71,7 +71,9 @@
     "errProvider": "AI provider isn't configured yet.",
     "errParse": "Couldn't read that plan. Try rephrasing it.",
     "errEmpty": "Paste a plan first.",
-    "errGeneric": "Import failed. Please try again."
+    "errGeneric": "Import failed. Please try again.",
+    "loadingTitle": "Loading your program",
+    "loadingSub": "Preparing exercises and sets — almost there…"
   },
   "blockTypes": {
     "rounds": "Rounds",
@@ -196,6 +198,7 @@
     "emomHint": "EMOM timer — tap start",
     "startTimer": "Start",
     "stopTimer": "Stop",
+    "repsShort": "reps",
     "restNow": "Rest",
     "restAuto": "Rest is captured when you mark a set done (✓ or after picking RPE).",
     "rest": "rest",
