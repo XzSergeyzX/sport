@@ -9,10 +9,20 @@
 ### ✅ Сделано
 - **Реактивная смена kg/lb** — единица в общем сторе (`useSyncExternalStore`, `src/lib/use-unit.ts`); смена в Акаунте обновляет экраны мгновенно. Инициализация на старте (`_layout`), обновление из профиля (гейт), онбординга и Акаунта через `setWeightUnit`/`applyUnit`.
 - Подтянул работу с дома (табы / RPE / таксономия / каталог 82); проверил: tsc + web-бандл зелёные, миграции в облаке применены.
+- **OURA через PAT — заложено (ждёт деплоя + токена).** Решили PAT, не полный OAuth (для 2 юзеров проще).
+  - Миграция `20260615120000_oura_pat_and_cycle.sql`: PAT-режим `private.oura_tokens` (refresh/expiry nullable), флаг `profile.oura_connected`, поля `health_snapshots.cycle_day/cycle_phase`, таблица `cycle_periods`, security-definer RPC `store_oura_token`/`get_oura_token` (схема private не экспонирована).
+  - Edge Functions: `oura-connect` (валидирует токен у OURA + хранит), `oura-sync` (тянет daily_readiness/daily_sleep → `health_snapshots`).
+  - UI вкладки Здоров'я: вставка PAT → подключение → Readiness/Sleep + «Оновити». Слой данных `src/lib/db/oura.ts`.
+
+### 🚧 TODO по OURA (деплой)
+- [ ] `npx supabase db push` (применить миграцию)
+- [ ] `npx supabase functions deploy oura-connect oura-sync`
+- [ ] Позже: Маша генерит OURA Personal Access Token (cloud.ouraring.com) и вставляет во вкладке Здоров'я; отладка с реальным кольцом.
+- [ ] HRV/RHR пока не маппятся (только readiness/sleep score + raw) — уточнить поля на реальных данных. Цикл: схема готова, расчёт фазы + сид дат Маши — позже.
 
 ### 🔜 Дальше (порядок согласован: 4 → 2 → 1)
-1. **OURA + цикл** (§3.5) — следующее. Нужно: регистрация OURA OAuth-приложения (client_id/secret), кольцо Маши.
-2. Программы + ИИ-импорт (§3.7).
+1. ~~kg/lb вживую~~ ✅ · ~~OURA заложить~~ ✅ (ждёт деплоя)
+2. **Программы + ИИ-импорт** (§3.7) — следующее крупное.
 3. Аналитика (фаза 2).
 
 ---
