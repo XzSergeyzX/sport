@@ -41,3 +41,26 @@ export function useWeightUnit(): WeightUnit {
     () => current,
   );
 }
+
+// ---- Конвертация веса (канонически храним в кг) ----
+const LB_PER_KG = 2.2046226218;
+
+/** кг → выбранная единица (число). */
+export function fromKg(kg: number | null | undefined, unit: WeightUnit): number | null {
+  if (kg == null) return null;
+  return unit === 'lb' ? kg * LB_PER_KG : kg;
+}
+
+/** выбранная единица → кг (для записи). */
+export function toKg(value: number | null | undefined, unit: WeightUnit): number | null {
+  if (value == null) return null;
+  return unit === 'lb' ? value / LB_PER_KG : value;
+}
+
+/** кг → строка в выбранной единице (целое без дробной части, иначе один знак). */
+export function formatWeight(kg: number | null | undefined, unit: WeightUnit): string {
+  const v = fromKg(kg, unit);
+  if (v == null) return '';
+  const r = Math.round(v * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}

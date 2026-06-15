@@ -1,6 +1,8 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Text } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
+
+import { useAuth } from '@/lib/auth/auth-context';
 
 const ACTIVE = '#1FB89A';
 const INACTIVE = '#5C6675';
@@ -13,6 +15,19 @@ function icon(glyph: string) {
 
 export default function TabsLayout() {
   const { t } = useTranslation();
+  const { session, initializing } = useAuth();
+
+  // Гард: на табы можно попасть прямым deep-link (скан QR), минуя гейт index.tsx.
+  // Без сессии — выкидываем на вход, иначе экраны грузятся «без пользователя».
+  if (initializing) {
+    return (
+      <View className="flex-1 items-center justify-center bg-graphite-950">
+        <ActivityIndicator color="#848D9A" />
+      </View>
+    );
+  }
+  if (!session) return <Redirect href="/auth" />;
+
   return (
     <Tabs
       screenOptions={{

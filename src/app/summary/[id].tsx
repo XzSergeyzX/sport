@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
 import { getWorkoutDetail, workoutStats } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
@@ -31,11 +32,15 @@ export default function SummaryScreen() {
   const router = useRouter();
   const unit = useWeightUnit();
   const lang = i18n.language;
+  const { session, initializing } = useAuth();
 
   const { data: workout, isLoading } = useQuery({
     queryKey: ['workout', workoutId],
     queryFn: () => getWorkoutDetail(workoutId),
+    enabled: !!session,
   });
+
+  if (!initializing && !session) return <Redirect href="/auth" />;
 
   if (isLoading || !workout) {
     return (

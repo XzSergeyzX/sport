@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -33,6 +33,7 @@ import {
   type SetRow as SetRowType,
   updateSet,
 } from '@/lib/db/workouts';
+import { useAuth } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
 import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
@@ -363,6 +364,7 @@ export default function WorkoutScreen() {
   const unit = useWeightUnit();
   const insets = useSafeAreaInsets();
   const lang = i18n.language;
+  const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
   // момент последнего зафиксированного подхода (для авто-отдыха)
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -370,6 +372,7 @@ export default function WorkoutScreen() {
   const { data: workout, isLoading } = useQuery({
     queryKey: ['workout', workoutId],
     queryFn: () => getWorkoutDetail(workoutId),
+    enabled: !!session,
   });
 
   // инициализируем якорь по последнему подходу (на случай перезахода в сессию)
@@ -426,6 +429,8 @@ export default function WorkoutScreen() {
     addSetMut.mutate({ weId, input: { rest_sec: rest } });
     setAnchor(now);
   };
+
+  if (!initializing && !session) return <Redirect href="/auth" />;
 
   if (isLoading || !workout) {
     return (
