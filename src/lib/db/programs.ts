@@ -137,6 +137,24 @@ export async function deleteProgram(id: string): Promise<void> {
 }
 
 /**
+ * Сколько раундов делать в блоке.
+ * EMOM/E2MOM: длительность ÷ интервал ÷ кол-во упражнений (EMOM16, 4 упр., 60с → 4).
+ * Иначе — заданные rounds (3 кола → 3) или 1.
+ */
+export function blockRounds(block: ProgramBlock, exerciseCount: number): number {
+  if (block.rounds && block.rounds > 0) return block.rounds;
+  if (
+    (block.type === 'emom' || block.type === 'e2mom') &&
+    block.duration_sec &&
+    block.interval_sec &&
+    exerciseCount > 0
+  ) {
+    return Math.max(1, Math.floor(block.duration_sec / (block.interval_sec * exerciseCount)));
+  }
+  return 1;
+}
+
+/**
  * Старт тренировки из программы: создаёт сессию и префиллит упражнения/подходы
  * плановыми значениями (вес из канонических кг → в активную единицу). Возвращает id тренировки.
  */
@@ -153,11 +171,17 @@ export async function startWorkoutFromProgram(
     const block = group.block;
     // кластер = не одиночный блок, либо в блоке больше одного упражнения
     const isCluster = !!block && (block.type !== 'single' || group.exercises.length > 1);
+    // число раундов: для EMOM/E2MOM считаем = длительность ÷ интервал ÷ кол-во упражнений
+    const repeat = isCluster ? blockRounds(block!, group.exercises.length) : 1;
     const blockArg = isCluster
-      ? { key: block!.id, label: block!.label ?? null, rounds: block!.rounds ?? null }
+      ? {
+          key: block!.id,
+          label: block!.label ?? null,
+          rounds: repeat,
+          type: block!.type ?? null,
+          intervalSec: block!.interval_sec ?? null,
+        }
       : undefined;
-    // круги (rounds) разворачиваем в подходы: 3 кола × 1 подход = 3 подхода
-    const repeat = isCluster && block?.rounds ? block.rounds : 1;
 
     for (const pe of group.exercises) {
       if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить

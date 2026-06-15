@@ -173,6 +173,46 @@ function RestNow({ anchor }: { anchor: number | null }) {
   );
 }
 
+// Минутный таймер EMOM/E2MOM — «как факт»: показывает текущий интервал и сколько осталось.
+function EmomTimer({ intervalSec }: { intervalSec: number }) {
+  const { t } = useTranslation();
+  const [start, setStart] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const running = start != null;
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [running]);
+  const elapsed = running ? Math.max(0, Math.floor((now - start!) / 1000)) : 0;
+  const interval = Math.floor(elapsed / intervalSec) + 1;
+  const left = intervalSec - (elapsed % intervalSec);
+  return (
+    <View className="mb-3 flex-row items-center justify-between rounded-xl bg-graphite-800 px-3 py-2">
+      <Text className="text-xs text-graphite-400">
+        {running ? `${t('workout.interval')} ${interval} · ${left}s` : t('workout.emomHint')}
+      </Text>
+      <View className="flex-row items-center gap-3">
+        {running && <Text className="text-sm font-bold text-accent">{fmt(elapsed)}</Text>}
+        <Pressable
+          onPress={() => {
+            if (running) setStart(null);
+            else {
+              setNow(Date.now());
+              setStart(Date.now());
+            }
+          }}
+          hitSlop={6}
+        >
+          <Text className="text-sm font-bold text-accent">
+            {running ? t('workout.stopTimer') : t('workout.startTimer')}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function SetRow({
   index,
   set,
@@ -180,6 +220,7 @@ function SetRow({
   onSave,
   onToggleDone,
   onDelete,
+  headerLabel,
 }: {
   index: number;
   set: SetRowType;
@@ -187,6 +228,7 @@ function SetRow({
   onSave: (id: string, input: SetInput) => void;
   onToggleDone: (set: SetRowType) => void;
   onDelete: (id: string) => void;
+  headerLabel?: string;
 }) {
   const { t } = useTranslation();
   const [weight, setWeight] = useState(set.weight?.toString() ?? '');
@@ -235,8 +277,8 @@ function SetRow({
       style={{ backgroundColor: done ? 'rgba(31,184,154,0.08)' : 'rgba(12,14,18,0.4)' }}
     >
       <View className="mb-1 flex-row items-center justify-between px-1">
-        <Text className="text-xs text-graphite-500">
-          {t('workout.set')} {index}
+        <Text className="text-xs text-graphite-500" numberOfLines={1}>
+          {headerLabel ?? `${t('workout.set')} ${index}`}
           {done && set.rest_sec != null ? `  ·  ${t('workout.rest')} ${fmt(set.rest_sec)}` : ''}
         </Text>
         <Pressable onPress={() => onDelete(set.id)} hitSlop={8}>
@@ -401,6 +443,15 @@ function ExercisePicker({
     </Modal>
   );
 }
+
+type WGroup = {
+  key: string;
+  label: string | null;
+  rounds: number | null;
+  type: string | null;
+  intervalSec: number | null;
+  items: WorkoutExercise[];
+};
 
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -590,15 +641,105 @@ export default function WorkoutScreen() {
     );
   };
 
+  // кластер (круг/EMOM/суперсет): рендерим раунд-за-раундом — все упражнения одного раунда подряд
+  const renderCluster = (g: WGroup) => {
+    const collapsed = clusterCol[g.key];
+    const totalSets = g.items.reduce((n, it) => n + it.sets.length, 0);
+    const doneSets = g.items.reduce((n, it) => n + it.sets.filter((s) => s.logged_at).length, 0);
+    const maxRounds = g.items.reduce((m, it) => Math.max(m, it.sets.length), 0);
+    const allDone = g.items.length > 0 && g.items.every((it) => it.done_at);
+    const isEmom = (g.type === 'emom' || g.type === 'e2mom') && !!g.intervalSec;
+
+    return (
+      <View key={g.key} className="rounded-2xl bg-graphite-900 p-3">
+        <Pressable
+          onPress={() => setClusterCol((c) => ({ ...c, [g.key]: !c[g.key] }))}
+          className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
+        >
+          <View className="flex-1">
+            <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+              {g.label || t('blockTypes.rounds')}
+            </Text>
+            {g.rounds ? <Text className="mt-0.5 text-xs text-graphite-400">{g.rounds}×</Text> : null}
+          </View>
+          <Text className="ml-2 text-graphite-500">{collapsed ? '▼' : '▲'}</Text>
+        </Pressable>
+
+        {collapsed ? (
+          <Text className="px-3 pt-2 text-xs text-graphite-500">
+            {doneSets}/{totalSets} ✓
+          </Text>
+        ) : (
+          <View className="mt-2">
+            {isEmom && <EmomTimer intervalSec={g.intervalSec!} />}
+            {Array.from({ length: maxRounds }).map((_, r) => (
+              <View key={r} className="mb-3">
+                <Text className="mb-1 text-xs font-bold uppercase tracking-wide text-graphite-500">
+                  {t('workout.round', { n: r + 1 })}
+                </Text>
+                <View className="gap-2">
+                  {g.items.map((it) => {
+                    const s = it.sets[r];
+                    if (!s) return null;
+                    return (
+                      <SetRow
+                        key={s.id}
+                        index={r + 1}
+                        set={s}
+                        unit={unit}
+                        headerLabel={it.exercise ? exerciseName(it.exercise, lang) : '—'}
+                        onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
+                        onToggleDone={onToggleDone}
+                        onDelete={(setId) => deleteSetMut.mutate(setId)}
+                      />
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+            <View className="mt-1 flex-row gap-2">
+              <Pressable
+                disabled={addSetMut.isPending}
+                onPress={() => g.items.forEach((it) => addSetMut.mutate({ weId: it.id, input: {} }))}
+                className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+              >
+                <Text className="text-sm font-semibold text-graphite-200">{t('workout.addRound')}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const done = !allDone;
+                  g.items.forEach((it) => finishExerciseMut.mutate({ weId: it.id, done }));
+                  if (done) setClusterCol((c) => ({ ...c, [g.key]: true }));
+                }}
+                className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
+              >
+                <Text className="text-sm font-bold text-graphite-100">
+                  {allDone ? t('workout.reopenBlock') : t('workout.finishBlock')}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   // группируем подряд идущие упражнения одного кластера (block_key)
-  const wgroups: { key: string; label: string | null; rounds: number | null; items: WorkoutExercise[] }[] =
-    [];
+  const wgroups: WGroup[] = [];
   for (const we of workout?.workout_exercises ?? []) {
     const last = wgroups[wgroups.length - 1];
     if (we.block_key && last && last.key === we.block_key) last.items.push(we);
     else if (we.block_key)
-      wgroups.push({ key: we.block_key, label: we.block_label, rounds: we.block_rounds, items: [we] });
-    else wgroups.push({ key: we.id, label: null, rounds: null, items: [we] });
+      wgroups.push({
+        key: we.block_key,
+        label: we.block_label,
+        rounds: we.block_rounds,
+        type: we.block_type,
+        intervalSec: we.block_interval_sec,
+        items: [we],
+      });
+    else
+      wgroups.push({ key: we.id, label: null, rounds: null, type: null, intervalSec: null, items: [we] });
   }
 
   if (!initializing && !session) return <Redirect href="/auth" />;
@@ -638,35 +779,7 @@ export default function WorkoutScreen() {
           )}
           {wgroups.map((g) => {
             const isCluster = g.label != null || g.items.length > 1;
-            if (!isCluster) return renderExercise(g.items[0]);
-
-            const collapsed = clusterCol[g.key];
-            const doneCount = g.items.filter((we) => we.done_at).length;
-            return (
-              <View key={g.key} className="rounded-2xl bg-graphite-900 p-3">
-                <Pressable
-                  onPress={() => setClusterCol((c) => ({ ...c, [g.key]: !c[g.key] }))}
-                  className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
-                >
-                  <View className="flex-1">
-                    <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
-                      {g.label || t('blockTypes.rounds')}
-                    </Text>
-                    {g.rounds ? (
-                      <Text className="mt-0.5 text-xs text-graphite-400">{g.rounds}×</Text>
-                    ) : null}
-                  </View>
-                  <Text className="ml-2 text-graphite-500">{collapsed ? '▼' : '▲'}</Text>
-                </Pressable>
-                {collapsed ? (
-                  <Text className="px-3 pt-2 text-xs text-graphite-500">
-                    {doneCount}/{g.items.length} ✓
-                  </Text>
-                ) : (
-                  <View className="mt-2 gap-2">{g.items.map((we) => renderExercise(we, true))}</View>
-                )}
-              </View>
-            );
+            return isCluster ? renderCluster(g) : renderExercise(g.items[0]);
           })}
         </ScrollView>
 

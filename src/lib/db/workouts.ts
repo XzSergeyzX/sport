@@ -23,6 +23,8 @@ export type WorkoutExercise = {
   block_key: string | null;
   block_label: string | null;
   block_rounds: number | null;
+  block_type: string | null;
+  block_interval_sec: number | null;
   exercise: Exercise | null;
   sets: SetRow[];
 };
@@ -117,7 +119,13 @@ export async function addWorkoutExercise(
   workoutId: string,
   exerciseId: string,
   orderIndex: number,
-  block?: { key: string; label: string | null; rounds: number | null },
+  block?: {
+    key: string;
+    label: string | null;
+    rounds: number | null;
+    type: string | null;
+    intervalSec: number | null;
+  },
 ): Promise<string> {
   const { data, error } = await supabase
     .from('workout_exercises')
@@ -128,6 +136,8 @@ export async function addWorkoutExercise(
       block_key: block?.key ?? null,
       block_label: block?.label ?? null,
       block_rounds: block?.rounds ?? null,
+      block_type: block?.type ?? null,
+      block_interval_sec: block?.intervalSec ?? null,
     })
     .select('id')
     .single();
