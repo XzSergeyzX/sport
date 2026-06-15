@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-15 (день-14) — OURA: богатый дневной снимок + сохранение каждого дня
+
+### ✅ Сделано
+- **Чиним накопление истории.** Раньше `oura-sync` тянул 2 дня и сохранял **только последний** (перезапись) — ряд не копился. Теперь тянет диапазон (по умолчанию **30 дней**, можно `body.days` до 180) и **апсертит КАЖДЫЙ день** (`onConflict user_id,date`) → накапливается time-series для аналитики.
+- **Тянем всё, что отдаёт OURA v2:** `daily_readiness`, `daily_sleep`, `sleep` (детальный), `daily_activity`, `daily_spo2`, `daily_stress`, `daily_resilience`, `daily_cardiovascular_age`, `vO2_max`. Отсутствующие/недоступные эндпоинты тихо пропускаются.
+- **Богатый снимок дня** (миграция `20260615250000`): колонки — recovery (readiness, temp, temp_trend), sleep (hrv, rhr, avg_hr, respiratory_rate, total/deep/rem/light/in-bed мин, efficiency, latency, restless, bedtime_start/end), activity (score, steps, active/total ккал, дистанция, MET, времена активности), spo2_avg, breathing_disturbance_idx, stress_high/recovery_high мин + summary, resilience_level, vascular_age, vo2_max. Плюс `*_contributors` (jsonb) и полный `raw` — ничего не теряем.
+- Клиент: `oura.ts` — расширен тип `HealthSnapshot`, добавлен `getSnapshotsRange(userId, from)` для будущей аналитики «по календарю». Экран Здоров'я работает как прежде (читает `raw`).
+- Проверка: `tsc` ✅.
+
+### 🚧 TODO (деплой) — ты
+- [ ] `npx supabase db push` (миграция `20260615250000`)
+- [ ] `npx supabase functions deploy oura-sync`
+- [ ] В приложке Здоров'я → «Оновити» (подтянет 30 дней истории). Цикл (`cycle_day/phase`) аналитика выведет из `cycle_periods` при джойне по дате — отдельной записи в снимок не требует.
+
+### ⏭️ Следующее
+- **Аналитика** (фаза 2): связки readiness/сон/HRV/цикл ↔ лёгкость/успешность тренировок, тренды, тоннаж/1ПМ/PR, прогресс по эспандеру.
+
+---
+
 ## 2026-06-15 (день-13) — ревизия каталога: база + словники дисциплін + сила хвата
 
 ### ✅ Сделано

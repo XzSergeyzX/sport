@@ -1,4 +1,5 @@
-// Тянет дневные данные OURA (readiness + sleep) и пишет снимок в health_snapshots.
+// Тянет дневные данные OURA (всё, что отдаёт v2) за диапазон и пишет снимок на КАЖДЫЙ день
+// в health_snapshots (upsert по user_id+date → копится time-series для аналитики).
 // Токен читается из private.oura_tokens через security-definer RPC (только service_role).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -15,17 +16,27 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-type OuraDay = { day?: string; score?: number; temperature_deviation?: number };
-type OuraSleep = {
-  day?: string;
-  type?: string;
-  average_hrv?: number;
-  lowest_heart_rate?: number;
-  average_breath?: number;
-  total_sleep_duration?: number;
-  efficiency?: number;
+const num = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
+// секунды → минуты (округляем); OURA отдаёт длительности в секундах
+const min = (sec: unknown): number | null => {
+  const n = num(sec);
+  return n == null ? null : Math.round(n / 60);
 };
-type OuraActivity = { day?: string; score?: number; steps?: number; active_calories?: number };
+
+type Row = Record<string, unknown>;
+
+/** Индекс «день → документ». Последний выигрывает; опц. предпочтение по предикату (long_sleep). */
+function byDay<T extends { day?: string }>(arr: T[], prefer?: (t: T) => boolean): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const it of arr) {
+    if (!it?.day) continue;
+    const cur = m.get(it.day);
+    if (!cur) m.set(it.day, it);
+    else if (prefer && prefer(it) && !prefer(cur)) m.set(it.day, it);
+  }
+  return m;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -50,55 +61,129 @@ Deno.serve(async (req) => {
     if (tokErr) return json({ error: tokErr.message }, 500);
     if (!token) return json({ error: 'not_connected' }, 400);
 
+    // диапазон бэкафилла (по умолчанию 30 дней; можно передать body.days)
+    const body = await req.json().catch(() => ({}));
+    const days = Math.min(Math.max(Number(body?.days) || 30, 1), 180);
     const end = new Date();
-    const start = new Date(end.getTime() - 2 * 86400000);
+    const start = new Date(end.getTime() - days * 86400000);
     const range = `start_date=${ymd(start)}&end_date=${ymd(end)}`;
     const headers = { Authorization: `Bearer ${token}` };
 
-    const [rRes, sRes, dRes, aRes] = await Promise.all([
-      fetch(`https://api.ouraring.com/v2/usercollection/daily_readiness?${range}`, { headers }),
-      fetch(`https://api.ouraring.com/v2/usercollection/daily_sleep?${range}`, { headers }),
-      // детальный сон даёт HRV (average_hrv), пульс покоя (lowest_heart_rate), дыхание, длительность
-      fetch(`https://api.ouraring.com/v2/usercollection/sleep?${range}`, { headers }),
-      fetch(`https://api.ouraring.com/v2/usercollection/daily_activity?${range}`, { headers }),
+    // тянем всё, что отдаёт OURA v2; отсутствующие эндпоинты просто игнорируем (res.ok)
+    const ep = (path: string) =>
+      fetch(`https://api.ouraring.com/v2/usercollection/${path}?${range}`, { headers })
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .catch(() => ({ data: [] }));
+
+    const [
+      readiness,
+      sleepScore,
+      sleepDetail,
+      activity,
+      spo2,
+      stress,
+      resilience,
+      cardio,
+      vo2,
+    ] = await Promise.all([
+      ep('daily_readiness'),
+      ep('daily_sleep'),
+      ep('sleep'), // детальный период: HRV, RHR, стадии, дыхание, bedtime
+      ep('daily_activity'),
+      ep('daily_spo2'),
+      ep('daily_stress'),
+      ep('daily_resilience'),
+      ep('daily_cardiovascular_age'),
+      ep('vO2_max'),
     ]);
 
-    const readiness = rRes.ok ? await rRes.json() : { data: [] };
-    const sleep = sRes.ok ? await sRes.json() : { data: [] };
-    const sleepDetail = dRes.ok ? await dRes.json() : { data: [] };
-    const activity = aRes.ok ? await aRes.json() : { data: [] };
+    const mR = byDay(readiness.data ?? []);
+    const mS = byDay(sleepScore.data ?? []);
+    const mD = byDay(sleepDetail.data ?? [], (d: { type?: string }) => d.type === 'long_sleep');
+    const mA = byDay(activity.data ?? []);
+    const mSp = byDay(spo2.data ?? []);
+    const mSt = byDay(stress.data ?? []);
+    const mRe = byDay(resilience.data ?? []);
+    const mCa = byDay(cardio.data ?? []);
+    const mVo = byDay(vo2.data ?? []);
 
-    const rDays: OuraDay[] = readiness.data ?? [];
-    const sDays: OuraDay[] = sleep.data ?? [];
-    const dDays: OuraSleep[] = sleepDetail.data ?? [];
-    const aDays: OuraActivity[] = activity.data ?? [];
-    const lastR = rDays.length ? rDays[rDays.length - 1] : null;
-    const lastS = sDays.length ? sDays[sDays.length - 1] : null;
-    // предпочитаем основной ночной сон (long_sleep), иначе последний документ
-    const longSleeps = dDays.filter((d) => d.type === 'long_sleep');
-    const lastD = (longSleeps.length ? longSleeps : dDays).slice(-1)[0] ?? null;
-    const lastA = aDays.length ? aDays[aDays.length - 1] : null;
+    const allDays = new Set<string>([
+      ...mR.keys(), ...mS.keys(), ...mD.keys(), ...mA.keys(),
+      ...mSp.keys(), ...mSt.keys(), ...mRe.keys(), ...mCa.keys(), ...mVo.keys(),
+    ]);
+    if (allDays.size === 0) return json({ days: 0, note: 'no_oura_data' });
 
-    if (!lastR && !lastS && !lastD && !lastA) return json({ snapshot: null, note: 'no_oura_data' });
+    const rows: Row[] = [];
+    for (const day of allDays) {
+      const r = mR.get(day) as any;
+      const s = mS.get(day) as any;
+      const d = mD.get(day) as any;
+      const a = mA.get(day) as any;
+      const sp = mSp.get(day) as any;
+      const st = mSt.get(day) as any;
+      const re = mRe.get(day) as any;
+      const ca = mCa.get(day) as any;
+      const vo = mVo.get(day) as any;
 
-    const day = lastR?.day ?? lastS?.day ?? lastD?.day ?? lastA?.day ?? ymd(end);
-    const snapshot = {
-      user_id: userId,
-      date: day,
-      readiness: lastR?.score ?? null,
-      sleep_score: lastS?.score ?? null,
-      hrv: lastD?.average_hrv ?? null,
-      rhr: lastD?.lowest_heart_rate ?? null,
-      temp: lastR?.temperature_deviation ?? null,
-      raw: { readiness: lastR, sleep: lastS, sleepDetail: lastD, activity: lastA },
-    };
+      rows.push({
+        user_id: userId,
+        date: day,
+        // recovery / readiness
+        readiness: num(r?.score),
+        temp: num(r?.temperature_deviation),
+        temp_trend: num(r?.temperature_trend_deviation),
+        readiness_contributors: r?.contributors ?? null,
+        // sleep
+        sleep_score: num(s?.score),
+        sleep_contributors: s?.contributors ?? null,
+        hrv: num(d?.average_hrv),
+        rhr: num(d?.lowest_heart_rate),
+        avg_hr: num(d?.average_heart_rate),
+        respiratory_rate: num(d?.average_breath),
+        sleep_total_min: min(d?.total_sleep_duration),
+        time_in_bed_min: min(d?.time_in_bed),
+        sleep_efficiency: num(d?.efficiency),
+        sleep_latency_min: min(d?.latency),
+        sleep_deep_min: min(d?.deep_sleep_duration),
+        sleep_rem_min: min(d?.rem_sleep_duration),
+        sleep_light_min: min(d?.light_sleep_duration),
+        restless_periods: num(d?.restless_periods),
+        bedtime_start: d?.bedtime_start ?? null,
+        bedtime_end: d?.bedtime_end ?? null,
+        // activity
+        activity_score: num(a?.score),
+        steps: num(a?.steps),
+        active_calories: num(a?.active_calories),
+        total_calories: num(a?.total_calories),
+        walking_distance_m: num(a?.equivalent_walking_distance),
+        met_minutes: num(a?.average_met_minutes),
+        active_high_min: min(a?.high_activity_time),
+        active_medium_min: min(a?.medium_activity_time),
+        active_low_min: min(a?.low_activity_time),
+        sedentary_min: min(a?.sedentary_time),
+        resting_min: min(a?.resting_time),
+        activity_contributors: a?.contributors ?? null,
+        // spo2 / stress / долгосрочные
+        spo2_avg: num(sp?.spo2_percentage?.average),
+        breathing_disturbance_idx: num(sp?.breathing_disturbance_index),
+        stress_high_min: min(st?.stress_high),
+        recovery_high_min: min(st?.recovery_high),
+        stress_summary: st?.day_summary ?? null,
+        resilience_level: re?.level ?? null,
+        resilience_contributors: re?.contributors ?? null,
+        vascular_age: num(ca?.vascular_age),
+        vo2_max: num(vo?.vo2_max),
+        // полный сырой ответ — ничего не теряем
+        raw: { readiness: r, sleep: s, sleepDetail: d, activity: a, spo2: sp, stress: st, resilience: re, cardio: ca, vo2: vo },
+      });
+    }
 
     const { error: upErr } = await admin
       .from('health_snapshots')
-      .upsert(snapshot, { onConflict: 'user_id,date' });
+      .upsert(rows, { onConflict: 'user_id,date' });
     if (upErr) return json({ error: upErr.message }, 500);
 
-    return json({ snapshot });
+    return json({ days: rows.length, from: ymd(start), to: ymd(end) });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

@@ -11,11 +11,52 @@ export type OuraRaw = {
 
 export type HealthSnapshot = {
   date: string;
+  // recovery / readiness
   readiness: number | null;
+  temp: number | null;
+  temp_trend: number | null;
+  readiness_contributors: Record<string, number> | null;
+  // sleep
   sleep_score: number | null;
+  sleep_contributors: Record<string, number> | null;
   hrv: number | null;
   rhr: number | null;
-  temp: number | null;
+  avg_hr: number | null;
+  respiratory_rate: number | null;
+  sleep_total_min: number | null;
+  time_in_bed_min: number | null;
+  sleep_efficiency: number | null;
+  sleep_latency_min: number | null;
+  sleep_deep_min: number | null;
+  sleep_rem_min: number | null;
+  sleep_light_min: number | null;
+  restless_periods: number | null;
+  bedtime_start: string | null;
+  bedtime_end: string | null;
+  // activity
+  activity_score: number | null;
+  steps: number | null;
+  active_calories: number | null;
+  total_calories: number | null;
+  walking_distance_m: number | null;
+  met_minutes: number | null;
+  active_high_min: number | null;
+  active_medium_min: number | null;
+  active_low_min: number | null;
+  sedentary_min: number | null;
+  resting_min: number | null;
+  activity_contributors: Record<string, number> | null;
+  // spo2 / stress / долгосрочные
+  spo2_avg: number | null;
+  breathing_disturbance_idx: number | null;
+  stress_high_min: number | null;
+  recovery_high_min: number | null;
+  stress_summary: string | null;
+  resilience_level: string | null;
+  resilience_contributors: Record<string, number> | null;
+  vascular_age: number | null;
+  vo2_max: number | null;
+  // цикл (для женщин)
   cycle_day: number | null;
   cycle_phase: string | null;
   raw: OuraRaw;
@@ -45,10 +86,22 @@ export async function getOuraConnected(userId: string): Promise<boolean> {
 export async function getLatestSnapshot(userId: string): Promise<HealthSnapshot | null> {
   const { data } = await supabase
     .from('health_snapshots')
-    .select('date, readiness, sleep_score, hrv, rhr, temp, cycle_day, cycle_phase, raw')
+    .select('*')
     .eq('user_id', userId)
     .order('date', { ascending: false })
     .limit(1)
     .maybeSingle();
   return (data as HealthSnapshot) ?? null;
+}
+
+/** Ряд снимков от даты (YYYY-MM-DD) до сегодня — для аналитики «по календарю». */
+export async function getSnapshotsRange(userId: string, fromYmd: string): Promise<HealthSnapshot[]> {
+  const { data, error } = await supabase
+    .from('health_snapshots')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('date', fromYmd)
+    .order('date', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as HealthSnapshot[];
 }
