@@ -112,11 +112,14 @@ export async function addWorkoutExercise(
   workoutId: string,
   exerciseId: string,
   orderIndex: number,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<string> {
+  const { data, error } = await supabase
     .from('workout_exercises')
-    .insert({ workout_id: workoutId, exercise_id: exerciseId, order_index: orderIndex });
+    .insert({ workout_id: workoutId, exercise_id: exerciseId, order_index: orderIndex })
+    .select('id')
+    .single();
   if (error) throw error;
+  return data.id as string;
 }
 
 export async function addSet(workoutExerciseId: string, input: SetInput): Promise<SetRow> {

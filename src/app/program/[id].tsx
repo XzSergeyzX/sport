@@ -1,11 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import { getProgramDetail, type ProgramSet } from '@/lib/db/programs';
+import { getProgramDetail, type ProgramSet, startWorkoutFromProgram } from '@/lib/db/programs';
 import { formatWeight, useWeightUnit } from '@/lib/use-unit';
 
 function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): string {
@@ -21,6 +21,7 @@ function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): st
 export default function ProgramDetailScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const qc = useQueryClient();
   const unit = useWeightUnit();
   const { session, initializing } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,6 +30,14 @@ export default function ProgramDetailScreen() {
     queryKey: ['program', id],
     queryFn: () => getProgramDetail(id),
     enabled: !!id && !!session,
+  });
+
+  const startMut = useMutation({
+    mutationFn: () => startWorkoutFromProgram(session!.user.id, id, unit),
+    onSuccess: (workoutId) => {
+      qc.invalidateQueries({ queryKey: ['workouts'] });
+      router.replace({ pathname: '/workout/[id]', params: { id: workoutId } });
+    },
   });
 
   if (!initializing && !session) return <Redirect href="/auth" />;
@@ -76,6 +85,22 @@ export default function ProgramDetailScreen() {
             </View>
           ))}
         </ScrollView>
+      )}
+
+      {!isLoading && program && program.program_exercises.length > 0 && (
+        <View className="px-6 pb-6 pt-2">
+          <Pressable
+            disabled={startMut.isPending}
+            onPress={() => startMut.mutate()}
+            className="items-center rounded-2xl bg-accent py-4 active:opacity-80"
+          >
+            {startMut.isPending ? (
+              <ActivityIndicator color="#0C0E12" />
+            ) : (
+              <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
+            )}
+          </Pressable>
+        </View>
       )}
     </SafeAreaView>
   );

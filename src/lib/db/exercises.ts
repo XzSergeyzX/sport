@@ -77,3 +77,21 @@ export async function searchExercises(q: string): Promise<Exercise[]> {
   const all = await listExercises();
   return all.filter((ex) => matchExercise(ex, q));
 }
+
+/**
+ * Создать своё (приватное) упражнение. RLS делает его видимым только владельцу;
+ * дневной лимит на спам — триггер enforce_exercise_daily_cap (код ошибки 'exercise_daily_cap').
+ */
+export async function createCustomExercise(userId: string, name: string): Promise<Exercise> {
+  const clean = name.trim().slice(0, 200);
+  const { data, error } = await supabase
+    .from('exercises')
+    .insert({ owner_id: userId, name_en: clean, name_uk: clean, is_global: false })
+    .select('*')
+    .single();
+  if (error) {
+    if (error.message.includes('exercise_daily_cap')) throw new Error('exercise_daily_cap');
+    throw error;
+  }
+  return data as Exercise;
+}

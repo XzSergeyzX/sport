@@ -1,4 +1,7 @@
 import { supabase } from '@/lib/supabase';
+import { fromKg, type WeightUnit } from '@/lib/use-unit';
+
+import { addSet, addWorkoutExercise, startWorkout } from './workouts';
 
 export type ProgramSet = {
   id: string;
@@ -90,4 +93,33 @@ export async function getProgramDetail(id: string): Promise<ProgramDetail> {
 export async function deleteProgram(id: string): Promise<void> {
   const { error } = await supabase.from('programs').delete().eq('id', id);
   if (error) throw error;
+}
+
+/**
+ * Старт тренировки из программы: создаёт сессию и префиллит упражнения/подходы
+ * плановыми значениями (вес из канонических кг → в активную единицу). Возвращает id тренировки.
+ */
+export async function startWorkoutFromProgram(
+  userId: string,
+  programId: string,
+  unit: WeightUnit,
+): Promise<string> {
+  const detail = await getProgramDetail(programId);
+  const workout = await startWorkout(userId);
+
+  let order = 0;
+  for (const pe of detail.program_exercises) {
+    if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
+    const weId = await addWorkoutExercise(workout.id, pe.exercise_id, order++);
+    for (const ps of pe.program_sets) {
+      const w = fromKg(ps.target_weight, unit);
+      await addSet(weId, {
+        weight: w == null ? null : Math.round(w * 10) / 10,
+        reps: ps.target_reps,
+        rpe: null, // RPE субъективно — заполняется по факту
+        rest_sec: null, // отдых меряется автоматически в сессии
+      });
+    }
+  }
+  return workout.id;
 }

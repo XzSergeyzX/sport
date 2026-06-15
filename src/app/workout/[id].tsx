@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
+  Alert,
   type KeyboardTypeOptions,
   Modal,
   Pressable,
@@ -17,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   categoryKey,
   clusterKey,
+  createCustomExercise,
   exerciseName,
   groupByCluster,
   listExercises,
@@ -258,10 +260,14 @@ function ExercisePicker({
   visible,
   onClose,
   onSelect,
+  onCreate,
+  creating,
 }: {
   visible: boolean;
   onClose: () => void;
   onSelect: (exerciseId: string) => void;
+  onCreate: (name: string) => void;
+  creating: boolean;
 }) {
   const { t } = useTranslation();
   const lang = i18n.language;
@@ -327,7 +333,27 @@ function ExercisePicker({
             contentContainerStyle={{ paddingBottom: 24 }}
           >
             {isFetching && <ActivityIndicator color="#848D9A" />}
-            {!isFetching && groups.length === 0 && (
+
+            {searching && (
+              <Pressable
+                onPress={() => onCreate(term.trim())}
+                disabled={creating}
+                className="mb-2 flex-row items-center gap-2 rounded-xl bg-graphite-800 px-3 py-3 active:opacity-80"
+              >
+                {creating ? (
+                  <ActivityIndicator color="#848D9A" />
+                ) : (
+                  <>
+                    <Text className="text-base text-accent">＋</Text>
+                    <Text className="flex-1 text-base text-graphite-100">
+                      {t('workout.createCustom', { name: term.trim() })}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+
+            {!isFetching && !searching && groups.length === 0 && (
               <Text className="text-base text-graphite-400">{t('workout.noResults')}</Text>
             )}
 
@@ -398,6 +424,20 @@ export default function WorkoutScreen() {
       invalidate();
       qc.invalidateQueries({ queryKey: ['exercises-recent'] });
       setPickerOpen(false);
+    },
+  });
+
+  const createExerciseMut = useMutation({
+    mutationFn: (name: string) => createCustomExercise(session!.user.id, name),
+    onSuccess: (ex) => {
+      qc.invalidateQueries({ queryKey: ['exercises-all'] });
+      addExerciseMut.mutate(ex.id);
+    },
+    onError: (e: Error) => {
+      Alert.alert(
+        '',
+        e.message === 'exercise_daily_cap' ? t('workout.customCapped') : t('programs.errGeneric'),
+      );
     },
   });
 
@@ -504,6 +544,8 @@ export default function WorkoutScreen() {
         visible={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onSelect={(exerciseId) => addExerciseMut.mutate(exerciseId)}
+        onCreate={(name) => createExerciseMut.mutate(name)}
+        creating={createExerciseMut.isPending}
       />
     </SafeAreaView>
   );
