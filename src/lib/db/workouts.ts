@@ -11,6 +11,7 @@ export type SetRow = {
   rpe: number | null;
   note: string | null;
   completed_at: string;
+  logged_at: string | null;
 };
 
 export type WorkoutExercise = {
@@ -18,6 +19,7 @@ export type WorkoutExercise = {
   workout_id: string;
   exercise_id: string;
   order_index: number;
+  done_at: string | null;
   exercise: Exercise | null;
   sets: SetRow[];
 };
@@ -139,6 +141,28 @@ export async function updateSet(id: string, input: SetInput): Promise<void> {
 
 export async function deleteSet(id: string): Promise<void> {
   const { error } = await supabase.from('sets').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** Отметить/снять «подход сделан». При отметке пишем время и отдых (разрыв с прошлым). */
+export async function setSetLogged(
+  id: string,
+  logged: boolean,
+  restSec: number | null,
+): Promise<void> {
+  const patch = logged
+    ? { logged_at: new Date().toISOString(), rest_sec: restSec }
+    : { logged_at: null, rest_sec: null };
+  const { error } = await supabase.from('sets').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
+/** Завершить/возобновить упражнение (для сворачивания карточки). */
+export async function setExerciseDone(workoutExerciseId: string, done: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('workout_exercises')
+    .update({ done_at: done ? new Date().toISOString() : null })
+    .eq('id', workoutExerciseId);
   if (error) throw error;
 }
 

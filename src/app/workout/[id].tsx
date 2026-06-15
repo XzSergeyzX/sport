@@ -33,6 +33,8 @@ import {
   getWorkoutDetail,
   type SetInput,
   type SetRow as SetRowType,
+  setExerciseDone,
+  setSetLogged,
   updateSet,
 } from '@/lib/db/workouts';
 import { useAuth } from '@/lib/auth/auth-context';
@@ -174,12 +176,14 @@ function SetRow({
   set,
   unit,
   onSave,
+  onToggleDone,
   onDelete,
 }: {
   index: number;
   set: SetRowType;
   unit: WeightUnit;
   onSave: (id: string, input: SetInput) => void;
+  onToggleDone: (set: SetRowType) => void;
   onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -187,6 +191,7 @@ function SetRow({
   const [reps, setReps] = useState(set.reps?.toString() ?? '');
   const [rpe, setRpe] = useState<number | null>(set.rpe ?? null);
   const [rpeOpen, setRpeOpen] = useState(false);
+  const done = !!set.logged_at;
 
   const save = (nextRpe: number | null = rpe) => {
     const repsN = parseNum(reps);
@@ -201,6 +206,8 @@ function SetRow({
     setRpe(v);
     setRpeOpen(false);
     save(v);
+    // выставление RPE = подход сделан (если ещё не отмечен)
+    if (!done && v != null) onToggleDone(set);
   };
 
   const field = (
@@ -221,11 +228,14 @@ function SetRow({
   );
 
   return (
-    <View className="mt-2 rounded-xl bg-graphite-950/40 p-2">
+    <View
+      className="mt-2 rounded-xl p-2"
+      style={{ backgroundColor: done ? 'rgba(31,184,154,0.08)' : 'rgba(12,14,18,0.4)' }}
+    >
       <View className="mb-1 flex-row items-center justify-between px-1">
         <Text className="text-xs text-graphite-500">
           {t('workout.set')} {index}
-          {set.rest_sec != null ? `  ·  ${t('workout.rest')} ${fmt(set.rest_sec)}` : ''}
+          {done && set.rest_sec != null ? `  ·  ${t('workout.rest')} ${fmt(set.rest_sec)}` : ''}
         </Text>
         <Pressable onPress={() => onDelete(set.id)} hitSlop={8}>
           <Text className="text-xs text-graphite-600">✕</Text>
@@ -249,6 +259,13 @@ function SetRow({
           >
             {rpe != null ? `${t('workout.rpe')} ${rpe}` : t('workout.rpe')}
           </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onToggleDone(set)}
+          className="h-9 w-9 items-center justify-center rounded-lg active:opacity-80"
+          style={{ backgroundColor: done ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+        >
+          <Text style={{ color: done ? '#0B0F14' : '#848D9A', fontWeight: '900' }}>✓</Text>
         </Pressable>
       </View>
       <RpePicker visible={rpeOpen} value={rpe} onClose={() => setRpeOpen(false)} onSelect={onPickRpe} />
@@ -394,8 +411,8 @@ export default function WorkoutScreen() {
   const lang = i18n.language;
   const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
-  // момент последнего зафиксированного подхода (для авто-отдыха)
-  const [anchor, setAnchor] = useState<number | null>(null);
+  // локально развёрнутые завершённые упражнения (по тапу на свёрнутую карточку)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const { data: workout, isLoading } = useQuery({
     queryKey: ['workout', workoutId],
@@ -403,19 +420,18 @@ export default function WorkoutScreen() {
     enabled: !!session,
   });
 
-  // инициализируем якорь по последнему подходу (на случай перезахода в сессию)
-  useEffect(() => {
-    if (!workout) return;
+  // якорь авто-отдыха = время последнего «сделанного» подхода
+  const anchor = useMemo(() => {
+    if (!workout) return null;
     let max = 0;
-    for (const we of workout.workout_exercises) {
-      for (const s of we.sets) {
-        const ts = +new Date(s.completed_at);
-        if (ts > max) max = ts;
-      }
-    }
-    setAnchor(max || null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workout?.id]);
+    for (const we of workout.workout_exercises)
+      for (const s of we.sets)
+        if (s.logged_at) {
+          const ts = +new Date(s.logged_at);
+          if (ts > max) max = ts;
+        }
+    return max || null;
+  }, [workout]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['workout', workoutId] });
 
@@ -457,6 +473,24 @@ export default function WorkoutScreen() {
     onSuccess: invalidate,
   });
 
+  const setLoggedMut = useMutation({
+    mutationFn: (v: { id: string; logged: boolean; restSec: number | null }) =>
+      setSetLogged(v.id, v.logged, v.restSec),
+    onSuccess: invalidate,
+  });
+
+  const finishExerciseMut = useMutation({
+    mutationFn: (v: { weId: string; done: boolean }) => setExerciseDone(v.weId, v.done),
+    onSuccess: invalidate,
+  });
+
+  // отметить/снять «подход сделан»; при отметке отдых = разрыв с прошлым сделанным
+  const onToggleDone = (set: SetRowType) => {
+    const logged = !!set.logged_at;
+    const rest = !logged && anchor ? Math.max(0, Math.round((Date.now() - anchor) / 1000)) : null;
+    setLoggedMut.mutate({ id: set.id, logged: !logged, restSec: rest });
+  };
+
   const finishMut = useMutation({
     mutationFn: () => finishWorkout(workoutId),
     onSuccess: () => {
@@ -464,13 +498,6 @@ export default function WorkoutScreen() {
       router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
     },
   });
-
-  const onSetDone = (weId: string) => {
-    const now = Date.now();
-    const rest = anchor ? Math.round((now - anchor) / 1000) : null;
-    addSetMut.mutate({ weId, input: { rest_sec: rest } });
-    setAnchor(now);
-  };
 
   if (!initializing && !session) return <Redirect href="/auth" />;
 
@@ -507,30 +534,84 @@ export default function WorkoutScreen() {
           {workout.workout_exercises.length === 0 && (
             <Text className="text-base text-graphite-400">{t('workout.noExercises')}</Text>
           )}
-          {workout.workout_exercises.map((we) => (
-            <View key={we.id} className="rounded-2xl bg-graphite-900 p-4">
-              <Text className="text-base font-bold text-graphite-50">
-                {we.exercise ? exerciseName(we.exercise, lang) : '—'}
-              </Text>
-              {we.sets.map((s, i) => (
-                <SetRow
-                  key={s.id}
-                  index={i + 1}
-                  set={s}
-                  unit={unit}
-                  onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
-                  onDelete={(setId) => deleteSetMut.mutate(setId)}
-                />
-              ))}
-              <Pressable
-                disabled={addSetMut.isPending}
-                onPress={() => onSetDone(we.id)}
-                className="mt-3 items-center rounded-xl bg-accent py-3 active:opacity-80"
-              >
-                <Text className="text-sm font-bold text-graphite-950">{t('workout.setDone')}</Text>
-              </Pressable>
-            </View>
-          ))}
+          {workout.workout_exercises.map((we) => {
+            const name = we.exercise ? exerciseName(we.exercise, lang) : '—';
+            const collapsed = !!we.done_at && !expanded[we.id];
+            const doneSets = we.sets.filter((s) => s.logged_at);
+            const best = doneSets.reduce<SetRowType | null>(
+              (b, s) => ((s.weight ?? 0) > (b?.weight ?? -1) ? s : b),
+              null,
+            );
+
+            if (collapsed) {
+              return (
+                <Pressable
+                  key={we.id}
+                  onPress={() => setExpanded((e) => ({ ...e, [we.id]: true }))}
+                  className="flex-row items-center justify-between rounded-2xl bg-graphite-900 p-4 active:opacity-80"
+                >
+                  <View className="flex-1">
+                    <Text className="text-base font-bold text-graphite-100">{name}</Text>
+                    <Text className="mt-0.5 text-xs text-graphite-500">
+                      {doneSets.length} {t('workout.set').toLowerCase()}
+                      {best?.weight != null
+                        ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
+                        : ''}
+                    </Text>
+                  </View>
+                  <Text className="ml-2 text-base text-accent">✓</Text>
+                </Pressable>
+              );
+            }
+
+            return (
+              <View key={we.id} className="rounded-2xl bg-graphite-900 p-4">
+                <Text className="text-base font-bold text-graphite-50">{name}</Text>
+                {we.sets.map((s, i) => (
+                  <SetRow
+                    key={s.id}
+                    index={i + 1}
+                    set={s}
+                    unit={unit}
+                    onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
+                    onToggleDone={onToggleDone}
+                    onDelete={(setId) => deleteSetMut.mutate(setId)}
+                  />
+                ))}
+                <View className="mt-3 flex-row gap-2">
+                  <Pressable
+                    disabled={addSetMut.isPending}
+                    onPress={() => addSetMut.mutate({ weId: we.id, input: {} })}
+                    className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+                  >
+                    <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
+                  </Pressable>
+                  {we.done_at ? (
+                    <Pressable
+                      onPress={() => finishExerciseMut.mutate({ weId: we.id, done: false })}
+                      className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
+                    >
+                      <Text className="text-sm font-bold text-graphite-100">
+                        {t('workout.reopenExercise')}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      onPress={() => {
+                        finishExerciseMut.mutate({ weId: we.id, done: true });
+                        setExpanded((e) => ({ ...e, [we.id]: false }));
+                      }}
+                      className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
+                    >
+                      <Text className="text-sm font-bold text-graphite-100">
+                        {t('workout.finishExercise')}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            );
+          })}
         </ScrollView>
 
         <Pressable
