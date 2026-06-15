@@ -5,6 +5,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
+import { getCycleStatus, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
 import {
   connectOura,
   getLatestSnapshot,
@@ -138,6 +139,23 @@ export default function HealthScreen() {
     onError: () => setError(t('health.connectError')),
   });
 
+  const { data: trackCycle } = useQuery({
+    queryKey: ['track-cycle', userId],
+    queryFn: () => getTrackCycle(userId as string),
+    enabled: !!userId,
+  });
+
+  const { data: cycle } = useQuery({
+    queryKey: ['cycle', userId],
+    queryFn: () => getCycleStatus(userId as string),
+    enabled: !!userId && !!trackCycle,
+  });
+
+  const logCycleMut = useMutation({
+    mutationFn: () => logPeriodStart(userId as string),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cycle', userId] }),
+  });
+
   const metrics = buildMetrics(snapshot);
 
   return (
@@ -205,6 +223,40 @@ export default function HealthScreen() {
             </>
           )}
         </View>
+
+        {trackCycle && (
+          <View className="mt-4 rounded-2xl bg-graphite-900 p-5">
+            <Text className="text-base font-semibold text-graphite-100">{t('health.cycle.title')}</Text>
+            {cycle ? (
+              <>
+                <Text className="mt-3 text-3xl font-extrabold text-graphite-50">
+                  {t('health.cycle.day', { day: cycle.day })}
+                </Text>
+                <Text className="mt-1 text-sm text-accent">
+                  {t(`health.cycle.phase.${cycle.phase}`)}
+                </Text>
+                <Text className="mt-1 text-xs text-graphite-600">
+                  {t('health.cycle.since', { date: cycle.startDate })}
+                </Text>
+              </>
+            ) : (
+              <Text className="mt-2 text-sm leading-5 text-graphite-400">{t('health.cycle.empty')}</Text>
+            )}
+            <Pressable
+              disabled={logCycleMut.isPending}
+              onPress={() => logCycleMut.mutate()}
+              className="mt-3 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+            >
+              {logCycleMut.isPending ? (
+                <ActivityIndicator color="#848D9A" />
+              ) : (
+                <Text className="text-sm font-semibold text-graphite-200">
+                  {cycle ? t('health.cycle.newCycle') : t('health.cycle.markDay1')}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        )}
 
         <View className="mt-4 rounded-2xl bg-graphite-900 p-5">
           <Text className="text-base font-semibold text-graphite-100">{t('health.soonTitle')}</Text>

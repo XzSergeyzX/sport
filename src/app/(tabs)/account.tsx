@@ -1,11 +1,13 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
+import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -13,8 +15,19 @@ import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 export default function AccountScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const qc = useQueryClient();
   const { session, signOut } = useAuth();
   const userId = session?.user.id;
+
+  const { data: trackCycle } = useQuery({
+    queryKey: ['track-cycle', userId],
+    queryFn: () => getTrackCycle(userId as string),
+    enabled: !!userId,
+  });
+  const cycleMut = useMutation({
+    mutationFn: (v: boolean) => setTrackCycle(userId as string, v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['track-cycle', userId] }),
+  });
 
   const [language, setLanguage] = useState<AppLanguage>(
     (i18n.language as AppLanguage) === 'uk' ? 'uk' : 'en',
@@ -68,6 +81,19 @@ export default function AccountScreen() {
               { value: 'kg', label: t('common.kg') },
               { value: 'lb', label: t('common.lb') },
             ]}
+          />
+        </View>
+
+        <View className="mt-6 flex-row items-center justify-between">
+          <View className="flex-1 pr-4">
+            <Text className="text-lg font-semibold text-graphite-100">{t('account.trackCycle')}</Text>
+            <Text className="mt-0.5 text-sm text-graphite-500">{t('account.trackCycleHint')}</Text>
+          </View>
+          <Switch
+            value={!!trackCycle}
+            onValueChange={(v) => cycleMut.mutate(v)}
+            trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
+            thumbColor="#E5E7EB"
           />
         </View>
 

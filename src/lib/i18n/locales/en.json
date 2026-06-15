@@ -38,7 +38,9 @@
     "account": "Account"
   },
   "account": {
-    "title": "Account"
+    "title": "Account",
+    "trackCycle": "Track cycle",
+    "trackCycleHint": "Show menstrual cycle day & phase in Health."
   },
   "programs": {
     "title": "Programs",
@@ -141,6 +143,20 @@
       "steps": {
         "what": "Steps taken during the day.",
         "range": "~8–10k is a common daily target; any increase in movement helps."
+      }
+    },
+    "cycle": {
+      "title": "Cycle",
+      "day": "Day {{day}}",
+      "since": "since {{date}}",
+      "empty": "Mark the first day of your period to start tracking the cycle.",
+      "markDay1": "Mark day 1",
+      "newCycle": "New cycle (day 1)",
+      "phase": {
+        "menstrual": "Menstrual",
+        "follicular": "Follicular",
+        "ovulation": "Ovulation",
+        "luteal": "Luteal"
       }
     },
     "soonTitle": "Analytics are coming",

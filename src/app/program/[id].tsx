@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import {
@@ -41,6 +41,7 @@ export default function ProgramDetailScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const unit = useWeightUnit();
+  const insets = useSafeAreaInsets();
   const { session, initializing } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -129,7 +130,7 @@ export default function ProgramDetailScreen() {
       )}
 
       {!isLoading && program && program.program_exercises.length > 0 && (
-        <View className="px-6 pb-6 pt-2">
+        <View className="px-6 pt-2" style={{ paddingBottom: insets.bottom + 12 }}>
           <Pressable
             disabled={startMut.isPending}
             onPress={() => startMut.mutate()}
