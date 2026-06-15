@@ -1,0 +1,41 @@
+import { Adapter, AiError, CompleteInput, CompleteOutput } from './types.ts';
+
+// OpenAI Chat Completions. Ключ: OPENAI_API_KEY (секрет функции).
+export const openaiAdapter: Adapter = {
+  available() {
+    return !!Deno.env.get('OPENAI_API_KEY');
+  },
+
+  async complete(model: string, input: CompleteInput): Promise<CompleteOutput> {
+    const key = Deno.env.get('OPENAI_API_KEY');
+    if (!key) throw new AiError('provider_unavailable', 'OPENAI_API_KEY not set');
+
+    const messages = [
+      ...(input.system ? [{ role: 'system', content: input.system }] : []),
+      ...input.messages,
+    ];
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_completion_tokens: input.maxTokens ?? 4096,
+        ...(input.json ? { response_format: { type: 'json_object' } } : {}),
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new AiError('provider_error', `openai ${res.status}: ${body.slice(0, 500)}`);
+    }
+
+    const data = await res.json();
+    return {
+      text: data.choices?.[0]?.message?.content ?? '',
+      tokensIn: data.usage?.prompt_tokens ?? 0,
+      tokensOut: data.usage?.completion_tokens ?? 0,
+    };
+  },
+};

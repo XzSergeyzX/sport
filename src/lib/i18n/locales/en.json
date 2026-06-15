@@ -42,8 +42,19 @@
   },
   "programs": {
     "title": "Programs",
-    "soonTitle": "Programs are coming",
-    "soonBody": "Build a workout plan or import one — drop text or a file (xlsx/docx/pdf/photo) into the AI chat and it lays it out into exercises. On the workout you only tweak what wasn't done and pick RPE."
+    "importCta": "Import a program",
+    "importTitle": "Import with AI",
+    "importHint": "Paste your training plan as text — the AI lays it out into exercises and sets.",
+    "importPlaceholder": "e.g. Squat 4x8 @100kg, Bench 3x10, Pull-ups 3x max…",
+    "importGo": "Import",
+    "yours": "Your programs",
+    "empty": "No programs yet.",
+    "unmatched": "not in catalog",
+    "errBudget": "AI limit reached for now. Try again later.",
+    "errProvider": "AI provider isn't configured yet.",
+    "errParse": "Couldn't read that plan. Try rephrasing it.",
+    "errEmpty": "Paste a plan first.",
+    "errGeneric": "Import failed. Please try again."
   },
   "analytics": {
     "title": "Analytics",

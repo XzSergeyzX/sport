@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-06-15 (вечер) — ИИ-гейтвей + Программы (#1)
+
+### ✅ Сделано
+- **Провайдер-агностик ИИ-гейтвей.** Роутинг по интентам через БД, не хардкод модели.
+  - Миграция `20260615130000_ai_gateway_and_programs.sql`: таблица `ai_model_routes` (intent → provider/model + цены, сид: `program_import`/`classify` → GPT-5.4 mini, `coach_chat` → Claude Haiku 4.5, `vision_import` → Gemini Flash off), `ai_limits` (kill-switch, дневной лимит запросов/токенов на юзера, общий $-потолок месяца = 30), security-definer RPC `ai_budget_check` + `ai_record_usage` (учёт в `ai_usage` день/неделя/месяц).
+  - Адаптеры `supabase/functions/_shared/ai/`: `openai.ts`, `anthropic.ts`, `gemini.ts` + единый `gateway.ts` (`runIntent`: бюджет → роут → адаптер → учёт расхода). Нет ключа провайдера → он просто «выключен», функция не падает.
+- **Программы (#1, §3.7).** Таблицы `programs`/`program_exercises`/`program_sets` (+RLS). Функция `program-import`: текст → GPT-5.4 mini (через гейтвей) → JSON → матч с каталогом → запись. Экран `Програми` (вставка текста → импорт → переход в деталь), `program/[id]` (упражнения/подходы, метка «немає в каталозі» для несматченных). Слой `src/lib/db/programs.ts`. i18n en/uk.
+- Проверка: `tsc` ✅, `expo export -p web` ✅.
+
+### 🚧 TODO по ИИ/Программам (деплой + ключи)
+- [ ] `npx supabase db push` (миграция `20260615130000`)
+- [ ] `npx supabase secrets set OPENAI_API_KEY=...` (обязателен для парсера), позже `ANTHROPIC_API_KEY` (коуч-чат), `GEMINI_API_KEY` (vision)
+- [ ] `npx supabase functions deploy program-import`
+- [ ] Живой тест парсера на реальном расписании; при кривом JSON — глянуть `parse_failed.raw`
+- [ ] Дальше: vision-импорт (фото/скан расписания) на Gemini; «начать тренировку из программы» (префилл сетов); коуч-чат на гейтвее
+
+---
+
 ## 2026-06-15
 
 ### ✅ Сделано
