@@ -36,6 +36,7 @@ import {
   setExerciseDone,
   setSetLogged,
   updateSet,
+  type WorkoutExercise,
 } from '@/lib/db/workouts';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
@@ -414,6 +415,8 @@ export default function WorkoutScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   // локально развёрнутые завершённые упражнения (по тапу на свёрнутую карточку)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // свёрнутые кластеры (круги/EMOM/суперсеты)
+  const [clusterCol, setClusterCol] = useState<Record<string, boolean>>({});
 
   const { data: workout, isLoading } = useQuery({
     queryKey: ['workout', workoutId],
@@ -500,6 +503,104 @@ export default function WorkoutScreen() {
     },
   });
 
+  // одно упражнение-карточка (свёрнутая/развёрнутая). nested — внутри кластера (другой фон).
+  const renderExercise = (we: WorkoutExercise, nested = false) => {
+    const name = we.exercise ? exerciseName(we.exercise, lang) : '—';
+    const collapsed = !!we.done_at && !expanded[we.id];
+    const doneSets = we.sets.filter((s) => s.logged_at);
+    const best = doneSets.reduce<SetRowType | null>(
+      (b, s) => ((s.weight ?? 0) > (b?.weight ?? -1) ? s : b),
+      null,
+    );
+    const cardBg = nested ? 'bg-graphite-800' : 'bg-graphite-900';
+
+    if (collapsed) {
+      return (
+        <Pressable
+          key={we.id}
+          onPress={() => setExpanded((e) => ({ ...e, [we.id]: true }))}
+          className={`flex-row items-center justify-between rounded-2xl ${cardBg} p-4 active:opacity-80`}
+        >
+          <View className="flex-1">
+            <Text className="text-base font-bold text-graphite-100">{name}</Text>
+            <Text className="mt-0.5 text-xs text-graphite-500">
+              {setsLabel(doneSets.length)}
+              {best?.weight != null
+                ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
+                : ''}
+            </Text>
+          </View>
+          <Text className="ml-2 text-base text-accent">✓</Text>
+        </Pressable>
+      );
+    }
+
+    return (
+      <View key={we.id} className={`rounded-2xl ${cardBg} p-4`}>
+        {we.done_at ? (
+          <Pressable
+            onPress={() => setExpanded((e) => ({ ...e, [we.id]: false }))}
+            className="flex-row items-center justify-between active:opacity-80"
+          >
+            <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
+            <Text className="ml-2 text-graphite-500">▲</Text>
+          </Pressable>
+        ) : (
+          <Text className="text-base font-bold text-graphite-50">{name}</Text>
+        )}
+        {we.sets.map((s, i) => (
+          <SetRow
+            key={s.id}
+            index={i + 1}
+            set={s}
+            unit={unit}
+            onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
+            onToggleDone={onToggleDone}
+            onDelete={(setId) => deleteSetMut.mutate(setId)}
+          />
+        ))}
+        <View className="mt-3 flex-row gap-2">
+          <Pressable
+            disabled={addSetMut.isPending}
+            onPress={() => addSetMut.mutate({ weId: we.id, input: {} })}
+            className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+          >
+            <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
+          </Pressable>
+          {we.done_at ? (
+            <Pressable
+              onPress={() => finishExerciseMut.mutate({ weId: we.id, done: false })}
+              className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
+            >
+              <Text className="text-sm font-bold text-graphite-100">{t('workout.reopenExercise')}</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => {
+                finishExerciseMut.mutate({ weId: we.id, done: true });
+                setExpanded((e) => ({ ...e, [we.id]: false }));
+              }}
+              className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
+            >
+              <Text className="text-sm font-bold text-graphite-100">{t('workout.finishExercise')}</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  // группируем подряд идущие упражнения одного кластера (block_key)
+  const wgroups: { key: string; label: string | null; rounds: number | null; items: WorkoutExercise[] }[] =
+    [];
+  for (const we of workout?.workout_exercises ?? []) {
+    const last = wgroups[wgroups.length - 1];
+    if (we.block_key && last && last.key === we.block_key) last.items.push(we);
+    else if (we.block_key)
+      wgroups.push({ key: we.block_key, label: we.block_label, rounds: we.block_rounds, items: [we] });
+    else wgroups.push({ key: we.id, label: null, rounds: null, items: [we] });
+  }
+
   if (!initializing && !session) return <Redirect href="/auth" />;
 
   if (isLoading || !workout) {
@@ -535,91 +636,35 @@ export default function WorkoutScreen() {
           {workout.workout_exercises.length === 0 && (
             <Text className="text-base text-graphite-400">{t('workout.noExercises')}</Text>
           )}
-          {workout.workout_exercises.map((we) => {
-            const name = we.exercise ? exerciseName(we.exercise, lang) : '—';
-            const collapsed = !!we.done_at && !expanded[we.id];
-            const doneSets = we.sets.filter((s) => s.logged_at);
-            const best = doneSets.reduce<SetRowType | null>(
-              (b, s) => ((s.weight ?? 0) > (b?.weight ?? -1) ? s : b),
-              null,
-            );
+          {wgroups.map((g) => {
+            const isCluster = g.label != null || g.items.length > 1;
+            if (!isCluster) return renderExercise(g.items[0]);
 
-            if (collapsed) {
-              return (
+            const collapsed = clusterCol[g.key];
+            const doneCount = g.items.filter((we) => we.done_at).length;
+            return (
+              <View key={g.key} className="rounded-2xl bg-graphite-900 p-3">
                 <Pressable
-                  key={we.id}
-                  onPress={() => setExpanded((e) => ({ ...e, [we.id]: true }))}
-                  className="flex-row items-center justify-between rounded-2xl bg-graphite-900 p-4 active:opacity-80"
+                  onPress={() => setClusterCol((c) => ({ ...c, [g.key]: !c[g.key] }))}
+                  className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
                 >
                   <View className="flex-1">
-                    <Text className="text-base font-bold text-graphite-100">{name}</Text>
-                    <Text className="mt-0.5 text-xs text-graphite-500">
-                      {setsLabel(doneSets.length)}
-                      {best?.weight != null
-                        ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
-                        : ''}
+                    <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                      {g.label || t('blockTypes.rounds')}
                     </Text>
+                    {g.rounds ? (
+                      <Text className="mt-0.5 text-xs text-graphite-400">{g.rounds}×</Text>
+                    ) : null}
                   </View>
-                  <Text className="ml-2 text-base text-accent">✓</Text>
+                  <Text className="ml-2 text-graphite-500">{collapsed ? '▼' : '▲'}</Text>
                 </Pressable>
-              );
-            }
-
-            return (
-              <View key={we.id} className="rounded-2xl bg-graphite-900 p-4">
-                {we.done_at ? (
-                  <Pressable
-                    onPress={() => setExpanded((e) => ({ ...e, [we.id]: false }))}
-                    className="flex-row items-center justify-between active:opacity-80"
-                  >
-                    <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
-                    <Text className="ml-2 text-graphite-500">▲</Text>
-                  </Pressable>
+                {collapsed ? (
+                  <Text className="px-3 pt-2 text-xs text-graphite-500">
+                    {doneCount}/{g.items.length} ✓
+                  </Text>
                 ) : (
-                  <Text className="text-base font-bold text-graphite-50">{name}</Text>
+                  <View className="mt-2 gap-2">{g.items.map((we) => renderExercise(we, true))}</View>
                 )}
-                {we.sets.map((s, i) => (
-                  <SetRow
-                    key={s.id}
-                    index={i + 1}
-                    set={s}
-                    unit={unit}
-                    onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
-                    onToggleDone={onToggleDone}
-                    onDelete={(setId) => deleteSetMut.mutate(setId)}
-                  />
-                ))}
-                <View className="mt-3 flex-row gap-2">
-                  <Pressable
-                    disabled={addSetMut.isPending}
-                    onPress={() => addSetMut.mutate({ weId: we.id, input: {} })}
-                    className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
-                  >
-                    <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
-                  </Pressable>
-                  {we.done_at ? (
-                    <Pressable
-                      onPress={() => finishExerciseMut.mutate({ weId: we.id, done: false })}
-                      className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
-                    >
-                      <Text className="text-sm font-bold text-graphite-100">
-                        {t('workout.reopenExercise')}
-                      </Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      onPress={() => {
-                        finishExerciseMut.mutate({ weId: we.id, done: true });
-                        setExpanded((e) => ({ ...e, [we.id]: false }));
-                      }}
-                      className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
-                    >
-                      <Text className="text-sm font-bold text-graphite-100">
-                        {t('workout.finishExercise')}
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
               </View>
             );
           })}

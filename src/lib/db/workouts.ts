@@ -20,6 +20,9 @@ export type WorkoutExercise = {
   exercise_id: string;
   order_index: number;
   done_at: string | null;
+  block_key: string | null;
+  block_label: string | null;
+  block_rounds: number | null;
   exercise: Exercise | null;
   sets: SetRow[];
 };
@@ -114,10 +117,18 @@ export async function addWorkoutExercise(
   workoutId: string,
   exerciseId: string,
   orderIndex: number,
+  block?: { key: string; label: string | null; rounds: number | null },
 ): Promise<string> {
   const { data, error } = await supabase
     .from('workout_exercises')
-    .insert({ workout_id: workoutId, exercise_id: exerciseId, order_index: orderIndex })
+    .insert({
+      workout_id: workoutId,
+      exercise_id: exerciseId,
+      order_index: orderIndex,
+      block_key: block?.key ?? null,
+      block_label: block?.label ?? null,
+      block_rounds: block?.rounds ?? null,
+    })
     .select('id')
     .single();
   if (error) throw error;

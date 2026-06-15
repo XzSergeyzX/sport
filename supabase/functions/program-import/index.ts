@@ -104,6 +104,22 @@ const num = (v: unknown): number | null =>
 const str = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null;
 
+// Грубая проверка, что найденное в каталоге совпадение реально похоже на исходное имя —
+// чтобы модель не «лепила» левый индекс (млин з гирею → турецький підйом).
+function tokens(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .split(' ')
+    .filter((w) => w.length >= 4);
+}
+function namesResemble(a: string, b: string): boolean {
+  const tb = tokens(b);
+  for (const x of tokens(a))
+    for (const y of tb) if (x === y || x.startsWith(y) || y.startsWith(x)) return true;
+  return false;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -183,7 +199,11 @@ Deno.serve(async (req) => {
       if (!name) return null;
 
       const idx = num(ex.catalog_index);
-      if (idx != null && idx >= 1 && idx <= catalog.length) return catalog[idx - 1].id;
+      if (idx != null && idx >= 1 && idx <= catalog.length) {
+        const c = catalog[idx - 1];
+        // доверяем индексу, только если имена реально похожи; иначе — не матчим
+        if (namesResemble(name, c.name_en) || namesResemble(name, c.name_uk)) return c.id;
+      }
 
       const safe = name.replace(/[(),{}*%]/g, ' ').trim();
       if (safe) {

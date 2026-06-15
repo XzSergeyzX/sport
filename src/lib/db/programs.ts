@@ -150,17 +150,29 @@ export async function startWorkoutFromProgram(
 
   let order = 0;
   for (const group of groupProgram(detail)) {
+    const block = group.block;
+    // кластер = не одиночный блок, либо в блоке больше одного упражнения
+    const isCluster = !!block && (block.type !== 'single' || group.exercises.length > 1);
+    const blockArg = isCluster
+      ? { key: block!.id, label: block!.label ?? null, rounds: block!.rounds ?? null }
+      : undefined;
+    // круги (rounds) разворачиваем в подходы: 3 кола × 1 подход = 3 подхода
+    const repeat = isCluster && block?.rounds ? block.rounds : 1;
+
     for (const pe of group.exercises) {
       if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
-      const weId = await addWorkoutExercise(workout.id, pe.exercise_id, order++);
-      for (const ps of pe.program_sets) {
-        const w = fromKg(ps.target_weight, unit);
-        await addSet(weId, {
-          weight: w == null ? null : Math.round(w * 10) / 10,
-          reps: ps.target_reps,
-          rpe: null, // RPE субъективно — заполняется по факту
-          rest_sec: null, // отдых меряется автоматически в сессии
-        });
+      const weId = await addWorkoutExercise(workout.id, pe.exercise_id, order++, blockArg);
+      const baseSets = pe.program_sets.length ? pe.program_sets : [null];
+      for (let r = 0; r < repeat; r++) {
+        for (const ps of baseSets) {
+          const w = ps ? fromKg(ps.target_weight, unit) : null;
+          await addSet(weId, {
+            weight: w == null ? null : Math.round(w * 10) / 10,
+            reps: ps ? ps.target_reps : null,
+            rpe: null, // RPE субъективно — заполняется по факту
+            rest_sec: null, // отдых меряется автоматически в сессии
+          });
+        }
       }
     }
   }
