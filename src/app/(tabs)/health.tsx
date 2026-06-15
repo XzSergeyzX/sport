@@ -1,20 +1,102 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import { connectOura, getLatestSnapshot, getOuraConnected, syncOura } from '@/lib/db/oura';
+import {
+  connectOura,
+  getLatestSnapshot,
+  getOuraConnected,
+  type HealthSnapshot,
+  syncOura,
+} from '@/lib/db/oura';
 
 const PLACEHOLDER = '#848D9A';
 
-function Metric({ label, value }: { label: string; value: string }) {
+function fmtDur(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+type Metric = { key: string; value: string; unit?: string };
+
+// Собираем все доступные показатели из снимка (+ raw). Показываем только заполненные.
+function buildMetrics(s: HealthSnapshot | null | undefined): Metric[] {
+  if (!s) return [];
+  const sd = s.raw?.sleepDetail ?? {};
+  const act = s.raw?.activity ?? {};
+  const out: Metric[] = [];
+  const push = (key: string, value: number | null | undefined, unit?: string, fmt?: (v: number) => string) => {
+    if (value == null) return;
+    out.push({ key, value: fmt ? fmt(value) : String(value), unit });
+  };
+
+  push('readiness', s.readiness);
+  push('sleep', s.sleep_score);
+  push('hrv', s.hrv, 'ms', (v) => String(Math.round(v)));
+  push('rhr', s.rhr, 'bpm', (v) => String(Math.round(v)));
+  push('temp', s.temp, 'c', (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`);
+  push('respiratory', sd.average_breath, 'brmin', (v) => v.toFixed(1));
+  push('duration', sd.total_sleep_duration, 'h', (v) => fmtDur(v));
+  push('efficiency', sd.efficiency, 'pct', (v) => String(Math.round(v)));
+  push('steps', act.steps, undefined, (v) => String(v));
+  return out;
+}
+
+function MetricCard({ m, onPress }: { m: Metric; onPress: () => void }) {
+  const { t } = useTranslation();
   return (
-    <View className="flex-1 rounded-2xl bg-graphite-800 p-4">
-      <Text className="text-2xl font-extrabold text-graphite-50">{value}</Text>
-      <Text className="mt-1 text-xs uppercase tracking-wide text-graphite-500">{label}</Text>
-    </View>
+    <Pressable
+      onPress={onPress}
+      className="mb-3 w-[48%] rounded-2xl bg-graphite-800 p-4 active:opacity-80"
+    >
+      <View className="flex-row items-baseline">
+        <Text className="text-2xl font-extrabold text-graphite-50">{m.value}</Text>
+        {m.unit ? <Text className="ml-1 text-xs text-graphite-500">{t(`health.units.${m.unit}`)}</Text> : null}
+      </View>
+      <Text className="mt-1 text-xs text-graphite-400">{t(`health.metrics.${m.key}`)}</Text>
+      <Text className="mt-2 text-[10px] uppercase tracking-wide text-graphite-600">{t('health.tapInfo')}</Text>
+    </Pressable>
+  );
+}
+
+function MetricSheet({ metricKey, onClose }: { metricKey: string | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Modal visible={!!metricKey} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose}>
+        <Pressable onPress={() => {}} className="rounded-t-3xl bg-graphite-900 px-6 pb-10 pt-5">
+          {metricKey && (
+            <>
+              <Text className="text-xl font-extrabold text-graphite-50">
+                {t(`health.metrics.${metricKey}`)}
+              </Text>
+              <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+                {t('health.whatTitle')}
+              </Text>
+              <Text className="mt-1 text-sm leading-5 text-graphite-300">
+                {t(`health.ref.${metricKey}.what`)}
+              </Text>
+              <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+                {t('health.rangeTitle')}
+              </Text>
+              <Text className="mt-1 text-sm leading-5 text-graphite-300">
+                {t(`health.ref.${metricKey}.range`)}
+              </Text>
+              <Pressable
+                onPress={onClose}
+                className="mt-6 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+              >
+                <Text className="text-sm font-semibold text-graphite-200">{t('summary.done')}</Text>
+              </Pressable>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -26,6 +108,7 @@ export default function HealthScreen() {
 
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
   const { data: connected } = useQuery({
     queryKey: ['oura-connected', userId],
@@ -55,9 +138,11 @@ export default function HealthScreen() {
     onError: () => setError(t('health.connectError')),
   });
 
+  const metrics = buildMetrics(snapshot);
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <View className="flex-1 px-6 pt-4">
+      <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: 32 }}>
         <Text className="text-2xl font-extrabold text-graphite-50">{t('health.title')}</Text>
 
         <View className="mt-6 rounded-2xl bg-graphite-900 p-5">
@@ -97,31 +182,19 @@ export default function HealthScreen() {
             </>
           ) : (
             <>
-              <View className="mt-4 flex-row gap-3">
-                <Metric
-                  label={t('health.readiness')}
-                  value={snapshot?.readiness != null ? String(snapshot.readiness) : '–'}
-                />
-                <Metric
-                  label={t('health.sleep')}
-                  value={snapshot?.sleep_score != null ? String(snapshot.sleep_score) : '–'}
-                />
-              </View>
-              <View className="mt-3 flex-row gap-3">
-                <Metric
-                  label={t('health.hrv')}
-                  value={snapshot?.hrv != null ? String(Math.round(snapshot.hrv)) : '–'}
-                />
-                <Metric
-                  label={t('health.rhr')}
-                  value={snapshot?.rhr != null ? String(Math.round(snapshot.rhr)) : '–'}
-                />
-              </View>
-              {!snapshot && <Text className="mt-3 text-sm text-graphite-400">{t('health.noData')}</Text>}
+              {metrics.length > 0 ? (
+                <View className="mt-4 flex-row flex-wrap justify-between">
+                  {metrics.map((m) => (
+                    <MetricCard key={m.key} m={m} onPress={() => setSelected(m.key)} />
+                  ))}
+                </View>
+              ) : (
+                <Text className="mt-3 text-sm text-graphite-400">{t('health.noData')}</Text>
+              )}
               <Pressable
                 disabled={syncMut.isPending}
                 onPress={() => syncMut.mutate()}
-                className="mt-4 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+                className="mt-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
               >
                 {syncMut.isPending ? (
                   <ActivityIndicator color="#848D9A" />
@@ -137,7 +210,9 @@ export default function HealthScreen() {
           <Text className="text-base font-semibold text-graphite-100">{t('health.soonTitle')}</Text>
           <Text className="mt-2 text-sm leading-5 text-graphite-400">{t('health.soonBody')}</Text>
         </View>
-      </View>
+      </ScrollView>
+
+      <MetricSheet metricKey={selected} onClose={() => setSelected(null)} />
     </SafeAreaView>
   );
 }

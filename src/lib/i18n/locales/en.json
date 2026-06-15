@@ -82,13 +82,69 @@
     "tokenPlaceholder": "OURA Personal Access Token",
     "connectError": "Could not connect. Check the token.",
     "syncNow": "Sync now",
-    "readiness": "Readiness",
-    "sleep": "Sleep",
-    "hrv": "HRV (ms)",
-    "rhr": "Resting HR",
     "noData": "No data yet — tap Sync now.",
-    "soonTitle": "Metrics are coming",
-    "soonBody": "Once connected, readiness/sleep and cycle-phase correlations with training ease and success show up here."
+    "tapInfo": "tap to read",
+    "whatTitle": "What it means",
+    "rangeTitle": "Reference",
+    "metrics": {
+      "readiness": "Readiness",
+      "sleep": "Sleep score",
+      "hrv": "HRV",
+      "rhr": "Resting heart rate",
+      "temp": "Body temperature",
+      "respiratory": "Respiratory rate",
+      "duration": "Sleep duration",
+      "efficiency": "Sleep efficiency",
+      "steps": "Steps"
+    },
+    "units": {
+      "ms": "ms",
+      "bpm": "bpm",
+      "c": "°C",
+      "brmin": "br/min",
+      "h": "h",
+      "pct": "%"
+    },
+    "ref": {
+      "readiness": {
+        "what": "Overall recovery score (0–100) combining sleep, HRV, resting heart rate and temperature.",
+        "range": "85+ excellent · 70–84 balanced · below 70 — ease off and prioritise recovery."
+      },
+      "sleep": {
+        "what": "Quality of last night's sleep (0–100): duration, depth, restfulness and timing.",
+        "range": "85+ great · 70–84 ok · below 70 — short or restless sleep."
+      },
+      "hrv": {
+        "what": "Heart-rate variability during sleep — a marker of recovery and stress balance. Higher is generally better.",
+        "range": "Individual. Watch the trend vs your own baseline; a sharp drop signals stress or under-recovery."
+      },
+      "rhr": {
+        "what": "Your lowest heart rate overnight. Lower usually means better recovery and fitness.",
+        "range": "Athletes are often ~40–55 bpm. A rise of 5–7 above your baseline suggests fatigue or illness."
+      },
+      "temp": {
+        "what": "Skin temperature deviation from your personal baseline.",
+        "range": "Around 0 is normal. +0.5 °C or more can mean illness, stress or (for women) cycle phase."
+      },
+      "respiratory": {
+        "what": "Breaths per minute during sleep — usually very stable night to night.",
+        "range": "Typically 12–20 br/min. A noticeable rise can precede illness."
+      },
+      "duration": {
+        "what": "Total time asleep last night.",
+        "range": "7–9 h suits most adults; consistency matters as much as the total."
+      },
+      "efficiency": {
+        "what": "Share of time in bed actually spent asleep.",
+        "range": "85%+ is good. Lower means restless nights or trouble falling asleep."
+      },
+      "steps": {
+        "what": "Steps taken during the day.",
+        "range": "~8–10k is a common daily target; any increase in movement helps."
+      }
+    },
+    "soonTitle": "Analytics are coming",
+    "soonBody": "Next: correlations of readiness/sleep and cycle phase with training ease and results, by calendar."
   },
   "workout": {
     "title": "Workout",
