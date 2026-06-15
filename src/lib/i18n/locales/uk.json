@@ -107,6 +107,7 @@
     "tokenPlaceholder": "OURA Personal Access Token",
     "connectError": "Не вдалося підключити. Перевір токен.",
     "syncNow": "Оновити",
+    "syncAll": "Підтягнути всю історію (разово)",
     "noData": "Даних ще немає — натисни Оновити.",
     "tapInfo": "тапни, щоб прочитати",
     "whatTitle": "Що це означає",

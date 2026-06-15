@@ -128,6 +128,12 @@ export default function HealthScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] }),
   });
 
+  // разовый бэкафилл всей истории (~5 лет) — чтобы у аналитики сразу была глубина
+  const fullSyncMut = useMutation({
+    mutationFn: () => syncOura(1825),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] }),
+  });
+
   const connectMut = useMutation({
     mutationFn: () => connectOura(token.trim()),
     onSuccess: () => {
@@ -218,6 +224,17 @@ export default function HealthScreen() {
                   <ActivityIndicator color="#848D9A" />
                 ) : (
                   <Text className="text-sm font-semibold text-graphite-200">{t('health.syncNow')}</Text>
+                )}
+              </Pressable>
+              <Pressable
+                disabled={fullSyncMut.isPending}
+                onPress={() => fullSyncMut.mutate()}
+                className="mt-2 items-center py-2 active:opacity-60"
+              >
+                {fullSyncMut.isPending ? (
+                  <ActivityIndicator color="#848D9A" />
+                ) : (
+                  <Text className="text-xs text-graphite-500">{t('health.syncAll')}</Text>
                 )}
               </Pressable>
             </>

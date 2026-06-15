@@ -11,12 +11,13 @@
 - **Тянем всё, что отдаёт OURA v2:** `daily_readiness`, `daily_sleep`, `sleep` (детальный), `daily_activity`, `daily_spo2`, `daily_stress`, `daily_resilience`, `daily_cardiovascular_age`, `vO2_max`. Отсутствующие/недоступные эндпоинты тихо пропускаются.
 - **Богатый снимок дня** (миграция `20260615250000`): колонки — recovery (readiness, temp, temp_trend), sleep (hrv, rhr, avg_hr, respiratory_rate, total/deep/rem/light/in-bed мин, efficiency, latency, restless, bedtime_start/end), activity (score, steps, active/total ккал, дистанция, MET, времена активности), spo2_avg, breathing_disturbance_idx, stress_high/recovery_high мин + summary, resilience_level, vascular_age, vo2_max. Плюс `*_contributors` (jsonb) и полный `raw` — ничего не теряем.
 - Клиент: `oura.ts` — расширен тип `HealthSnapshot`, добавлен `getSnapshotsRange(userId, from)` для будущей аналитики «по календарю». Экран Здоров'я работает как прежде (читает `raw`).
-- Проверка: `tsc` ✅.
+- **Хранение вечное + полная история.** Данные не удаляются (только upsert). Добавлена **пагинация по `next_token`** (иначе OURA режет >250 строк) и лимит диапазона поднят до ~2000 дней. В Здоров'ї — кнопка **«Підтягнути всю історію (разово)»** (`syncOura(1825)` ≈ 5 лет) для разовой загрузки прошлого.
+- Проверка: `tsc` ✅, JSON ✅.
 
 ### 🚧 TODO (деплой) — ты
 - [ ] `npx supabase db push` (миграция `20260615250000`)
-- [ ] `npx supabase functions deploy oura-sync`
-- [ ] В приложке Здоров'я → «Оновити» (подтянет 30 дней истории). Цикл (`cycle_day/phase`) аналитика выведет из `cycle_periods` при джойне по дате — отдельной записи в снимок не требует.
+- [ ] `npx supabase functions deploy oura-sync` (вкл. пагинацию — пере-деплой)
+- [ ] В приложке Здоров'я → «Оновити» (30 дней) или один раз «Підтягнути всю історію». Цикл (`cycle_day/phase`) аналитика выведет из `cycle_periods` при джойне по дате — отдельной записи в снимок не требует.
 
 ### ⏭️ Следующее
 - **Аналитика** (фаза 2): связки readiness/сон/HRV/цикл ↔ лёгкость/успешность тренировок, тренды, тоннаж/1ПМ/PR, прогресс по эспандеру.

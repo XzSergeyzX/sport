@@ -107,6 +107,7 @@
     "tokenPlaceholder": "OURA Personal Access Token",
     "connectError": "Could not connect. Check the token.",
     "syncNow": "Sync now",
+    "syncAll": "Pull full history (one-time)",
     "noData": "No data yet — tap Sync now.",
     "tapInfo": "tap to read",
     "whatTitle": "What it means",

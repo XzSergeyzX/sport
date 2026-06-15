@@ -61,19 +61,30 @@ Deno.serve(async (req) => {
     if (tokErr) return json({ error: tokErr.message }, 500);
     if (!token) return json({ error: 'not_connected' }, 400);
 
-    // диапазон бэкафилла (по умолчанию 30 дней; можно передать body.days)
+    // диапазон бэкафилла (по умолчанию 30 дней; body.days до ~5.5 лет для разовой полной истории)
     const body = await req.json().catch(() => ({}));
-    const days = Math.min(Math.max(Number(body?.days) || 30, 1), 180);
+    const days = Math.min(Math.max(Number(body?.days) || 30, 1), 2000);
     const end = new Date();
     const start = new Date(end.getTime() - days * 86400000);
     const range = `start_date=${ymd(start)}&end_date=${ymd(end)}`;
     const headers = { Authorization: `Bearer ${token}` };
 
-    // тянем всё, что отдаёт OURA v2; отсутствующие эндпоинты просто игнорируем (res.ok)
-    const ep = (path: string) =>
-      fetch(`https://api.ouraring.com/v2/usercollection/${path}?${range}`, { headers })
-        .then((r) => (r.ok ? r.json() : { data: [] }))
-        .catch(() => ({ data: [] }));
+    // тянем всё, что отдаёт OURA v2; недоступные эндпоинты игнорируем.
+    // Пагинация по next_token — иначе OURA обрежет выдачу ~250 строками (важно для глубокой истории).
+    const ep = async (path: string): Promise<{ data: unknown[] }> => {
+      const out: unknown[] = [];
+      let next: string | null = null;
+      for (let page = 0; page < 40; page++) {
+        const u = `https://api.ouraring.com/v2/usercollection/${path}?${range}${next ? `&next_token=${next}` : ''}`;
+        const r = await fetch(u, { headers }).catch(() => null);
+        if (!r || !r.ok) break;
+        const j = await r.json().catch(() => ({ data: [], next_token: null }));
+        if (Array.isArray(j.data)) out.push(...j.data);
+        next = j.next_token ?? null;
+        if (!next) break;
+      }
+      return { data: out };
+    };
 
     const [
       readiness,
