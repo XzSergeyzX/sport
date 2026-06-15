@@ -44,16 +44,21 @@ export type ImportResult = {
 export async function importProgram(text: string): Promise<ImportResult> {
   const { data, error } = await supabase.functions.invoke('program-import', { body: { text } });
   if (error) {
-    // вытащить код ошибки из тела ответа функции (бюджет/провайдер/парсинг)
-    const ctx = (error as { context?: { body?: string } }).context;
+    // тело ошибки функции лежит в error.context (это Response) — читаем код оттуда
     let code = error.message;
-    try {
-      if (ctx?.body) code = JSON.parse(ctx.body).error ?? code;
-    } catch {
-      /* ignore */
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.text === 'function') {
+      try {
+        const parsed = JSON.parse(await ctx.text());
+        code = parsed.error ?? parsed.detail ?? code;
+      } catch {
+        /* оставляем error.message */
+      }
     }
     throw new Error(code);
   }
+  // функция может вернуть 200 с телом-ошибкой
+  if (data?.error) throw new Error(data.error);
   return data as ImportResult;
 }
 

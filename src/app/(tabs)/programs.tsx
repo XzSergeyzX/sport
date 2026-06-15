@@ -45,8 +45,9 @@ export default function ProgramsScreen() {
       router.push(`/program/${res.program_id}`);
     },
     onError: (e: Error) => {
-      const key = ERROR_KEYS[e.message] ?? 'programs.errGeneric';
-      setError(t(key));
+      const key = ERROR_KEYS[e.message];
+      // для неизвестных кодов показываем сам код — чтобы видеть реальную причину
+      setError(key ? t(key) : `${t('programs.errGeneric')} (${e.message})`);
     },
   });
 
