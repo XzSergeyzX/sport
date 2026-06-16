@@ -10,8 +10,8 @@ import { listWorkouts, type WorkoutDetail } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { useWeightUnit } from '@/lib/use-unit';
 
-// оценка 1ПМ по Эпли: вес × (1 + повторы/30)
-const epley = (weight: number, reps: number) => weight * (1 + reps / 30);
+// оценка 1ПМ по О'Коннору: вес × (1 + 0.025 × повторы) — честнее (ниже Эпли)
+const oneRmEst = (weight: number, reps: number) => weight * (1 + 0.025 * reps);
 
 type TonnagePoint = { date: string; tonnage: number };
 type Pr = { id: string; name: string; oneRm: number; weight: number; reps: number };
@@ -21,9 +21,13 @@ function analyze(workouts: WorkoutDetail[], lang: string) {
   const prs = new Map<string, Pr>();
   let totalTonnage = 0;
   let totalSets = 0;
+  let totalMin = 0;
 
   // newest-first → разворачиваем в хронологию
   for (const w of [...workouts].reverse()) {
+    if (w.ended_at) {
+      totalMin += Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000));
+    }
     let wt = 0;
     for (const we of w.workout_exercises ?? []) {
       const name = we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—');
@@ -32,7 +36,7 @@ function analyze(workouts: WorkoutDetail[], lang: string) {
         if (!s.logged_at || s.weight == null || s.reps == null || s.duration_sec != null) continue;
         wt += s.weight * s.reps;
         totalSets += 1;
-        const oneRm = epley(s.weight, s.reps);
+        const oneRm = oneRmEst(s.weight, s.reps);
         const cur = prs.get(we.exercise_id);
         if (!cur || oneRm > cur.oneRm) {
           prs.set(we.exercise_id, { id: we.exercise_id, name, oneRm, weight: s.weight, reps: s.reps });
@@ -46,7 +50,17 @@ function analyze(workouts: WorkoutDetail[], lang: string) {
   }
 
   const records = [...prs.values()].sort((a, b) => b.oneRm - a.oneRm);
-  return { tonnageSeries, records, totalTonnage, totalSets, workouts: tonnageSeries.length };
+  return { tonnageSeries, records, totalTonnage, totalSets, totalMin, workouts: tonnageSeries.length };
+}
+
+function fmtDuration(min: number, t: (k: string) => string): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h}${t('analytics.hrShort')} ${m}${t('summary.min')}` : `${m} ${t('summary.min')}`;
+}
+
+function fmtTonnage(v: number): string {
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -58,33 +72,44 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TonnageBars({ series, unit }: { series: TonnagePoint[]; unit: string }) {
+function TonnageBars({
+  series,
+  unit,
+  hint,
+}: {
+  series: TonnagePoint[];
+  unit: string;
+  hint: string;
+}) {
   const last = series.slice(-12);
   const max = Math.max(1, ...last.map((p) => p.tonnage));
   return (
     <View className="rounded-2xl bg-graphite-900 p-4">
       <View className="h-32 flex-row items-end gap-1.5">
-        {last.map((p) => (
-          <View key={p.date} className="flex-1 items-center justify-end">
+        {last.map((p, i) => (
+          <View key={`${p.date}-${i}`} className="flex-1 items-center justify-end">
+            <Text className="mb-0.5 text-[9px] font-semibold text-graphite-400">
+              {fmtTonnage(p.tonnage)}
+            </Text>
             <View
               className="w-full rounded-t-md bg-accent"
-              style={{ height: Math.max(4, (p.tonnage / max) * 104) }}
+              style={{ height: Math.max(4, (p.tonnage / max) * 90) }}
             />
           </View>
         ))}
       </View>
       <View className="mt-1 flex-row gap-1.5">
-        {last.map((p) => {
+        {last.map((p, i) => {
           const d = new Date(p.date);
           return (
-            <Text key={p.date} className="flex-1 text-center text-[9px] text-graphite-600">
+            <Text key={`${p.date}-${i}`} className="flex-1 text-center text-[9px] text-graphite-600">
               {d.getDate()}.{d.getMonth() + 1}
             </Text>
           );
         })}
       </View>
-      <Text className="mt-2 text-center text-[10px] uppercase tracking-wide text-graphite-600">
-        {unit}
+      <Text className="mt-2 text-center text-[10px] text-graphite-600">
+        {hint} · {unit}
       </Text>
     </View>
   );
@@ -126,16 +151,19 @@ export default function AnalyticsScreen() {
                 <Stat label={t('analytics.statWorkouts')} value={String(a.workouts)} />
                 <Stat
                   label={`${t('summary.tonnage')}, ${unitLabel}`}
-                  value={String(Math.round(a.totalTonnage))}
+                  value={fmtTonnage(a.totalTonnage)}
                 />
               </View>
-              <Stat label={t('summary.sets')} value={String(a.totalSets)} />
+              <View className="flex-row gap-3">
+                <Stat label={t('summary.sets')} value={String(a.totalSets)} />
+                <Stat label={t('analytics.statTime')} value={fmtDuration(a.totalMin, t)} />
+              </View>
             </View>
 
             <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
               {t('analytics.tonnageTrend')}
             </Text>
-            <TonnageBars series={a.tonnageSeries} unit={unitLabel} />
+            <TonnageBars series={a.tonnageSeries} unit={unitLabel} hint={t('analytics.tonnageHint')} />
 
             <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
               {t('analytics.records')}
