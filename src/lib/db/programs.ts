@@ -146,6 +146,15 @@ export async function updateProgram(id: string, title: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Переименовать упражнение в программе (отображаемое имя, как в плане). */
+export async function updateProgramExercise(id: string, name: string): Promise<void> {
+  const { error } = await supabase
+    .from('program_exercises')
+    .update({ name: name.trim().slice(0, 200) })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 /** Удалить упражнение из программы (каскадом — его плановые подходы). */
 export async function deleteProgramExercise(id: string): Promise<void> {
   const { error } = await supabase.from('program_exercises').delete().eq('id', id);

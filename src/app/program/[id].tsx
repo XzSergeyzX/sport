@@ -18,6 +18,7 @@ import {
   type ProgramSet,
   startWorkoutFromProgram,
   updateProgram,
+  updateProgramExercise,
   updateProgramSet,
 } from '@/lib/db/programs';
 import { repsLabel } from '@/lib/i18n/plural';
@@ -56,6 +57,28 @@ type SetPatch = {
   target_weight?: number | null;
   target_duration_sec?: number | null;
 };
+
+function EditableName({
+  name,
+  onSave,
+}: {
+  name: string;
+  onSave: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState(name);
+  return (
+    <TextInput
+      value={draft}
+      onChangeText={setDraft}
+      onEndEditing={() => {
+        const v = draft.trim();
+        if (v && v !== name) onSave(v);
+      }}
+      multiline
+      className="flex-1 rounded-lg bg-graphite-800 px-3 py-2 text-lg font-semibold text-graphite-50"
+    />
+  );
+}
 
 function EditableSet({
   index,
@@ -162,6 +185,11 @@ export default function ProgramDetailScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['program', id] }),
   });
 
+  const renameExMut = useMutation({
+    mutationFn: (v: { peId: string; name: string }) => updateProgramExercise(v.peId, v.name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['program', id] }),
+  });
+
   const delProgMut = useMutation({
     mutationFn: () => deleteProgram(id),
     onSuccess: () => {
@@ -190,7 +218,7 @@ export default function ProgramDetailScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <Stack.Screen options={{ headerShown: false }} />
-      <View className="flex-row items-start px-6 pt-4">
+      <View className="flex-row items-start border-b border-graphite-800 bg-graphite-950 px-6 pb-3 pt-4">
         <Pressable onPress={() => router.back()} className="pr-4 pt-0.5 active:opacity-60">
           <Text className="text-2xl text-graphite-300">‹</Text>
         </Pressable>
@@ -251,14 +279,22 @@ export default function ProgramDetailScreen() {
                   {g.exercises.map((pe, ei) => (
                     <View key={pe.id} className={ei > 0 ? 'mt-4' : ''}>
                       <View className="flex-row items-center justify-between">
-                        <Text className="flex-1 text-lg font-semibold text-graphite-100">{pe.name}</Text>
+                        {editMode ? (
+                          <EditableName
+                            key={pe.id}
+                            name={pe.name}
+                            onSave={(name) => renameExMut.mutate({ peId: pe.id, name })}
+                          />
+                        ) : (
+                          <Text className="flex-1 text-lg font-semibold text-graphite-100">{pe.name}</Text>
+                        )}
                         {!editMode && pe.exercise_id == null && (
                           <Text className="ml-2 text-[10px] uppercase tracking-wide text-amber-500">
                             {t('programs.unmatched')}
                           </Text>
                         )}
                         {editMode && (
-                          <Pressable onPress={() => delExMut.mutate(pe.id)} hitSlop={8} className="ml-2">
+                          <Pressable onPress={() => delExMut.mutate(pe.id)} hitSlop={8} className="ml-3">
                             <Text className="text-base text-red-400">✕</Text>
                           </Pressable>
                         )}
