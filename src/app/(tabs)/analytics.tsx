@@ -5,8 +5,8 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
+import { getLoggedSets, type LoggedSet } from '@/lib/db/analytics';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
-import { listWorkouts, type WorkoutDetail } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { useWeightUnit } from '@/lib/use-unit';
 
@@ -33,59 +33,62 @@ type Acc = {
   time: Map<string, TimeRec>;
 };
 
-function analyze(workouts: WorkoutDetail[], lang: string) {
-  const tonnageSeries: TonnagePoint[] = [];
-  let totalTonnage = 0;
-  let totalSets = 0;
-  let totalMin = 0;
+function analyze(rows: LoggedSet[], lang: string) {
   const exMap = new Map<string, Acc>();
+  const wkTonnage = new Map<string, TonnagePoint>();
+  const wkDur = new Map<string, number>(); // минуты на тренировку
+  const wkSet = new Set<string>();
+  let totalSets = 0;
 
-  for (const w of [...workouts].reverse()) {
-    if (w.ended_at) {
-      totalMin += Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000));
+  for (const r of rows) {
+    const we = r.workout_exercises;
+    const wk = we?.workouts;
+    if (!we || !wk) continue;
+    const date = wk.started_at;
+    wkSet.add(wk.id);
+    if (!wkDur.has(wk.id)) {
+      wkDur.set(
+        wk.id,
+        wk.ended_at ? Math.max(0, Math.round((+new Date(wk.ended_at) - +new Date(date)) / 60000)) : 0,
+      );
     }
-    let wt = 0;
-    for (const we of w.workout_exercises ?? []) {
-      const name = we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—');
-      const cluster = we.exercise?.cluster ?? null;
-      let ex = exMap.get(we.exercise_id);
-      if (!ex) {
-        ex = { name, cluster, reps: new Map(), time: new Map() };
-        exMap.set(we.exercise_id, ex);
-      } else {
-        ex.name = name;
-        if (cluster) ex.cluster = cluster;
-      }
-      for (const s of we.sets ?? []) {
-        if (!s.logged_at) continue;
-        const date = w.started_at;
-        if (s.duration_sec != null) {
-          totalSets += 1;
-          const key = `${s.duration_sec}@${s.weight ?? ''}`;
-          const prev = ex.time.get(key);
-          if (!prev || date < prev.date)
-            ex.time.set(key, { kind: 'time', sec: s.duration_sec, weight: s.weight, date });
-        } else if (s.weight != null && s.reps != null) {
-          totalSets += 1;
-          wt += s.weight * s.reps;
-          const key = `${s.weight}x${s.reps}`;
-          const prev = ex.reps.get(key);
-          if (!prev || date < prev.date)
-            ex.reps.set(key, {
-              kind: 'reps',
-              weight: s.weight,
-              reps: s.reps,
-              oneRm: oneRmEst(s.weight, s.reps),
-              date,
-            });
-        }
-      }
+    const name = we.display_name ?? (we.exercises ? exerciseName(we.exercises, lang) : '—');
+    const cluster = we.exercises?.cluster ?? null;
+    let ex = exMap.get(we.exercise_id);
+    if (!ex) {
+      ex = { name, cluster, reps: new Map(), time: new Map() };
+      exMap.set(we.exercise_id, ex);
+    } else {
+      ex.name = name;
+      if (cluster) ex.cluster = cluster;
     }
-    if (wt > 0) {
-      tonnageSeries.push({ date: w.started_at, tonnage: wt });
-      totalTonnage += wt;
+
+    totalSets += 1;
+    if (r.duration_sec != null) {
+      const key = `${r.duration_sec}@${r.weight ?? ''}`;
+      const prev = ex.time.get(key);
+      if (!prev || date < prev.date)
+        ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date });
+    } else if (r.weight != null && r.reps != null) {
+      const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
+      tn.tonnage += r.weight * r.reps;
+      wkTonnage.set(wk.id, tn);
+      const key = `${r.weight}x${r.reps}`;
+      const prev = ex.reps.get(key);
+      if (!prev || date < prev.date)
+        ex.reps.set(key, {
+          kind: 'reps',
+          weight: r.weight,
+          reps: r.reps,
+          oneRm: oneRmEst(r.weight, r.reps),
+          date,
+        });
     }
   }
+
+  const tonnageSeries = [...wkTonnage.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const totalTonnage = tonnageSeries.reduce((n, p) => n + p.tonnage, 0);
+  const totalMin = [...wkDur.values()].reduce((n, m) => n + m, 0);
 
   const exList: ExRecords[] = [];
   for (const [id, ex] of exMap) {
@@ -108,7 +111,7 @@ function analyze(workouts: WorkoutDetail[], lang: string) {
     }))
     .filter((g) => g.exercises.length > 0);
 
-  return { tonnageSeries, recordGroups, totalTonnage, totalSets, totalMin, workouts: tonnageSeries.length };
+  return { tonnageSeries, recordGroups, totalTonnage, totalSets, totalMin, workouts: wkSet.size };
 }
 
 function fmtDuration(min: number, t: (k: string) => string): string {
@@ -183,13 +186,13 @@ export default function AnalyticsScreen() {
   const [openClusters, setOpenClusters] = useState<Record<string, boolean>>({});
   const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
 
-  const { data: workouts, isLoading } = useQuery({
-    queryKey: ['workouts', userId],
-    queryFn: () => listWorkouts(userId as string),
+  const { data: rows, isLoading } = useQuery({
+    queryKey: ['analytics-sets', userId],
+    queryFn: () => getLoggedSets(),
     enabled: !!userId,
   });
 
-  const a = useMemo(() => analyze(workouts ?? [], lang), [workouts, lang]);
+  const a = useMemo(() => analyze(rows ?? [], lang), [rows, lang]);
   const unitLabel = t(`common.${unit}`);
   const secShort = t('workout.secShort');
 
