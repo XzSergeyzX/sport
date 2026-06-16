@@ -93,6 +93,11 @@
   },
   "analytics": {
     "title": "Analytics",
+    "empty": "No workouts yet — analytics will appear after your first sessions.",
+    "statWorkouts": "Workouts",
+    "tonnageTrend": "Tonnage by workout",
+    "records": "Records",
+    "est1rm": "est. 1RM",
     "soonTitle": "Analytics are coming",
     "soonBody": "Tonnage, volume, per-exercise progress, estimated 1RM, PRs and trends — computed on the backend, visualized here."
   },
