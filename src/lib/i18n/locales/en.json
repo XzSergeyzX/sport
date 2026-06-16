@@ -45,9 +45,17 @@
     "trackCycle": "Track cycle",
     "trackCycleHint": "Show menstrual cycle day & phase in Health.",
     "myExercises": "My exercises",
-    "disciplines": "My disciplines",
-    "disciplinesHint": "Show specialty dictionaries (armwrestling, weightlifting…) in the exercise picker. Base movements are always shown.",
+    "disciplines": "Exercises in the catalog",
+    "disciplinesHint": "Pick what shows in the exercise list. Anything off is still found by search.",
     "myGrippers": "My grippers"
+  },
+  "gender": {
+    "title": "Sex",
+    "male": "Male",
+    "female": "Female",
+    "other": "Other",
+    "na": "Prefer not to say",
+    "custom": "Your wording"
   },
   "exercises": {
     "title": "My exercises",

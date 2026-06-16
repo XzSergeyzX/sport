@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Segmented } from '@/components/segmented';
@@ -15,6 +15,7 @@ import {
   getDisciplines,
   setDisciplines,
 } from '@/lib/db/exercises';
+import { type Gender, getGender, setGender } from '@/lib/db/profile';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -26,6 +27,17 @@ export default function AccountScreen() {
   const { session, signOut } = useAuth();
   const userId = session?.user.id;
 
+  const { data: gender } = useQuery({
+    queryKey: ['gender', userId],
+    queryFn: () => getGender(userId as string),
+    enabled: !!userId,
+  });
+  const genderMut = useMutation({
+    mutationFn: (v: { g: Gender; self?: string | null }) => setGender(userId as string, v.g, v.self),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['gender', userId] }),
+  });
+  const [genderSelf, setGenderSelf] = useState('');
+
   const { data: trackCycle } = useQuery({
     queryKey: ['track-cycle', userId],
     queryFn: () => getTrackCycle(userId as string),
@@ -35,6 +47,8 @@ export default function AccountScreen() {
     mutationFn: (v: boolean) => setTrackCycle(userId as string, v),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['track-cycle', userId] }),
   });
+
+  const GENDERS: Gender[] = ['male', 'female', 'other', 'na'];
 
   const { data: disciplines } = useQuery({
     queryKey: ['disciplines', userId],
@@ -112,18 +126,51 @@ export default function AccountScreen() {
           />
         </View>
 
-        <View className="mt-6 flex-row items-center justify-between">
-          <View className="flex-1 pr-4">
-            <Text className="text-lg font-semibold text-graphite-100">{t('account.trackCycle')}</Text>
-            <Text className="mt-0.5 text-sm text-graphite-500">{t('account.trackCycleHint')}</Text>
+        <View className="mt-6 gap-2">
+          <Text className="text-lg font-semibold text-graphite-100">{t('gender.title')}</Text>
+          <View className="mt-1 flex-row flex-wrap gap-2">
+            {GENDERS.map((g) => {
+              const active = gender?.gender === g;
+              return (
+                <Pressable
+                  key={g}
+                  onPress={() => genderMut.mutate({ g, self: genderSelf || gender?.self })}
+                  className="rounded-full px-3 py-1.5 active:opacity-80"
+                  style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+                >
+                  <Text className="text-sm" style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>
+                    {t(`gender.${g}`)}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-          <Switch
-            value={!!trackCycle}
-            onValueChange={(v) => cycleMut.mutate(v)}
-            trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
-            thumbColor="#E5E7EB"
-          />
+          {gender?.gender === 'other' && (
+            <TextInput
+              value={genderSelf || (gender?.self ?? '')}
+              onChangeText={setGenderSelf}
+              onEndEditing={() => genderMut.mutate({ g: 'other', self: genderSelf })}
+              placeholder={t('gender.custom')}
+              placeholderTextColor="#848D9A"
+              className="mt-1 rounded-xl bg-graphite-800 px-4 py-2.5 text-base text-graphite-50"
+            />
+          )}
         </View>
+
+        {gender?.gender === 'female' && (
+          <View className="mt-6 flex-row items-center justify-between">
+            <View className="flex-1 pr-4">
+              <Text className="text-lg font-semibold text-graphite-100">{t('account.trackCycle')}</Text>
+              <Text className="mt-0.5 text-sm text-graphite-500">{t('account.trackCycleHint')}</Text>
+            </View>
+            <Switch
+              value={!!trackCycle}
+              onValueChange={(v) => cycleMut.mutate(v)}
+              trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
+              thumbColor="#E5E7EB"
+            />
+          </View>
+        )}
 
         <View className="mt-6 gap-2">
           <Text className="text-lg font-semibold text-graphite-100">{t('account.disciplines')}</Text>
