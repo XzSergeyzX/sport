@@ -198,8 +198,18 @@ export default function HealthScreen() {
             </>
           ) : (
             <>
+              {snapshot?.date && (
+                <Text className="mt-3 text-xs text-graphite-500">
+                  {t('health.asOf', {
+                    date: new Date(snapshot.date).toLocaleDateString(undefined, {
+                      day: 'numeric',
+                      month: 'long',
+                    }),
+                  })}
+                </Text>
+              )}
               {metrics.length > 0 ? (
-                <View className="mt-4 flex-row flex-wrap justify-between">
+                <View className="mt-3 flex-row flex-wrap justify-between">
                   {metrics.map((m) => (
                     <MetricCard key={m.key} m={m} onPress={() => setSelected(m.key)} />
                   ))}

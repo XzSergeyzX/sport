@@ -66,7 +66,9 @@ Deno.serve(async (req) => {
     const days = Math.min(Math.max(Number(body?.days) || 30, 1), 2000);
     const end = new Date();
     const start = new Date(end.getTime() - days * 86400000);
-    const range = `start_date=${ymd(start)}&end_date=${ymd(end)}`;
+    // end_date = завтра: OURA трактует границу так, что сегодняшний день иначе может «выпасть»
+    const endParam = new Date(end.getTime() + 86400000);
+    const range = `start_date=${ymd(start)}&end_date=${ymd(endParam)}`;
     const headers = { Authorization: `Bearer ${token}` };
 
     // тянем всё, что отдаёт OURA v2; недоступные эндпоинты игнорируем.
