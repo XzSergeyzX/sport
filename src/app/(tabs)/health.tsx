@@ -2,18 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import {
-  deletePeriod,
-  getCycleStatus,
-  getTrackCycle,
-  logPeriodStart,
-  shiftYmd,
-  updatePeriodStart,
-} from '@/lib/db/cycle';
+import { getCycleStatus, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
 import i18n from '@/lib/i18n';
 import {
   connectOura,
@@ -21,6 +14,7 @@ import {
   getOuraConnected,
   type HealthSnapshot,
   syncOura,
+  type SyncResult,
 } from '@/lib/db/oura';
 
 const PLACEHOLDER = '#848D9A';
@@ -159,9 +153,18 @@ export default function HealthScreen() {
     enabled: !!userId && !!connected,
   });
 
+  const [syncInfo, setSyncInfo] = useState<SyncResult | null>(null);
+  const [syncErr, setSyncErr] = useState<string | null>(null);
+  const [showDiag, setShowDiag] = useState(false);
+
   const syncMut = useMutation({
     mutationFn: () => syncOura(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] }),
+    onSuccess: (res) => {
+      setSyncInfo(res);
+      setSyncErr(null);
+      qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] });
+    },
+    onError: (e: Error) => setSyncErr(e.message || 'sync_failed'),
   });
 
   // авто-обновление при каждом заходе на вкладку (как только OURA API догонит — подтянется)
@@ -199,22 +202,6 @@ export default function HealthScreen() {
     mutationFn: () => logPeriodStart(userId as string),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cycle', userId] }),
   });
-
-  const shiftStartMut = useMutation({
-    mutationFn: (v: { id: string; date: string }) => updatePeriodStart(v.id, v.date),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cycle', userId] }),
-  });
-
-  const deletePeriodMut = useMutation({
-    mutationFn: (id: string) => deletePeriod(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cycle', userId] }),
-  });
-
-  const confirmDeletePeriod = (id: string) =>
-    Alert.alert(t('health.cycle.removeConfirm'), '', [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('health.cycle.remove'), style: 'destructive', onPress: () => deletePeriodMut.mutate(id) },
-    ]);
 
   const metrics = buildMetrics(snapshot);
 
@@ -293,6 +280,31 @@ export default function HealthScreen() {
                   <Text className="text-sm font-semibold text-graphite-200">{t('health.syncNow')}</Text>
                 )}
               </Pressable>
+
+              {(syncErr || syncInfo) && (
+                <Pressable onPress={() => setShowDiag((v) => !v)} className="mt-2 active:opacity-70">
+                  <Text className="text-center text-[10px] uppercase tracking-wide text-graphite-600">
+                    {t('health.diag')}
+                  </Text>
+                </Pressable>
+              )}
+              {showDiag && (
+                <View className="mt-2 rounded-xl bg-graphite-800 p-3">
+                  {syncErr ? <Text className="text-xs text-red-400">{syncErr}</Text> : null}
+                  {syncInfo?.days != null ? (
+                    <Text className="text-[11px] text-graphite-300">
+                      {t('health.diagDays', { n: syncInfo.days })} · {syncInfo.from} → {syncInfo.to}
+                    </Text>
+                  ) : null}
+                  {syncInfo?.diag
+                    ? Object.entries(syncInfo.diag).map(([k, v]) => (
+                        <Text key={k} className="mt-0.5 text-[11px] text-graphite-400">
+                          {k}: HTTP {v.status} · {v.count}d · {v.latest ?? '—'}
+                        </Text>
+                      ))
+                    : null}
+                </View>
+              )}
             </>
           )}
         </View>
@@ -311,43 +323,27 @@ export default function HealthScreen() {
                 <Text className="mt-1 text-xs text-graphite-600">
                   {t('health.cycle.since', { date: cycle.startDate })}
                 </Text>
-                <View className="mt-3 flex-row items-center gap-2">
-                  <Pressable
-                    onPress={() => shiftStartMut.mutate({ id: cycle.periodId, date: shiftYmd(cycle.startDate, -1) })}
-                    className="rounded-lg bg-graphite-800 px-3 py-2 active:opacity-80"
-                  >
-                    <Text className="text-sm text-graphite-200">−1 {t('health.cycle.dayUnit')}</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => shiftStartMut.mutate({ id: cycle.periodId, date: shiftYmd(cycle.startDate, 1) })}
-                    className="rounded-lg bg-graphite-800 px-3 py-2 active:opacity-80"
-                  >
-                    <Text className="text-sm text-graphite-200">+1 {t('health.cycle.dayUnit')}</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => confirmDeletePeriod(cycle.periodId)}
-                    className="ml-auto px-2 py-2 active:opacity-70"
-                  >
-                    <Text className="text-sm text-red-400">{t('health.cycle.remove')}</Text>
-                  </Pressable>
-                </View>
               </>
             ) : (
               <Text className="mt-2 text-sm leading-5 text-graphite-400">{t('health.cycle.empty')}</Text>
             )}
-            <Pressable
-              disabled={logCycleMut.isPending}
-              onPress={() => logCycleMut.mutate()}
-              className="mt-3 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
-            >
-              {logCycleMut.isPending ? (
-                <ActivityIndicator color="#848D9A" />
-              ) : (
-                <Text className="text-sm font-semibold text-graphite-200">
-                  {cycle ? t('health.cycle.newCycle') : t('health.cycle.markDay1')}
-                </Text>
-              )}
-            </Pressable>
+            {/* «Новий цикл» нужен только когда подходит срок (поздняя фаза) или цикл ещё не начат —
+                иначе кнопка только мешает: день/фаза считаются автоматически. */}
+            {(!cycle || cycle.day >= 20) && (
+              <Pressable
+                disabled={logCycleMut.isPending}
+                onPress={() => logCycleMut.mutate()}
+                className="mt-3 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+              >
+                {logCycleMut.isPending ? (
+                  <ActivityIndicator color="#848D9A" />
+                ) : (
+                  <Text className="text-sm font-semibold text-graphite-200">
+                    {cycle ? t('health.cycle.newCycle') : t('health.cycle.markDay1')}
+                  </Text>
+                )}
+              </Pressable>
+            )}
           </View>
         )}
 

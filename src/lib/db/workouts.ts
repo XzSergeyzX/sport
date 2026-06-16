@@ -170,6 +170,12 @@ export async function deleteSet(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Убрать упражнение из тренировки целиком (подходы удалятся каскадом по FK). */
+export async function deleteWorkoutExercise(id: string): Promise<void> {
+  const { error } = await supabase.from('workout_exercises').delete().eq('id', id);
+  if (error) throw error;
+}
+
 /** Отметить/снять «подход сделан». При отметке пишем время и отдых (разрыв с прошлым). */
 export async function setSetLogged(
   id: string,

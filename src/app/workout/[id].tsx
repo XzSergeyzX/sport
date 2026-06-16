@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
+
 import {
   categoryKey,
   clusterKey,
@@ -37,6 +39,7 @@ import {
   addSet,
   addWorkoutExercise,
   deleteSet,
+  deleteWorkoutExercise,
   finishWorkout,
   getRecentExercises,
   getWorkoutDetail,
@@ -679,6 +682,7 @@ export default function WorkoutScreen() {
   const lang = i18n.language;
   const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<{ ids: string[]; label: string } | null>(null);
   // свёрнутость групп (упражнение или кластер) по ключу; по умолчанию открыт только первый
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -778,6 +782,12 @@ export default function WorkoutScreen() {
     onSuccess: invalidate,
   });
 
+  // убрать упражнение/блок из тренировки целиком (для кластера — все его упражнения)
+  const removeExerciseMut = useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map(deleteWorkoutExercise)).then(() => {}),
+    onSuccess: invalidate,
+  });
+
   const setLoggedMut = useMutation({
     mutationFn: (v: { id: string; logged: boolean; restSec: number | null }) =>
       setSetLogged(v.id, v.logged, v.restSec),
@@ -843,13 +853,22 @@ export default function WorkoutScreen() {
 
     return (
       <View key={key} className="rounded-2xl bg-graphite-900 p-4">
-        <Pressable
-          onPress={() => setCollapsed((c) => ({ ...c, [key]: true }))}
-          className="flex-row items-center justify-between active:opacity-80"
-        >
-          <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
-          <Text className="ml-2 text-graphite-500">▲</Text>
-        </Pressable>
+        <View className="flex-row items-center">
+          <Pressable
+            onPress={() => setCollapsed((c) => ({ ...c, [key]: true }))}
+            className="flex-1 flex-row items-center justify-between active:opacity-80"
+          >
+            <Text className="flex-1 text-base font-bold text-graphite-50">{name}</Text>
+            <Text className="ml-2 text-graphite-500">▲</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setRemoveTarget({ ids: [we.id], label: name })}
+            hitSlop={8}
+            className="ml-3 active:opacity-60"
+          >
+            <Text className="text-graphite-600">✕</Text>
+          </Pressable>
+        </View>
         {we.sets.map((s, i) => (
           <SetRow
             key={s.id}
@@ -906,18 +925,27 @@ export default function WorkoutScreen() {
 
     return (
       <View key={g.key} className="rounded-2xl bg-graphite-900 p-3">
-        <Pressable
-          onPress={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
-          className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
-        >
-          <View className="flex-1">
-            <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
-              {g.label || t('blockTypes.rounds')}
-            </Text>
-            {g.rounds ? <Text className="mt-0.5 text-xs text-graphite-400">{g.rounds}×</Text> : null}
-          </View>
-          <Text className="ml-2 text-graphite-500">{isCollapsed ? '▼' : '▲'}</Text>
-        </Pressable>
+        <View className="flex-row items-center border-l-2 border-accent">
+          <Pressable
+            onPress={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
+            className="flex-1 flex-row items-center justify-between px-3 py-1 active:opacity-80"
+          >
+            <View className="flex-1">
+              <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                {g.label || t('blockTypes.rounds')}
+              </Text>
+              {g.rounds ? <Text className="mt-0.5 text-xs text-graphite-400">{g.rounds}×</Text> : null}
+            </View>
+            <Text className="ml-2 text-graphite-500">{isCollapsed ? '▼' : '▲'}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setRemoveTarget({ ids: g.items.map((it) => it.id), label: g.label || t('blockTypes.rounds') })}
+            hitSlop={8}
+            className="px-3 py-1 active:opacity-60"
+          >
+            <Text className="text-graphite-600">✕</Text>
+          </Pressable>
+        </View>
 
         {isCollapsed ? (
           <Text className="px-3 pt-2 text-xs text-graphite-500">
@@ -1062,6 +1090,20 @@ export default function WorkoutScreen() {
         onSelect={onPickExercise}
         onCreate={(name) => createExerciseMut.mutate(name)}
         creating={createExerciseMut.isPending}
+      />
+
+      <ConfirmDialog
+        visible={!!removeTarget}
+        title={t('workout.removeTitle')}
+        message={removeTarget?.label}
+        confirmLabel={t('workout.remove')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          if (removeTarget) removeExerciseMut.mutate(removeTarget.ids);
+          setRemoveTarget(null);
+        }}
+        onCancel={() => setRemoveTarget(null)}
       />
     </SafeAreaView>
   );

@@ -73,19 +73,25 @@ Deno.serve(async (req) => {
 
     // тянем всё, что отдаёт OURA v2; недоступные эндпоинты игнорируем.
     // Пагинация по next_token — иначе OURA обрежет выдачу ~250 строками (важно для глубокой истории).
-    const ep = async (path: string): Promise<{ data: unknown[] }> => {
+    const ep = async (path: string): Promise<{ data: unknown[]; status: number }> => {
       const out: unknown[] = [];
       let next: string | null = null;
+      let status = 0;
       for (let page = 0; page < 40; page++) {
         const u = `https://api.ouraring.com/v2/usercollection/${path}?${range}${next ? `&next_token=${next}` : ''}`;
         const r = await fetch(u, { headers }).catch(() => null);
-        if (!r || !r.ok) break;
+        if (!r) {
+          status = -1;
+          break;
+        }
+        status = r.status;
+        if (!r.ok) break;
         const j = await r.json().catch(() => ({ data: [], next_token: null }));
         if (Array.isArray(j.data)) out.push(...j.data);
         next = j.next_token ?? null;
         if (!next) break;
       }
-      return { data: out };
+      return { data: out, status };
     };
 
     const [
@@ -197,12 +203,26 @@ Deno.serve(async (req) => {
     if (upErr) return json({ error: upErr.message }, 500);
 
     const maxKey = (m: Map<string, unknown>) => [...m.keys()].sort().slice(-1)[0] ?? null;
+    const d = (res: { status: number }, m: Map<string, unknown>) => ({
+      status: res.status,
+      count: m.size,
+      latest: maxKey(m),
+    });
     return json({
       days: rows.length,
       from: ymd(start),
       to: ymd(endParam),
-      latest_readiness: maxKey(mR),
-      latest_sleep: maxKey(mS),
+      diag: {
+        readiness: d(readiness, mR),
+        sleep: d(sleepScore, mS),
+        sleepDetail: d(sleepDetail, mD),
+        activity: d(activity, mA),
+        spo2: d(spo2, mSp),
+        stress: d(stress, mSt),
+        resilience: d(resilience, mRe),
+        cardio: d(cardio, mCa),
+        vo2: d(vo2, mVo),
+      },
     });
   } catch (e) {
     return json({ error: String(e) }, 500);
