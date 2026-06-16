@@ -3,7 +3,7 @@ import { Redirect, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import {
@@ -41,6 +41,7 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
 function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   const [nameUk, setNameUk] = useState(exercise.name_uk);
   const [nameEn, setNameEn] = useState(exercise.name_en);
   const [cluster, setCluster] = useState<Cluster | null>(exercise.cluster);
@@ -87,7 +88,7 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
         <ScrollView
           className="rounded-t-3xl bg-graphite-900 px-6 pt-5"
           style={{ maxHeight: '88%' }}
-          contentContainerStyle={{ paddingBottom: 28 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
           keyboardShouldPersistTaps="handled"
         >
           <Text className="text-xl font-extrabold text-graphite-50">{t('exercises.editTitle')}</Text>

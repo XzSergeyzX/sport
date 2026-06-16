@@ -157,6 +157,7 @@ function GripPicker({
   onChange: (meta: GripMeta) => void;
 }) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [term, setTerm] = useState('');
   useEffect(() => {
     if (visible) setTerm('');
@@ -207,7 +208,11 @@ function GripPicker({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose}>
-        <Pressable onPress={() => {}} className="rounded-t-3xl bg-graphite-900 px-5 pb-8 pt-4" style={{ maxHeight: '85%' }}>
+        <Pressable
+          onPress={() => {}}
+          className="rounded-t-3xl bg-graphite-900 px-5 pt-4"
+          style={{ maxHeight: '85%', paddingBottom: insets.bottom + 24 }}
+        >
           <View className="mb-3 flex-row items-center justify-between">
             <Text className="text-base font-bold text-graphite-50">{t('workout.gripper')}</Text>
             <Pressable onPress={onClose} hitSlop={8}>

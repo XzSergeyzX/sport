@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import {
@@ -43,6 +43,7 @@ function EditGripper({
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState(gripper?.name ?? '');
   const [rgc, setRgc] = useState(gripper?.rgc?.toString() ?? '');
   const [unit, setUnit] = useState<'kg' | 'lb'>(gripper?.rgc_unit ?? 'kg');
@@ -75,7 +76,7 @@ function EditGripper({
         <ScrollView
           className="rounded-t-3xl bg-graphite-900 px-6 pt-5"
           style={{ maxHeight: '88%' }}
-          contentContainerStyle={{ paddingBottom: 28 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
           keyboardShouldPersistTaps="handled"
         >
           <Text className="text-xl font-extrabold text-graphite-50">{t('grippers.editTitle')}</Text>
