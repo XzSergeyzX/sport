@@ -132,6 +132,7 @@
     "connectError": "Could not connect. Check the token.",
     "syncNow": "Sync now",
     "asOf": "as of {{date}}",
+    "stale": "OURA hasn't published today yet. Open the OURA app to sync your ring, then tap Sync now.",
     "noData": "No data yet — tap Sync now.",
     "tapInfo": "tap to read",
     "whatTitle": "What it means",
@@ -141,11 +142,25 @@
       "sleep": "Sleep score",
       "hrv": "HRV",
       "rhr": "Resting heart rate",
+      "avg_hr": "Avg HR (sleep)",
       "temp": "Body temperature",
       "respiratory": "Respiratory rate",
       "duration": "Sleep duration",
+      "deep": "Deep sleep",
+      "rem": "REM sleep",
+      "light": "Light sleep",
+      "in_bed": "Time in bed",
       "efficiency": "Sleep efficiency",
-      "steps": "Steps"
+      "latency": "Sleep latency",
+      "activity": "Activity score",
+      "steps": "Steps",
+      "active_cal": "Active calories",
+      "total_cal": "Total calories",
+      "spo2": "Blood oxygen (SpO₂)",
+      "stress": "Stress (high)",
+      "vo2": "VO₂max",
+      "vascular_age": "Vascular age",
+      "resilience": "Resilience"
     },
     "units": {
       "ms": "ms",
@@ -153,7 +168,10 @@
       "c": "°C",
       "brmin": "br/min",
       "h": "h",
-      "pct": "%"
+      "pct": "%",
+      "kcal": "kcal",
+      "min": "min",
+      "yr": "yr"
     },
     "ref": {
       "readiness": {
@@ -191,6 +209,54 @@
       "steps": {
         "what": "Steps taken during the day.",
         "range": "~8–10k is a common daily target; any increase in movement helps."
+      },
+      "avg_hr": {
+        "what": "Average heart rate during sleep.",
+        "range": "Lower and stable usually means good recovery; a rise can signal stress, alcohol or illness."
+      },
+      "deep": {
+        "what": "Deep (slow-wave) sleep — physical recovery, hormones, immune system.",
+        "range": "Roughly 1–2 h for most adults; tends to fall with age and late alcohol."
+      },
+      "rem": {
+        "what": "REM sleep — memory, learning and mood.",
+        "range": "Roughly 1.5–2 h; often higher in the second half of the night."
+      },
+      "light": {
+        "what": "Light sleep — the bridge between wake, deep and REM.",
+        "range": "Usually the largest share of the night; not a problem on its own."
+      },
+      "in_bed": {
+        "what": "Total time spent in bed (asleep + awake).",
+        "range": "Compare with sleep duration — a big gap means low efficiency."
+      },
+      "latency": {
+        "what": "How long it took to fall asleep.",
+        "range": "~15–20 min is typical. Very short can mean sleep debt; very long — trouble winding down."
+      },
+      "activity": {
+        "what": "Daily activity score (0–100): movement, steps and training vs your targets.",
+        "range": "85+ great · 70–84 ok · below 70 — a low-movement day."
+      },
+      "spo2": {
+        "what": "Average blood-oxygen saturation during sleep.",
+        "range": "95–100% is normal. Consistently below 94% is worth attention."
+      },
+      "stress": {
+        "what": "Time spent in a high-stress physiological state during the day.",
+        "range": "Lower is better; balance high-stress time with recovery."
+      },
+      "vo2": {
+        "what": "Estimated VO₂max — aerobic fitness (max oxygen uptake).",
+        "range": "Higher is fitter; track the long-term trend, not day to day."
+      },
+      "vascular_age": {
+        "what": "Estimated cardiovascular age from your pulse-wave data.",
+        "range": "Lower than your real age is good; watch the trend over months."
+      },
+      "resilience": {
+        "what": "Long-term stress resilience from recovery vs stress balance.",
+        "range": "limited · adequate · solid · strong · exceptional — higher is more resilient."
       }
     },
     "cycle": {

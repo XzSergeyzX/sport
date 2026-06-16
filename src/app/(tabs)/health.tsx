@@ -25,40 +25,67 @@ import {
 
 const PLACEHOLDER = '#848D9A';
 
-function fmtDur(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.round((sec % 3600) / 60);
-  return `${h}:${String(m).padStart(2, '0')}`;
+// минуты → ч:мм
+function fmtMin(m: number): string {
+  const h = Math.floor(m / 60);
+  const mm = Math.round(m % 60);
+  return `${h}:${String(mm).padStart(2, '0')}`;
+}
+
+// сегодняшняя дата в локальном времени (YYYY-MM-DD) — для сверки с днём снимка OURA
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 type Metric = { key: string; value: string; unit?: string };
 
-// Собираем все доступные показатели из снимка (+ raw). Показываем только заполненные.
+// Все показатели снимка из первоклассных колонок. Показываем только заполненные.
 function buildMetrics(s: HealthSnapshot | null | undefined): Metric[] {
   if (!s) return [];
-  const sd = s.raw?.sleepDetail ?? {};
   const out: Metric[] = [];
   const push = (key: string, value: number | null | undefined, unit?: string, fmt?: (v: number) => string) => {
     if (value == null) return;
     out.push({ key, value: fmt ? fmt(value) : String(value), unit });
   };
+  const round = (v: number) => String(Math.round(v));
 
+  // recovery
   push('readiness', s.readiness);
-  push('sleep', s.sleep_score);
-  push('hrv', s.hrv, 'ms', (v) => String(Math.round(v)));
-  push('rhr', s.rhr, 'bpm', (v) => String(Math.round(v)));
+  push('hrv', s.hrv, 'ms', round);
+  push('rhr', s.rhr, 'bpm', round);
+  push('avg_hr', s.avg_hr, 'bpm', round);
   push('temp', s.temp, 'c', (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`);
-  push('respiratory', sd.average_breath, 'brmin', (v) => v.toFixed(1));
-  push('duration', sd.total_sleep_duration, 'h', (v) => fmtDur(v));
-  push('efficiency', sd.efficiency, 'pct', (v) => String(Math.round(v)));
+  // sleep
+  push('sleep', s.sleep_score);
+  push('duration', s.sleep_total_min, 'h', fmtMin);
+  push('deep', s.sleep_deep_min, 'h', fmtMin);
+  push('rem', s.sleep_rem_min, 'h', fmtMin);
+  push('light', s.sleep_light_min, 'h', fmtMin);
+  push('in_bed', s.time_in_bed_min, 'h', fmtMin);
+  push('efficiency', s.sleep_efficiency, 'pct', round);
+  push('latency', s.sleep_latency_min, 'min', round);
+  push('respiratory', s.respiratory_rate, 'brmin', (v) => v.toFixed(1));
+  // activity
+  push('activity', s.activity_score);
+  push('steps', s.steps, undefined, round);
+  push('active_cal', s.active_calories, 'kcal', round);
+  push('total_cal', s.total_calories, 'kcal', round);
+  // spo2 / stress / долгосрочные
+  push('spo2', s.spo2_avg, 'pct', (v) => v.toFixed(1));
+  push('stress', s.stress_high_min, 'min', round);
+  push('vo2', s.vo2_max, undefined, (v) => v.toFixed(1));
+  push('vascular_age', s.vascular_age, 'yr', round);
+  if (s.resilience_level) out.push({ key: 'resilience', value: s.resilience_level });
   return out;
 }
 
 function MetricCard({ m, onPress }: { m: Metric; onPress: () => void }) {
   const { t } = useTranslation();
+  const hasRef = i18n.exists(`health.ref.${m.key}.what`);
   return (
     <Pressable
-      onPress={onPress}
+      onPress={hasRef ? onPress : undefined}
       className="mb-3 w-[48%] rounded-2xl bg-graphite-800 p-4 active:opacity-80"
     >
       <View className="flex-row items-baseline">
@@ -66,7 +93,9 @@ function MetricCard({ m, onPress }: { m: Metric; onPress: () => void }) {
         {m.unit ? <Text className="ml-1 text-xs text-graphite-500">{t(`health.units.${m.unit}`)}</Text> : null}
       </View>
       <Text className="mt-1 text-xs text-graphite-400">{t(`health.metrics.${m.key}`)}</Text>
-      <Text className="mt-2 text-[10px] uppercase tracking-wide text-graphite-600">{t('health.tapInfo')}</Text>
+      {hasRef ? (
+        <Text className="mt-2 text-[10px] uppercase tracking-wide text-graphite-600">{t('health.tapInfo')}</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -240,6 +269,9 @@ export default function HealthScreen() {
                     ),
                   })}
                 </Text>
+              )}
+              {snapshot?.date && snapshot.date < todayYmd() && (
+                <Text className="mt-1 text-xs leading-4 text-amber-500/80">{t('health.stale')}</Text>
               )}
               {metrics.length > 0 ? (
                 <View className="mt-3 flex-row flex-wrap justify-between">
