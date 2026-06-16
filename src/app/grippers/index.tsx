@@ -12,6 +12,8 @@ import {
   deleteGripper,
   type Gripper,
   gripperLabel,
+  gripperName,
+  listGripperCatalog,
   listMyGrippers,
   updateGripper,
 } from '@/lib/db/grippers';
@@ -38,6 +40,27 @@ function EditGripper({
   const [name, setName] = useState(gripper?.name ?? '');
   const [rgc, setRgc] = useState(gripper?.rgc?.toString() ?? '');
   const [unit, setUnit] = useState<'kg' | 'lb'>(gripper?.rgc_unit ?? 'kg');
+  const [search, setSearch] = useState('');
+
+  // каталог брендов — только при добавлении (для выбора из спарсенного списка)
+  const { data: catalog } = useQuery({
+    queryKey: ['gripper-catalog', userId],
+    queryFn: () => listGripperCatalog(userId),
+    enabled: !gripper,
+  });
+  const matches = (catalog ?? [])
+    .filter((g) => g.is_global)
+    .filter((g) => {
+      const q = search.trim().toLowerCase();
+      return q.length > 0 && gripperName(g).toLowerCase().includes(q);
+    })
+    .slice(0, 40);
+  const pickFromCatalog = (g: Gripper) => {
+    setName(gripperName(g));
+    setRgc(g.rgc?.toString() ?? '');
+    setUnit(g.rgc_unit);
+    setSearch('');
+  };
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ['my-grippers', userId] });
@@ -64,6 +87,37 @@ function EditGripper({
   return (
     <>
       <Text className="text-xl font-extrabold text-graphite-50">{t('grippers.editTitle')}</Text>
+
+          {!gripper && (
+            <>
+              <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+                {t('grippers.fromCatalog')}
+              </Text>
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder={t('grippers.searchCatalog')}
+                placeholderTextColor={PLACEHOLDER}
+                className="mt-1 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
+              />
+              {search.trim().length > 0 && (
+                <View className="mt-1">
+                  {matches.map((g) => (
+                    <Pressable
+                      key={g.id}
+                      onPress={() => pickFromCatalog(g)}
+                      className="border-b border-graphite-800 py-2.5 active:opacity-70"
+                    >
+                      <Text className="text-base text-graphite-100">{gripperLabel(g)}</Text>
+                    </Pressable>
+                  ))}
+                  {matches.length === 0 && (
+                    <Text className="py-2 text-sm text-graphite-500">{t('workout.noResults')}</Text>
+                  )}
+                </View>
+              )}
+            </>
+          )}
 
           <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
             {t('grippers.name')}

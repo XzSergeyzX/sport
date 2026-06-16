@@ -105,7 +105,21 @@ export async function getLatestSnapshot(userId: string): Promise<HealthSnapshot 
     .order('date', { ascending: false })
     .limit(7);
   const rows = (data ?? []) as HealthSnapshot[];
-  return rows.find((r) => r.readiness != null || r.sleep_score != null) ?? rows[0] ?? null;
+  // последний день с ЛЮБЫМИ ночными данными: детальный сон (HRV/RHR/тривалість) приходит
+  // в API раньше дневных оценок (readiness/sleep score), поэтому не ждём именно оценок —
+  // иначе сегодняшний день прятался и показывался вчерашний.
+  return (
+    rows.find(
+      (r) =>
+        r.readiness != null ||
+        r.sleep_score != null ||
+        r.hrv != null ||
+        r.rhr != null ||
+        r.sleep_total_min != null,
+    ) ??
+    rows[0] ??
+    null
+  );
 }
 
 /** Ряд снимков от даты (YYYY-MM-DD) до сегодня — для аналитики «по календарю». */

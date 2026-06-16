@@ -268,6 +268,8 @@
     "empty": "Add the grippers you train with — you'll pick them when logging grip work.",
     "add": "Add gripper",
     "editTitle": "Gripper",
+    "fromCatalog": "From catalog",
+    "searchCatalog": "Search brand / model (CoC, Heavy Grips…)",
     "name": "Name (e.g. CoC 2.5)",
     "rgc": "RGC (optional)",
     "save": "Save",
