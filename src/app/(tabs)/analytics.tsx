@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import { exerciseName } from '@/lib/db/exercises';
+import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
 import { listWorkouts, type WorkoutDetail } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { useWeightUnit } from '@/lib/use-unit';
@@ -14,16 +14,32 @@ import { useWeightUnit } from '@/lib/use-unit';
 const oneRmEst = (weight: number, reps: number) => weight * (1 + 0.025 * reps);
 
 type TonnagePoint = { date: string; tonnage: number };
-type Pr = { id: string; name: string; oneRm: number; weight: number; reps: number };
+type RepRec = { kind: 'reps'; weight: number; reps: number; oneRm: number; date: string };
+type TimeRec = { kind: 'time'; sec: number; weight: number | null; date: string };
+type ExRecords = {
+  id: string;
+  name: string;
+  cluster: Cluster | null;
+  kind: 'reps' | 'time';
+  top: (RepRec | TimeRec)[];
+  headline: number;
+};
+type RecordGroup = { cluster: Cluster | null; exercises: ExRecords[] };
+
+type Acc = {
+  name: string;
+  cluster: Cluster | null;
+  reps: Map<string, RepRec>;
+  time: Map<string, TimeRec>;
+};
 
 function analyze(workouts: WorkoutDetail[], lang: string) {
   const tonnageSeries: TonnagePoint[] = [];
-  const prs = new Map<string, Pr>();
   let totalTonnage = 0;
   let totalSets = 0;
   let totalMin = 0;
+  const exMap = new Map<string, Acc>();
 
-  // newest-first → разворачиваем в хронологию
   for (const w of [...workouts].reverse()) {
     if (w.ended_at) {
       totalMin += Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000));
@@ -31,15 +47,37 @@ function analyze(workouts: WorkoutDetail[], lang: string) {
     let wt = 0;
     for (const we of w.workout_exercises ?? []) {
       const name = we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—');
+      const cluster = we.exercise?.cluster ?? null;
+      let ex = exMap.get(we.exercise_id);
+      if (!ex) {
+        ex = { name, cluster, reps: new Map(), time: new Map() };
+        exMap.set(we.exercise_id, ex);
+      } else {
+        ex.name = name;
+        if (cluster) ex.cluster = cluster;
+      }
       for (const s of we.sets ?? []) {
-        // считаем только отмеченные силовые подходы (вес×повторы), удержания пропускаем
-        if (!s.logged_at || s.weight == null || s.reps == null || s.duration_sec != null) continue;
-        wt += s.weight * s.reps;
-        totalSets += 1;
-        const oneRm = oneRmEst(s.weight, s.reps);
-        const cur = prs.get(we.exercise_id);
-        if (!cur || oneRm > cur.oneRm) {
-          prs.set(we.exercise_id, { id: we.exercise_id, name, oneRm, weight: s.weight, reps: s.reps });
+        if (!s.logged_at) continue;
+        const date = w.started_at;
+        if (s.duration_sec != null) {
+          totalSets += 1;
+          const key = `${s.duration_sec}@${s.weight ?? ''}`;
+          const prev = ex.time.get(key);
+          if (!prev || date < prev.date)
+            ex.time.set(key, { kind: 'time', sec: s.duration_sec, weight: s.weight, date });
+        } else if (s.weight != null && s.reps != null) {
+          totalSets += 1;
+          wt += s.weight * s.reps;
+          const key = `${s.weight}x${s.reps}`;
+          const prev = ex.reps.get(key);
+          if (!prev || date < prev.date)
+            ex.reps.set(key, {
+              kind: 'reps',
+              weight: s.weight,
+              reps: s.reps,
+              oneRm: oneRmEst(s.weight, s.reps),
+              date,
+            });
         }
       }
     }
@@ -49,8 +87,28 @@ function analyze(workouts: WorkoutDetail[], lang: string) {
     }
   }
 
-  const records = [...prs.values()].sort((a, b) => b.oneRm - a.oneRm);
-  return { tonnageSeries, records, totalTonnage, totalSets, totalMin, workouts: tonnageSeries.length };
+  const exList: ExRecords[] = [];
+  for (const [id, ex] of exMap) {
+    if (ex.time.size > 0) {
+      const top = [...ex.time.values()].sort((a, b) => b.sec - a.sec).slice(0, 5);
+      exList.push({ id, name: ex.name, cluster: ex.cluster, kind: 'time', top, headline: top[0].sec });
+    } else if (ex.reps.size > 0) {
+      const top = [...ex.reps.values()].sort((a, b) => b.oneRm - a.oneRm).slice(0, 5);
+      exList.push({ id, name: ex.name, cluster: ex.cluster, kind: 'reps', top, headline: top[0].oneRm });
+    }
+  }
+
+  const order: (Cluster | null)[] = [...CLUSTER_ORDER, null];
+  const recordGroups: RecordGroup[] = order
+    .map((c) => ({
+      cluster: c,
+      exercises: exList
+        .filter((e) => e.cluster === c)
+        .sort((a, b) => (a.kind === b.kind ? b.headline - a.headline : a.kind === 'reps' ? -1 : 1)),
+    }))
+    .filter((g) => g.exercises.length > 0);
+
+  return { tonnageSeries, recordGroups, totalTonnage, totalSets, totalMin, workouts: tonnageSeries.length };
 }
 
 function fmtDuration(min: number, t: (k: string) => string): string {
@@ -58,9 +116,18 @@ function fmtDuration(min: number, t: (k: string) => string): string {
   const m = min % 60;
   return h > 0 ? `${h}${t('analytics.hrShort')} ${m}${t('summary.min')}` : `${m} ${t('summary.min')}`;
 }
-
 function fmtTonnage(v: number): string {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
+}
+function fmtSec(sec: number, secShort: string): string {
+  if (sec < 60) return `${sec}${secShort}`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getDate()}.${d.getMonth() + 1}.${String(d.getFullYear()).slice(2)}`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -72,15 +139,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TonnageBars({
-  series,
-  unit,
-  hint,
-}: {
-  series: TonnagePoint[];
-  unit: string;
-  hint: string;
-}) {
+function TonnageBars({ series, unit, hint }: { series: TonnagePoint[]; unit: string; hint: string }) {
   const last = series.slice(-12);
   const max = Math.max(1, ...last.map((p) => p.tonnage));
   return (
@@ -121,6 +180,8 @@ export default function AnalyticsScreen() {
   const lang = i18n.language;
   const { session } = useAuth();
   const userId = session?.user.id;
+  const [openClusters, setOpenClusters] = useState<Record<string, boolean>>({});
+  const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
 
   const { data: workouts, isLoading } = useQuery({
     queryKey: ['workouts', userId],
@@ -130,6 +191,22 @@ export default function AnalyticsScreen() {
 
   const a = useMemo(() => analyze(workouts ?? [], lang), [workouts, lang]);
   const unitLabel = t(`common.${unit}`);
+  const secShort = t('workout.secShort');
+
+  const recLine = (r: RepRec | TimeRec, i: number) => {
+    const left =
+      r.kind === 'reps'
+        ? `${i + 1}.  ${r.weight} ${unitLabel} × ${r.reps}`
+        : `${i + 1}.  ${fmtSec(r.sec, secShort)}${r.weight != null ? ` · ${r.weight} ${unitLabel}` : ''}`;
+    const right =
+      r.kind === 'reps' ? `≈${Math.round(r.oneRm)} · ${fmtDate(r.date)}` : fmtDate(r.date);
+    return (
+      <View key={i} className="flex-row items-center justify-between py-1">
+        <Text className="flex-1 text-sm text-graphite-200">{left}</Text>
+        <Text className="ml-2 text-xs text-graphite-500">{right}</Text>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
@@ -149,10 +226,7 @@ export default function AnalyticsScreen() {
             <View className="mt-5 gap-3">
               <View className="flex-row gap-3">
                 <Stat label={t('analytics.statWorkouts')} value={String(a.workouts)} />
-                <Stat
-                  label={`${t('summary.tonnage')}, ${unitLabel}`}
-                  value={fmtTonnage(a.totalTonnage)}
-                />
+                <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={fmtTonnage(a.totalTonnage)} />
               </View>
               <View className="flex-row gap-3">
                 <Stat label={t('summary.sets')} value={String(a.totalSets)} />
@@ -169,27 +243,54 @@ export default function AnalyticsScreen() {
               {t('analytics.records')}
             </Text>
             <View className="gap-2">
-              {a.records.slice(0, 15).map((r) => (
-                <View
-                  key={r.id}
-                  className="flex-row items-center justify-between rounded-2xl bg-graphite-900 p-4"
-                >
-                  <View className="flex-1 pr-3">
-                    <Text className="text-base font-semibold text-graphite-100" numberOfLines={1}>
-                      {r.name}
-                    </Text>
-                    <Text className="mt-0.5 text-xs text-graphite-500">
-                      {r.weight} {unitLabel} × {r.reps}
-                    </Text>
+              {a.recordGroups.map((g, gi) => {
+                const ckey = g.cluster ?? 'other';
+                const cOpen = openClusters[ckey] ?? gi === 0;
+                return (
+                  <View key={ckey} className="rounded-2xl bg-graphite-900 p-3">
+                    <Pressable
+                      onPress={() => setOpenClusters((c) => ({ ...c, [ckey]: !cOpen }))}
+                      className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
+                    >
+                      <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                        {t(clusterKey(g.cluster))} · {g.exercises.length}
+                      </Text>
+                      <Text className="ml-2 text-graphite-500">{cOpen ? '▲' : '▼'}</Text>
+                    </Pressable>
+
+                    {cOpen && (
+                      <View className="mt-2 gap-1">
+                        {g.exercises.map((ex) => {
+                          const xOpen = !!openEx[ex.id];
+                          const head =
+                            ex.kind === 'reps'
+                              ? `≈${Math.round(ex.headline)} ${unitLabel}`
+                              : fmtSec(ex.headline, secShort);
+                          return (
+                            <View key={ex.id} className="rounded-xl bg-graphite-800 p-3">
+                              <Pressable
+                                onPress={() => setOpenEx((e) => ({ ...e, [ex.id]: !xOpen }))}
+                                className="flex-row items-center justify-between active:opacity-80"
+                              >
+                                <Text className="flex-1 text-base font-semibold text-graphite-100" numberOfLines={1}>
+                                  {ex.name}
+                                </Text>
+                                <Text className="ml-2 text-sm font-bold text-accent">{head}</Text>
+                                <Text className="ml-2 text-graphite-600">{xOpen ? '▲' : '▼'}</Text>
+                              </Pressable>
+                              {xOpen && (
+                                <View className="mt-2 border-t border-graphite-700 pt-1">
+                                  {ex.top.map((r, i) => recLine(r, i))}
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
-                  <View className="items-end">
-                    <Text className="text-lg font-extrabold text-accent">{Math.round(r.oneRm)}</Text>
-                    <Text className="text-[10px] uppercase tracking-wide text-graphite-600">
-                      {t('analytics.est1rm')}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </>
         )}
