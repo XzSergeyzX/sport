@@ -28,7 +28,6 @@ type Metric = { key: string; value: string; unit?: string };
 function buildMetrics(s: HealthSnapshot | null | undefined): Metric[] {
   if (!s) return [];
   const sd = s.raw?.sleepDetail ?? {};
-  const act = s.raw?.activity ?? {};
   const out: Metric[] = [];
   const push = (key: string, value: number | null | undefined, unit?: string, fmt?: (v: number) => string) => {
     if (value == null) return;
@@ -43,7 +42,6 @@ function buildMetrics(s: HealthSnapshot | null | undefined): Metric[] {
   push('respiratory', sd.average_breath, 'brmin', (v) => v.toFixed(1));
   push('duration', sd.total_sleep_duration, 'h', (v) => fmtDur(v));
   push('efficiency', sd.efficiency, 'pct', (v) => String(Math.round(v)));
-  push('steps', act.steps, undefined, (v) => String(v));
   return out;
 }
 
@@ -125,12 +123,6 @@ export default function HealthScreen() {
 
   const syncMut = useMutation({
     mutationFn: () => syncOura(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] }),
-  });
-
-  // разовый бэкафилл всей истории (~5 лет) — чтобы у аналитики сразу была глубина
-  const fullSyncMut = useMutation({
-    mutationFn: () => syncOura(1825),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] }),
   });
 
@@ -224,17 +216,6 @@ export default function HealthScreen() {
                   <ActivityIndicator color="#848D9A" />
                 ) : (
                   <Text className="text-sm font-semibold text-graphite-200">{t('health.syncNow')}</Text>
-                )}
-              </Pressable>
-              <Pressable
-                disabled={fullSyncMut.isPending}
-                onPress={() => fullSyncMut.mutate()}
-                className="mt-2 items-center py-2 active:opacity-60"
-              >
-                {fullSyncMut.isPending ? (
-                  <ActivityIndicator color="#848D9A" />
-                ) : (
-                  <Text className="text-xs text-graphite-500">{t('health.syncAll')}</Text>
                 )}
               </Pressable>
             </>

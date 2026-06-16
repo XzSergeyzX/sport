@@ -89,14 +89,16 @@ export async function getOuraConnected(userId: string): Promise<boolean> {
 }
 
 export async function getLatestSnapshot(userId: string): Promise<HealthSnapshot | null> {
+  // берём последний день, где есть «утренние» данные (готовність/сон) — кольцо носят не всегда;
+  // дни без них (только активность) не должны маскировать последнее реальное утреннее чтение.
   const { data } = await supabase
     .from('health_snapshots')
     .select('*')
     .eq('user_id', userId)
     .order('date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as HealthSnapshot) ?? null;
+    .limit(7);
+  const rows = (data ?? []) as HealthSnapshot[];
+  return rows.find((r) => r.readiness != null || r.sleep_score != null) ?? rows[0] ?? null;
 }
 
 /** Ряд снимков от даты (YYYY-MM-DD) до сегодня — для аналитики «по календарю». */
