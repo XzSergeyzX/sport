@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { getCycleStatus, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
+import i18n from '@/lib/i18n';
 import {
   connectOura,
   getLatestSnapshot,
@@ -201,10 +202,10 @@ export default function HealthScreen() {
               {snapshot?.date && (
                 <Text className="mt-3 text-xs text-graphite-500">
                   {t('health.asOf', {
-                    date: new Date(snapshot.date).toLocaleDateString(undefined, {
-                      day: 'numeric',
-                      month: 'long',
-                    }),
+                    date: new Date(snapshot.date).toLocaleDateString(
+                      i18n.language === 'uk' ? 'uk-UA' : 'en-US',
+                      { day: 'numeric', month: 'long' },
+                    ),
                   })}
                 </Text>
               )}
@@ -228,12 +229,6 @@ export default function HealthScreen() {
                   <Text className="text-sm font-semibold text-graphite-200">{t('health.syncNow')}</Text>
                 )}
               </Pressable>
-              {syncMut.data && (
-                <Text className="mt-2 text-center text-[11px] text-graphite-600">
-                  OURA: {t('health.metrics.readiness')} {syncMut.data.latest_readiness ?? '—'} ·{' '}
-                  {t('health.metrics.sleep')} {syncMut.data.latest_sleep ?? '—'}
-                </Text>
-              )}
             </>
           )}
         </View>
