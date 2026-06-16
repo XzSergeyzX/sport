@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
 import { deleteWorkout, listWorkouts, startWorkout, workoutStats } from '@/lib/db/workouts';
 
@@ -28,16 +30,11 @@ export default function WorkoutsScreen() {
     },
   });
 
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const deleteMut = useMutation({
     mutationFn: (workoutId: string) => deleteWorkout(workoutId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['workouts', userId] }),
   });
-
-  const confirmDelete = (workoutId: string) =>
-    Alert.alert(t('home.deleteTitle'), t('home.deleteWarn'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('home.delete'), style: 'destructive', onPress: () => deleteMut.mutate(workoutId) },
-    ]);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
@@ -80,15 +77,18 @@ export default function WorkoutsScreen() {
                         : { pathname: '/workout/[id]', params: { id: w.id } },
                     )
                   }
-                  onLongPress={() => confirmDelete(w.id)}
-                  delayLongPress={350}
                   className="rounded-2xl bg-graphite-900 p-4 active:opacity-80"
                 >
                   <View className="flex-row items-center justify-between">
                     <Text className="text-base font-semibold text-graphite-100">{date}</Text>
-                    {!done && (
-                      <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
-                    )}
+                    <View className="flex-row items-center gap-4">
+                      {!done && (
+                        <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
+                      )}
+                      <Pressable onPress={() => setPendingDelete(w.id)} hitSlop={10}>
+                        <Text className="text-base text-graphite-600">🗑</Text>
+                      </Pressable>
+                    </View>
                   </View>
                   <Text className="mt-1 text-sm text-graphite-400">
                     {s.exercises} · {s.sets} {t('summary.sets').toLowerCase()} · {s.reps}{' '}
@@ -100,6 +100,20 @@ export default function WorkoutsScreen() {
           </ScrollView>
         )}
       </View>
+
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title={t('home.deleteTitle')}
+        message={t('home.deleteWarn')}
+        confirmLabel={t('home.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          if (pendingDelete) deleteMut.mutate(pendingDelete);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </SafeAreaView>
   );
 }

@@ -5,8 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
-import { importProgram, listPrograms } from '@/lib/db/programs';
+import { deleteProgram, importProgram, listPrograms } from '@/lib/db/programs';
 
 const PLACEHOLDER = '#848D9A';
 
@@ -28,6 +29,12 @@ export default function ProgramsScreen() {
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteProgram(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['programs', userId] }),
+  });
 
   const { data: programs } = useQuery({
     queryKey: ['programs', userId],
@@ -110,12 +117,17 @@ export default function ProgramsScreen() {
           <View className="mt-3 gap-3 pb-8">
             {programs.map((p) => (
               <Link key={p.id} href={`/program/${p.id}`} asChild>
-                <Pressable className="rounded-2xl bg-graphite-900 p-4 active:opacity-80">
-                  <Text className="text-base font-semibold text-graphite-100">{p.title}</Text>
-                  <Text className="mt-1 text-xs text-graphite-500">
-                    {new Date(p.created_at).toLocaleDateString()}
-                    {p.source === 'ai_import' ? ' · AI' : ''}
-                  </Text>
+                <Pressable className="flex-row items-center rounded-2xl bg-graphite-900 p-4 active:opacity-80">
+                  <View className="flex-1">
+                    <Text className="text-base font-semibold text-graphite-100">{p.title}</Text>
+                    <Text className="mt-1 text-xs text-graphite-500">
+                      {new Date(p.created_at).toLocaleDateString()}
+                      {p.source === 'ai_import' ? ' · AI' : ''}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => setPendingDelete(p.id)} hitSlop={10} className="pl-3">
+                    <Text className="text-base text-graphite-600">🗑</Text>
+                  </Pressable>
                 </Pressable>
               </Link>
             ))}
@@ -124,6 +136,20 @@ export default function ProgramsScreen() {
           <Text className="mt-3 text-sm text-graphite-500">{t('programs.empty')}</Text>
         )}
       </ScrollView>
+
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title={t('programs.deleteTitle')}
+        message={t('programs.deleteWarn')}
+        confirmLabel={t('programs.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          if (pendingDelete) deleteMut.mutate(pendingDelete);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </SafeAreaView>
   );
 }

@@ -152,6 +152,27 @@ export async function deleteProgramExercise(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Плановый подход: добавить / изменить / удалить (редактирование программы). */
+export async function addProgramSet(programExerciseId: string, orderIndex: number): Promise<void> {
+  const { error } = await supabase
+    .from('program_sets')
+    .insert({ program_exercise_id: programExerciseId, order_index: orderIndex });
+  if (error) throw error;
+}
+
+export async function updateProgramSet(
+  id: string,
+  patch: { target_reps?: number | null; target_weight?: number | null; target_duration_sec?: number | null },
+): Promise<void> {
+  const { error } = await supabase.from('program_sets').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteProgramSet(id: string): Promise<void> {
+  const { error } = await supabase.from('program_sets').delete().eq('id', id);
+  if (error) throw error;
+}
+
 /**
  * Сколько раундов делать в блоке.
  * EMOM/E2MOM: длительность ÷ интервал ÷ кол-во упражнений (EMOM16, 4 упр., 60с → 4).

@@ -2,22 +2,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
+  addProgramSet,
   deleteProgram,
   deleteProgramExercise,
+  deleteProgramSet,
   getProgramDetail,
   groupProgram,
   type ProgramBlock,
   type ProgramSet,
   startWorkoutFromProgram,
   updateProgram,
+  updateProgramSet,
 } from '@/lib/db/programs';
 import { repsLabel } from '@/lib/i18n/plural';
-import { formatWeight, useWeightUnit } from '@/lib/use-unit';
+import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): string {
   const parts: string[] = [];
@@ -39,6 +43,85 @@ function blockMeta(b: ProgramBlock, t: (k: string) => string): string {
   if (b.duration_sec != null) parts.push(`${Math.round(b.duration_sec / 60)} ${t('summary.min')}`);
   if (b.rest_sec != null) parts.push(`${t('workout.rest')} ${b.rest_sec}s`);
   return parts.join(' · ');
+}
+
+function num(v: string): number | null {
+  if (v.trim() === '') return null;
+  const n = Number(v.replace(',', '.'));
+  return Number.isNaN(n) ? null : n;
+}
+
+type SetPatch = {
+  target_reps?: number | null;
+  target_weight?: number | null;
+  target_duration_sec?: number | null;
+};
+
+function EditableSet({
+  index,
+  set,
+  unit,
+  onSave,
+  onDelete,
+}: {
+  index: number;
+  set: ProgramSet;
+  unit: WeightUnit;
+  onSave: (id: string, patch: SetPatch) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const isTime = set.target_duration_sec != null;
+  const [weight, setWeight] = useState(
+    set.target_weight != null ? String(Math.round((fromKg(set.target_weight, unit) ?? 0) * 10) / 10) : '',
+  );
+  const [reps, setReps] = useState(set.target_reps != null ? String(set.target_reps) : '');
+  const [secs, setSecs] = useState(set.target_duration_sec != null ? String(set.target_duration_sec) : '');
+
+  const save = () => {
+    const w = num(weight);
+    onSave(set.id, {
+      target_weight: w == null ? null : toKg(w, unit),
+      ...(isTime
+        ? { target_duration_sec: num(secs) == null ? null : Math.round(num(secs) as number) }
+        : { target_reps: num(reps) == null ? null : Math.round(num(reps) as number) }),
+    });
+  };
+
+  return (
+    <View className="flex-row items-start gap-2">
+      <Text className="w-5 pt-2 text-sm text-graphite-600">{index}</Text>
+      <View className="flex-1">
+        <TextInput
+          value={weight}
+          onChangeText={setWeight}
+          onEndEditing={save}
+          placeholder={t('workout.weight')}
+          placeholderTextColor="#848D9A"
+          keyboardType="decimal-pad"
+          className="rounded-lg bg-graphite-800 px-2 py-2 text-center text-sm text-graphite-50"
+        />
+        <Text className="mt-0.5 text-center text-[10px] text-graphite-600">{t(`common.${unit}`)}</Text>
+      </View>
+      <View className="flex-1">
+        <TextInput
+          value={isTime ? secs : reps}
+          onChangeText={isTime ? setSecs : setReps}
+          onEndEditing={save}
+          placeholder={isTime ? t('workout.secShort') : t('workout.reps')}
+          placeholderTextColor="#848D9A"
+          keyboardType="number-pad"
+          className="rounded-lg bg-graphite-800 px-2 py-2 text-center text-sm text-graphite-50"
+        />
+        <Text className="mt-0.5 text-center text-[10px] text-graphite-600">
+          {isTime ? t('workout.secShort') : t('workout.repsShort')}
+        </Text>
+      </View>
+      <Pressable onPress={() => onDelete(set.id)} hitSlop={8} className="pt-2">
+        <Text className="text-base text-red-400">✕</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export default function ProgramDetailScreen() {
@@ -86,12 +169,21 @@ export default function ProgramDetailScreen() {
       router.back();
     },
   });
+  const [showDeleteProg, setShowDeleteProg] = useState(false);
 
-  const confirmDeleteProgram = () =>
-    Alert.alert(t('programs.deleteTitle'), t('programs.deleteWarn'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('programs.delete'), style: 'destructive', onPress: () => delProgMut.mutate() },
-    ]);
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['program', id] });
+  const addSetMut = useMutation({
+    mutationFn: (v: { peId: string; order: number }) => addProgramSet(v.peId, v.order),
+    onSuccess: invalidate,
+  });
+  const updateSetMut = useMutation({
+    mutationFn: (v: { id: string; patch: SetPatch }) => updateProgramSet(v.id, v.patch),
+    onSuccess: invalidate,
+  });
+  const delSetMut = useMutation({
+    mutationFn: (sid: string) => deleteProgramSet(sid),
+    onSuccess: invalidate,
+  });
 
   if (!initializing && !session) return <Redirect href="/auth" />;
 
@@ -175,14 +267,34 @@ export default function ProgramDetailScreen() {
                         <Text className="mt-1 text-sm text-graphite-500">{pe.notes}</Text>
                       ) : null}
                       <View className="mt-2 gap-2">
-                        {pe.program_sets.map((s, i) => (
-                          <View key={s.id} className="flex-row">
-                            <Text className="w-6 text-sm text-graphite-600">{i + 1}</Text>
-                            <Text className="flex-1 text-base text-graphite-300">{setLine(s, unit, t)}</Text>
-                          </View>
-                        ))}
-                        {pe.program_sets.length === 0 && (
-                          <Text className="text-base text-graphite-600">—</Text>
+                        {pe.program_sets.map((s, i) =>
+                          editMode ? (
+                            <EditableSet
+                              key={s.id}
+                              index={i + 1}
+                              set={s}
+                              unit={unit}
+                              onSave={(sid, patch) => updateSetMut.mutate({ id: sid, patch })}
+                              onDelete={(sid) => delSetMut.mutate(sid)}
+                            />
+                          ) : (
+                            <View key={s.id} className="flex-row">
+                              <Text className="w-6 text-sm text-graphite-600">{i + 1}</Text>
+                              <Text className="flex-1 text-base text-graphite-300">{setLine(s, unit, t)}</Text>
+                            </View>
+                          ),
+                        )}
+                        {editMode ? (
+                          <Pressable
+                            onPress={() => addSetMut.mutate({ peId: pe.id, order: pe.program_sets.length })}
+                            className="mt-1 self-start rounded-lg border border-graphite-700 px-3 py-1.5 active:opacity-70"
+                          >
+                            <Text className="text-xs font-semibold text-graphite-200">{t('workout.addSet')}</Text>
+                          </Pressable>
+                        ) : (
+                          pe.program_sets.length === 0 && (
+                            <Text className="text-base text-graphite-600">—</Text>
+                          )
                         )}
                       </View>
                     </View>
@@ -197,7 +309,7 @@ export default function ProgramDetailScreen() {
         <View className="px-6 pt-2" style={{ paddingBottom: insets.bottom + 12 }}>
           {editMode ? (
             <Pressable
-              onPress={confirmDeleteProgram}
+              onPress={() => setShowDeleteProg(true)}
               className="items-center rounded-2xl border border-red-500/40 py-4 active:opacity-70"
             >
               <Text className="text-base font-bold text-red-400">{t('programs.deleteProgram')}</Text>
@@ -232,6 +344,20 @@ export default function ProgramDetailScreen() {
           <Text className="mt-2 text-center text-sm text-graphite-400">{t('programs.loadingSub')}</Text>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={showDeleteProg}
+        title={t('programs.deleteTitle')}
+        message={t('programs.deleteWarn')}
+        confirmLabel={t('programs.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          setShowDeleteProg(false);
+          delProgMut.mutate();
+        }}
+        onCancel={() => setShowDeleteProg(false)}
+      />
     </SafeAreaView>
   );
 }
