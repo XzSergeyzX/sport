@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BottomSheet } from '@/components/bottom-sheet';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   CATEGORY_ORDER,
@@ -41,7 +42,6 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
 function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const insets = useSafeAreaInsets();
   const [nameUk, setNameUk] = useState(exercise.name_uk);
   const [nameEn, setNameEn] = useState(exercise.name_en);
   const [cluster, setCluster] = useState<Cluster | null>(exercise.cluster);
@@ -83,15 +83,8 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
     ]);
 
   return (
-    <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose}>
-      <Pressable onPress={() => {}}>
-        <ScrollView
-          className="rounded-t-3xl bg-graphite-900 px-6 pt-5"
-          style={{ maxHeight: '88%' }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text className="text-xl font-extrabold text-graphite-50">{t('exercises.editTitle')}</Text>
+    <>
+      <Text className="text-xl font-extrabold text-graphite-50">{t('exercises.editTitle')}</Text>
 
           <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
             {t('exercises.nameUk')}
@@ -169,9 +162,7 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
           <Pressable onPress={confirmDelete} className="mt-3 items-center py-2 active:opacity-70">
             <Text className="text-sm font-semibold text-red-400">{t('exercises.delete')}</Text>
           </Pressable>
-        </ScrollView>
-      </Pressable>
-    </Pressable>
+    </>
   );
 }
 
@@ -231,9 +222,9 @@ export default function ExercisesScreen() {
         </View>
       )}
 
-      <Modal visible={!!editing} animationType="slide" transparent onRequestClose={() => setEditing(null)}>
+      <BottomSheet visible={!!editing} onClose={() => setEditing(null)}>
         {editing && <EditExercise key={editing.id} exercise={editing} onClose={() => setEditing(null)} />}
-      </Modal>
+      </BottomSheet>
     </SafeAreaView>
   );
 }

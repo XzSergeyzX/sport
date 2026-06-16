@@ -2,18 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BottomSheet } from '@/components/bottom-sheet';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   addGripper,
@@ -43,7 +35,6 @@ function EditGripper({
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const insets = useSafeAreaInsets();
   const [name, setName] = useState(gripper?.name ?? '');
   const [rgc, setRgc] = useState(gripper?.rgc?.toString() ?? '');
   const [unit, setUnit] = useState<'kg' | 'lb'>(gripper?.rgc_unit ?? 'kg');
@@ -71,15 +62,8 @@ function EditGripper({
     ]);
 
   return (
-    <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose}>
-      <Pressable onPress={() => {}}>
-        <ScrollView
-          className="rounded-t-3xl bg-graphite-900 px-6 pt-5"
-          style={{ maxHeight: '88%' }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text className="text-xl font-extrabold text-graphite-50">{t('grippers.editTitle')}</Text>
+    <>
+      <Text className="text-xl font-extrabold text-graphite-50">{t('grippers.editTitle')}</Text>
 
           <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
             {t('grippers.name')}
@@ -133,9 +117,7 @@ function EditGripper({
               <Text className="text-sm font-semibold text-red-400">{t('grippers.delete')}</Text>
             </Pressable>
           )}
-        </ScrollView>
-      </Pressable>
-    </Pressable>
+    </>
   );
 }
 
@@ -195,16 +177,14 @@ export default function GrippersScreen() {
         </ScrollView>
       )}
 
-      <Modal
+      <BottomSheet
         visible={!!editing || adding}
-        animationType="slide"
-        transparent
-        onRequestClose={() => {
+        onClose={() => {
           setEditing(null);
           setAdding(false);
         }}
       >
-        {userId && (
+        {userId && (!!editing || adding) && (
           <EditGripper
             key={editing?.id ?? 'new'}
             userId={userId}
@@ -215,7 +195,7 @@ export default function GrippersScreen() {
             }}
           />
         )}
-      </Modal>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
