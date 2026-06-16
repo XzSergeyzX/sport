@@ -72,11 +72,18 @@ export async function connectOura(token: string): Promise<void> {
  * Подтянуть данные OURA в health_snapshots (через Edge Function).
  * days — глубина бэкафилла (по умолчанию 30; до ~2000 для разовой полной истории).
  */
-export async function syncOura(days?: number): Promise<void> {
-  const { error } = await supabase.functions.invoke('oura-sync', {
+export type SyncResult = {
+  days?: number;
+  latest_readiness?: string | null;
+  latest_sleep?: string | null;
+};
+
+export async function syncOura(days?: number): Promise<SyncResult | null> {
+  const { data, error } = await supabase.functions.invoke('oura-sync', {
     body: days ? { days } : {},
   });
   if (error) throw error;
+  return (data ?? null) as SyncResult | null;
 }
 
 export async function getOuraConnected(userId: string): Promise<boolean> {

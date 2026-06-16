@@ -228,6 +228,12 @@ export default function HealthScreen() {
                   <Text className="text-sm font-semibold text-graphite-200">{t('health.syncNow')}</Text>
                 )}
               </Pressable>
+              {syncMut.data && (
+                <Text className="mt-2 text-center text-[11px] text-graphite-600">
+                  OURA: {t('health.metrics.readiness')} {syncMut.data.latest_readiness ?? '—'} ·{' '}
+                  {t('health.metrics.sleep')} {syncMut.data.latest_sleep ?? '—'}
+                </Text>
+              )}
             </>
           )}
         </View>

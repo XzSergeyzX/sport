@@ -196,7 +196,14 @@ Deno.serve(async (req) => {
       .upsert(rows, { onConflict: 'user_id,date' });
     if (upErr) return json({ error: upErr.message }, 500);
 
-    return json({ days: rows.length, from: ymd(start), to: ymd(end) });
+    const maxKey = (m: Map<string, unknown>) => [...m.keys()].sort().slice(-1)[0] ?? null;
+    return json({
+      days: rows.length,
+      from: ymd(start),
+      to: ymd(endParam),
+      latest_readiness: maxKey(mR),
+      latest_sleep: maxKey(mS),
+    });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
