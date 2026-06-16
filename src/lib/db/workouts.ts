@@ -192,6 +192,12 @@ export async function setExerciseDone(workoutExerciseId: string, done: boolean):
   if (error) throw error;
 }
 
+/** Удалить тренировку целиком (каскадом — упражнения и подходы). Необратимо. */
+export async function deleteWorkout(id: string): Promise<void> {
+  const { error } = await supabase.from('workouts').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function finishWorkout(id: string): Promise<void> {
   const { error } = await supabase
     .from('workouts')

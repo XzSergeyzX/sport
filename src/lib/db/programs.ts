@@ -137,6 +137,21 @@ export async function deleteProgram(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Переименовать программу. */
+export async function updateProgram(id: string, title: string): Promise<void> {
+  const { error } = await supabase
+    .from('programs')
+    .update({ title: title.trim().slice(0, 200) })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/** Удалить упражнение из программы (каскадом — его плановые подходы). */
+export async function deleteProgramExercise(id: string): Promise<void> {
+  const { error } = await supabase.from('program_exercises').delete().eq('id', id);
+  if (error) throw error;
+}
+
 /**
  * Сколько раундов делать в блоке.
  * EMOM/E2MOM: длительность ÷ интервал ÷ кол-во упражнений (EMOM16, 4 упр., 60с → 4).

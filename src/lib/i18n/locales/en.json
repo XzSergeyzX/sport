@@ -28,7 +28,10 @@
     "recent": "Recent workouts",
     "empty": "No workouts yet. Start your first one!",
     "inProgress": "In progress",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "delete": "Delete",
+    "deleteTitle": "Delete workout?",
+    "deleteWarn": "This permanently deletes the workout from the database. This can't be undone."
   },
   "tabs": {
     "workouts": "Workouts",
@@ -79,7 +82,12 @@
     "errEmpty": "Paste a plan first.",
     "errGeneric": "Import failed. Please try again.",
     "loadingTitle": "Loading your program",
-    "loadingSub": "Preparing exercises and sets — almost there…"
+    "loadingSub": "Preparing exercises and sets — almost there…",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteProgram": "Delete program",
+    "deleteTitle": "Delete program?",
+    "deleteWarn": "This permanently removes the program. This can't be undone."
   },
   "blockTypes": {
     "rounds": "Rounds",
@@ -184,6 +192,9 @@
       "empty": "Mark the first day of your period to start tracking the cycle.",
       "markDay1": "Mark day 1",
       "newCycle": "New cycle (day 1)",
+      "dayUnit": "day",
+      "remove": "Remove",
+      "removeConfirm": "Delete this cycle mark?",
       "phase": {
         "menstrual": "Menstrual",
         "follicular": "Follicular",

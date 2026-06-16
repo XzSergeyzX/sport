@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import { listWorkouts, startWorkout, workoutStats } from '@/lib/db/workouts';
+import { deleteWorkout, listWorkouts, startWorkout, workoutStats } from '@/lib/db/workouts';
 
 export default function WorkoutsScreen() {
   const { t } = useTranslation();
@@ -27,6 +27,17 @@ export default function WorkoutsScreen() {
       router.push({ pathname: '/workout/[id]', params: { id: w.id } });
     },
   });
+
+  const deleteMut = useMutation({
+    mutationFn: (workoutId: string) => deleteWorkout(workoutId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['workouts', userId] }),
+  });
+
+  const confirmDelete = (workoutId: string) =>
+    Alert.alert(t('home.deleteTitle'), t('home.deleteWarn'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('home.delete'), style: 'destructive', onPress: () => deleteMut.mutate(workoutId) },
+    ]);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
@@ -69,6 +80,8 @@ export default function WorkoutsScreen() {
                         : { pathname: '/workout/[id]', params: { id: w.id } },
                     )
                   }
+                  onLongPress={() => confirmDelete(w.id)}
+                  delayLongPress={350}
                   className="rounded-2xl bg-graphite-900 p-4 active:opacity-80"
                 >
                   <View className="flex-row items-center justify-between">

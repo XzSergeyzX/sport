@@ -1,7 +1,19 @@
 import { supabase } from '@/lib/supabase';
 
 export type CyclePhase = 'menstrual' | 'follicular' | 'ovulation' | 'luteal';
-export type CycleStatus = { day: number; phase: CyclePhase; startDate: string } | null;
+export type CycleStatus = {
+  periodId: string;
+  day: number;
+  phase: CyclePhase;
+  startDate: string;
+} | null;
+
+/** Сдвинуть дату YYYY-MM-DD на delta дней. */
+export function shiftYmd(ymd: string, delta: number): string {
+  const d = new Date(`${ymd}T00:00:00`);
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
 
 /** Фаза по дню цикла (типовая ~28-дневная модель). */
 export function cyclePhase(day: number): CyclePhase {
@@ -25,14 +37,29 @@ function todayYmd(): string {
 export async function getCycleStatus(userId: string): Promise<CycleStatus> {
   const { data } = await supabase
     .from('cycle_periods')
-    .select('start_date')
+    .select('id, start_date')
     .eq('user_id', userId)
     .order('start_date', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (!data?.start_date) return null;
   const day = daysSince(data.start_date, new Date()) + 1; // дата начала = день 1
-  return { day, phase: cyclePhase(day), startDate: data.start_date };
+  return { periodId: data.id as string, day, phase: cyclePhase(day), startDate: data.start_date };
+}
+
+/** Изменить дату начала цикла (коррекция). */
+export async function updatePeriodStart(id: string, startYmd: string): Promise<void> {
+  const { error } = await supabase
+    .from('cycle_periods')
+    .update({ start_date: startYmd })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/** Удалить отметку начала цикла. */
+export async function deletePeriod(id: string): Promise<void> {
+  const { error } = await supabase.from('cycle_periods').delete().eq('id', id);
+  if (error) throw error;
 }
 
 /** Отметить начало цикла (день 1). По умолчанию — сегодня. */

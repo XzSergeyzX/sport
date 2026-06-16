@@ -1,16 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import {
+  deleteProgram,
+  deleteProgramExercise,
   getProgramDetail,
   groupProgram,
   type ProgramBlock,
   type ProgramSet,
   startWorkoutFromProgram,
+  updateProgram,
 } from '@/lib/db/programs';
 import { repsLabel } from '@/lib/i18n/plural';
 import { formatWeight, useWeightUnit } from '@/lib/use-unit';
@@ -45,6 +49,8 @@ export default function ProgramDetailScreen() {
   const insets = useSafeAreaInsets();
   const { session, initializing } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [editMode, setEditMode] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
 
   const { data: program, isLoading } = useQuery({
     queryKey: ['program', id],
@@ -60,6 +66,33 @@ export default function ProgramDetailScreen() {
     },
   });
 
+  const renameMut = useMutation({
+    mutationFn: (title: string) => updateProgram(id, title),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['program', id] });
+      qc.invalidateQueries({ queryKey: ['programs'] });
+    },
+  });
+
+  const delExMut = useMutation({
+    mutationFn: (peId: string) => deleteProgramExercise(peId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['program', id] }),
+  });
+
+  const delProgMut = useMutation({
+    mutationFn: () => deleteProgram(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['programs'] });
+      router.back();
+    },
+  });
+
+  const confirmDeleteProgram = () =>
+    Alert.alert(t('programs.deleteTitle'), t('programs.deleteWarn'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('programs.delete'), style: 'destructive', onPress: () => delProgMut.mutate() },
+    ]);
+
   if (!initializing && !session) return <Redirect href="/auth" />;
 
   return (
@@ -69,9 +102,34 @@ export default function ProgramDetailScreen() {
         <Pressable onPress={() => router.back()} className="pr-4 pt-0.5 active:opacity-60">
           <Text className="text-2xl text-graphite-300">‹</Text>
         </Pressable>
-        <Text className="flex-1 text-xl font-extrabold text-graphite-50">
-          {program?.title ?? t('programs.title')}
-        </Text>
+        {editMode ? (
+          <TextInput
+            value={titleDraft ?? program?.title ?? ''}
+            onChangeText={setTitleDraft}
+            onEndEditing={() => {
+              const v = (titleDraft ?? '').trim();
+              if (v && v !== program?.title) renameMut.mutate(v);
+            }}
+            className="flex-1 rounded-lg bg-graphite-800 px-3 py-1.5 text-xl font-extrabold text-graphite-50"
+          />
+        ) : (
+          <Text className="flex-1 text-xl font-extrabold text-graphite-50">
+            {program?.title ?? t('programs.title')}
+          </Text>
+        )}
+        {program && (
+          <Pressable
+            onPress={() => {
+              setTitleDraft(program.title);
+              setEditMode((v) => !v);
+            }}
+            className="pl-3 pt-1 active:opacity-60"
+          >
+            <Text className="text-sm font-semibold text-accent">
+              {editMode ? t('exercises.save') : t('programs.edit')}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {isLoading ? (
@@ -102,10 +160,15 @@ export default function ProgramDetailScreen() {
                     <View key={pe.id} className={ei > 0 ? 'mt-4' : ''}>
                       <View className="flex-row items-center justify-between">
                         <Text className="flex-1 text-lg font-semibold text-graphite-100">{pe.name}</Text>
-                        {pe.exercise_id == null && (
+                        {!editMode && pe.exercise_id == null && (
                           <Text className="ml-2 text-[10px] uppercase tracking-wide text-amber-500">
                             {t('programs.unmatched')}
                           </Text>
+                        )}
+                        {editMode && (
+                          <Pressable onPress={() => delExMut.mutate(pe.id)} hitSlop={8} className="ml-2">
+                            <Text className="text-base text-red-400">✕</Text>
+                          </Pressable>
                         )}
                       </View>
                       {pe.notes ? (
@@ -130,19 +193,30 @@ export default function ProgramDetailScreen() {
         </ScrollView>
       )}
 
-      {!isLoading && program && program.program_exercises.length > 0 && (
+      {!isLoading && program && (
         <View className="px-6 pt-2" style={{ paddingBottom: insets.bottom + 12 }}>
-          <Pressable
-            disabled={startMut.isPending}
-            onPress={() => startMut.mutate()}
-            className="items-center rounded-2xl bg-accent py-4 active:opacity-80"
-          >
-            {startMut.isPending ? (
-              <ActivityIndicator color="#0C0E12" />
-            ) : (
-              <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
-            )}
-          </Pressable>
+          {editMode ? (
+            <Pressable
+              onPress={confirmDeleteProgram}
+              className="items-center rounded-2xl border border-red-500/40 py-4 active:opacity-70"
+            >
+              <Text className="text-base font-bold text-red-400">{t('programs.deleteProgram')}</Text>
+            </Pressable>
+          ) : (
+            program.program_exercises.length > 0 && (
+              <Pressable
+                disabled={startMut.isPending}
+                onPress={() => startMut.mutate()}
+                className="items-center rounded-2xl bg-accent py-4 active:opacity-80"
+              >
+                {startMut.isPending ? (
+                  <ActivityIndicator color="#0C0E12" />
+                ) : (
+                  <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
+                )}
+              </Pressable>
+            )
+          )}
         </View>
       )}
 
