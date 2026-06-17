@@ -161,6 +161,19 @@ export async function deleteProgramExercise(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Переставить упражнения: упражнению idsInOrder[k] присваиваем order_index = orderValues[k].
+ *  orderValues — существующие слоты группы (по возр.), idsInOrder — новый порядок id. */
+export async function reorderProgramExercises(
+  idsInOrder: string[],
+  orderValues: number[],
+): Promise<void> {
+  await Promise.all(
+    idsInOrder.map((id, k) =>
+      supabase.from('program_exercises').update({ order_index: orderValues[k] }).eq('id', id),
+    ),
+  );
+}
+
 /** Плановый подход: добавить / изменить / удалить (редактирование программы). */
 export async function addProgramSet(programExerciseId: string, orderIndex: number): Promise<void> {
   const { error } = await supabase

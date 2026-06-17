@@ -16,6 +16,7 @@ import {
   groupProgram,
   type ProgramBlock,
   type ProgramSet,
+  reorderProgramExercises,
   startWorkoutFromProgram,
   updateProgram,
   updateProgramExercise,
@@ -190,6 +191,25 @@ export default function ProgramDetailScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['program', id] }),
   });
 
+  const moveExMut = useMutation({
+    mutationFn: (v: { ids: string[]; orders: number[] }) =>
+      reorderProgramExercises(v.ids, v.orders),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['program', id] }),
+  });
+  // переставить упражнение среди «соседей» (тот же block_id) на dir (-1 вверх / +1 вниз)
+  const moveExercise = (
+    siblings: { id: string; order_index: number }[],
+    si: number,
+    dir: number,
+  ) => {
+    const target = si + dir;
+    if (target < 0 || target >= siblings.length) return;
+    const ids = siblings.map((e) => e.id);
+    [ids[si], ids[target]] = [ids[target], ids[si]];
+    // перенумеровываем 0..n-1 — устойчиво к дублям order_index из импорта
+    moveExMut.mutate({ ids, orders: ids.map((_, k) => k) });
+  };
+
   const delProgMut = useMutation({
     mutationFn: () => deleteProgram(id),
     onSuccess: () => {
@@ -276,7 +296,14 @@ export default function ProgramDetailScreen() {
                     </View>
                   )}
 
-                  {g.exercises.map((pe, ei) => (
+                  {g.exercises.map((pe, ei) => {
+                    // соседи для перестановки — упражнения с тем же block_id (внутри блока
+                    // или все standalone-упражнения между собой), по возрастанию order_index
+                    const siblings = program.program_exercises
+                      .filter((p) => p.block_id === pe.block_id)
+                      .sort((a, b) => a.order_index - b.order_index);
+                    const si = siblings.findIndex((p) => p.id === pe.id);
+                    return (
                     <View key={pe.id} className={ei > 0 ? 'mt-4' : ''}>
                       <View className="flex-row items-center justify-between">
                         {editMode ? (
@@ -292,6 +319,28 @@ export default function ProgramDetailScreen() {
                           <Text className="ml-2 text-[10px] uppercase tracking-wide text-amber-500">
                             {t('programs.unmatched')}
                           </Text>
+                        )}
+                        {editMode && siblings.length > 1 && (
+                          <View className="ml-2 flex-row gap-1">
+                            <Pressable
+                              disabled={si === 0}
+                              onPress={() => moveExercise(siblings, si, -1)}
+                              hitSlop={6}
+                              className="px-1"
+                              style={{ opacity: si === 0 ? 0.3 : 1 }}
+                            >
+                              <Text className="text-lg text-graphite-300">↑</Text>
+                            </Pressable>
+                            <Pressable
+                              disabled={si === siblings.length - 1}
+                              onPress={() => moveExercise(siblings, si, 1)}
+                              hitSlop={6}
+                              className="px-1"
+                              style={{ opacity: si === siblings.length - 1 ? 0.3 : 1 }}
+                            >
+                              <Text className="text-lg text-graphite-300">↓</Text>
+                            </Pressable>
+                          </View>
                         )}
                         {editMode && (
                           <Pressable onPress={() => delExMut.mutate(pe.id)} hitSlop={8} className="ml-3">
@@ -334,7 +383,8 @@ export default function ProgramDetailScreen() {
                         )}
                       </View>
                     </View>
-                  ))}
+                    );
+                  })}
                 </View>
               );
             })}
