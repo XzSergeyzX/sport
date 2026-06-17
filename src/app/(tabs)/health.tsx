@@ -157,7 +157,9 @@ export default function HealthScreen() {
   const [showDiag, setShowDiag] = useState(false);
 
   const syncMut = useMutation({
-    mutationFn: () => syncOura(),
+    // тянем глубокий диапазон (год): OURA-облако хранит всю историю, апсёрт не удаляет —
+    // один синк наполняет БД на 365 дн, чтобы периоды 90/180 в аналитике работали по-настоящему.
+    mutationFn: () => syncOura(365),
     onSuccess: (res) => {
       setSyncInfo(res);
       setSyncErr(null);
