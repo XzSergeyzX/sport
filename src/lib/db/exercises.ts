@@ -165,8 +165,17 @@ export type ExerciseEdit = {
 export type GripSetType = 'tns' | 'card' | 'block_38' | 'block_20' | 'deep';
 export const GRIP_SET_TYPES: GripSetType[] = ['tns', 'card', 'block_38', 'block_20', 'deep'];
 
-/** meta-поля подхода для эспандера (хранятся в sets.meta). */
-export type GripMeta = { gripper_id?: string; set_type?: GripSetType };
+/** Сторона выполнения подхода (для односторонних упражнений). */
+export type SetSide = 'left' | 'right' | 'both';
+export const SET_SIDES: SetSide[] = ['left', 'right', 'both'];
+
+/** meta-поля подхода (хранятся в sets.meta): эспандер + читинг/сторона — для любых упражнений. */
+export type GripMeta = {
+  gripper_id?: string;
+  set_type?: GripSetType;
+  cheat?: boolean;
+  side?: SetSide;
+};
 
 /** Свои (приватные) упражнения — для экрана управления. */
 export async function listMyExercises(userId: string): Promise<Exercise[]> {

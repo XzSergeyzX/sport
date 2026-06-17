@@ -33,6 +33,7 @@ import {
   listExercises,
   matchExercise,
   type Metric,
+  type SetSide,
 } from '@/lib/db/exercises';
 import { type Gripper, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
@@ -401,7 +402,8 @@ function SetRow({
       reps: isTime ? null : rounded,
       duration_sec: isTime ? rounded : null,
       rpe: nextRpe,
-      meta: isGripper ? nextMeta : undefined,
+      // meta теперь общий: эспандер + читинг/сторона. Сохраняем, когда есть что сохранять.
+      meta: Object.keys(nextMeta).length > 0 ? nextMeta : undefined,
     });
   };
 
@@ -409,6 +411,18 @@ function SetRow({
     setMeta(next);
     save(rpe, next);
   };
+
+  // сторона циклится тапом: нет → ліва → права → обидві → нет (без лишних окон)
+  const cycleSide = () => {
+    const order: (SetSide | undefined)[] = [undefined, 'left', 'right', 'both'];
+    const i = order.indexOf(meta.side);
+    const nextSide = order[(i + 1) % order.length];
+    const next = { ...meta };
+    if (nextSide) next.side = nextSide;
+    else delete next.side;
+    onChangeMeta(next);
+  };
+  const toggleCheat = () => onChangeMeta({ ...meta, cheat: !meta.cheat });
 
   const selectedGripper = grippers.find((g) => g.id === meta.gripper_id);
   const selectedGripperLabel = selectedGripper ? gripperName(selectedGripper) : undefined;
@@ -513,6 +527,22 @@ function SetRow({
           style={{ backgroundColor: done ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
         >
           <Text style={{ color: done ? '#0B0F14' : '#848D9A', fontWeight: '900' }}>✓</Text>
+        </Pressable>
+      </View>
+      <View className="mt-2 flex-row items-center gap-2 px-1">
+        <Pressable onPress={cycleSide} className="rounded-md bg-graphite-800 px-2.5 py-1 active:opacity-70">
+          <Text className="text-[11px]" style={{ color: meta.side ? '#E5E7EB' : PLACEHOLDER }}>
+            {meta.side ? t(`workout.side_${meta.side}`) : t('workout.side')}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={toggleCheat}
+          className="flex-row items-center gap-1 rounded-md px-2.5 py-1 active:opacity-70"
+          style={{ backgroundColor: meta.cheat ? 'rgba(245,158,11,0.18)' : 'rgba(255,255,255,0.04)' }}
+        >
+          <Text className="text-[11px]" style={{ color: meta.cheat ? '#F59E0B' : PLACEHOLDER }}>
+            {meta.cheat ? '☑' : '☐'} {t('workout.cheat')}
+          </Text>
         </Pressable>
       </View>
       <RpePicker visible={rpeOpen} value={rpe} onClose={() => setRpeOpen(false)} onSelect={onPickRpe} />

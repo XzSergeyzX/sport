@@ -72,6 +72,10 @@ export default function SummaryScreen() {
       <View className="mt-2 gap-1">
         {we.sets.map((set, i) => {
           const done = !!set.logged_at;
+          const m = (set.meta ?? {}) as { cheat?: boolean; side?: string };
+          const tags =
+            (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
+            (m.cheat ? `  · ${t('workout.cheat')}` : '');
           return (
             <View
               key={set.id}
@@ -90,7 +94,7 @@ export default function SummaryScreen() {
                         : `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}`
                     }${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
                       set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''
-                    }`
+                    }${tags}`
                   : '—'}
               </Text>
             </View>
