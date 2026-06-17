@@ -900,7 +900,9 @@ export default function WorkoutScreen() {
 
   // одно упражнение-карточка (свёрнутая/развёрнутая). nested — внутри кластера (другой фон).
   const exName = (we: WorkoutExercise) =>
-    we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—');
+    // сматченное упражнение → локализованное имя из каталога (следует uk/en);
+    // кастомное/несматченное → имя как в программе (display_name)
+    we.exercise ? exerciseName(we.exercise, lang) : (we.display_name ?? '—');
 
   const renderExercise = (we: WorkoutExercise) => {
     const key = we.id;

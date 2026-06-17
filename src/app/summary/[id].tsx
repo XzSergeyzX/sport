@@ -67,7 +67,7 @@ export default function SummaryScreen() {
   const exerciseRows = (we: WorkoutExercise) => (
     <View>
       <Text className="text-base font-bold text-graphite-50">
-        {we.display_name ?? (we.exercise ? exerciseName(we.exercise, lang) : '—')}
+        {we.exercise ? exerciseName(we.exercise, lang) : (we.display_name ?? '—')}
       </Text>
       <View className="mt-2 gap-1">
         {we.sets.map((set, i) => {

@@ -60,7 +60,7 @@ function analyze(rows: LoggedSet[], lang: string) {
         wk.ended_at ? Math.max(0, Math.round((+new Date(wk.ended_at) - +new Date(date)) / 60000)) : 0,
       );
     }
-    const name = we.display_name ?? (we.exercises ? exerciseName(we.exercises, lang) : '—');
+    const name = we.exercises ? exerciseName(we.exercises, lang) : (we.display_name ?? '—');
     const cluster = we.exercises?.cluster ?? null;
     let ex = exMap.get(we.exercise_id);
     if (!ex) {
