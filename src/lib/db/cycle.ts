@@ -47,6 +47,33 @@ export async function getCycleStatus(userId: string): Promise<CycleStatus> {
   return { periodId: data.id as string, day, phase: cyclePhase(day), startDate: data.start_date };
 }
 
+/** Все отметки «день 1» (возр. порядок) — для расчёта фазы на исторические даты. */
+export async function getPeriodStarts(userId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('cycle_periods')
+    .select('start_date')
+    .eq('user_id', userId)
+    .order('start_date', { ascending: true });
+  return (data ?? []).map((r) => r.start_date as string);
+}
+
+/**
+ * Фаза цикла на дату ymd по списку отметок «день 1» (возр.).
+ * Берём ближайшую отметку ≤ ymd; если день > 40 (нет свежей отметки) — фаза неизвестна (null),
+ * чтобы не выдумывать «лютеїнова назавжди».
+ */
+export function phaseForDate(ymd: string, starts: string[]): CyclePhase | null {
+  let start: string | null = null;
+  for (const s of starts) {
+    if (s <= ymd) start = s;
+    else break;
+  }
+  if (!start) return null;
+  const day = Math.floor((+new Date(`${ymd}T00:00:00`) - +new Date(`${start}T00:00:00`)) / 86_400_000) + 1;
+  if (day < 1 || day > 40) return null;
+  return cyclePhase(day);
+}
+
 /** Изменить дату начала цикла (коррекция). */
 export async function updatePeriodStart(id: string, startYmd: string): Promise<void> {
   const { error } = await supabase

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { getLoggedSets, type LoggedSet } from '@/lib/db/analytics';
+import { type CyclePhase, getPeriodStarts, phaseForDate } from '@/lib/db/cycle';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
@@ -274,6 +275,138 @@ function RecoveryCard({ m }: { m: RecoveryMetric }) {
   );
 }
 
+// ——— Кореляція «тренування × відновлення × цикл»: сшиваем по дате ———
+
+function ymdLocal(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+type CorrWorkout = {
+  id: string;
+  date: string;
+  tonnage: number;
+  avgRpe: number | null;
+  readiness: number | null;
+  sleep: number | null;
+  phase: CyclePhase | null;
+};
+type Correlation = {
+  workouts: CorrWorkout[];
+  trainCount: number;
+  phaseCounts: Partial<Record<CyclePhase, number>>;
+  readinessTrain: number | null;
+  readinessAll: number | null;
+  sleepTrain: number | null;
+  sleepAll: number | null;
+};
+
+const mean = (xs: number[]): number | null =>
+  xs.length ? xs.reduce((n, v) => n + v, 0) / xs.length : null;
+const nums = (xs: (number | null)[]): number[] => xs.filter((v): v is number => v != null);
+
+function analyzeCorrelation(
+  rows: LoggedSet[],
+  snaps: HealthSnapshot[],
+  starts: string[],
+  rangeDays: number,
+): Correlation {
+  const fromYmd = ymdDaysAgo(rangeDays - 1);
+  const wk = new Map<string, { date: string; tonnage: number; rpeSum: number; rpeN: number }>();
+  for (const r of rows) {
+    const w = r.workout_exercises?.workouts;
+    if (!w) continue;
+    const date = ymdLocal(w.started_at);
+    if (date < fromYmd) continue;
+    let e = wk.get(w.id);
+    if (!e) {
+      e = { date, tonnage: 0, rpeSum: 0, rpeN: 0 };
+      wk.set(w.id, e);
+    }
+    if (r.weight != null && r.reps != null && r.duration_sec == null) e.tonnage += r.weight * r.reps;
+    if (r.rpe != null) {
+      e.rpeSum += r.rpe;
+      e.rpeN += 1;
+    }
+  }
+
+  const snap = new Map<string, HealthSnapshot>();
+  for (const s of snaps) snap.set(s.date, s);
+
+  const workouts: CorrWorkout[] = [...wk.entries()]
+    .map(([id, e]) => {
+      const s = snap.get(e.date);
+      return {
+        id,
+        date: e.date,
+        tonnage: e.tonnage,
+        avgRpe: e.rpeN ? e.rpeSum / e.rpeN : null,
+        readiness: s?.readiness ?? null,
+        sleep: s?.sleep_score ?? null,
+        phase: phaseForDate(e.date, starts),
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const trainDays = new Set(workouts.map((w) => w.date));
+  const inRange = snaps.filter((s) => s.date >= fromYmd);
+  const onTrain = inRange.filter((s) => trainDays.has(s.date));
+
+  const phaseCounts: Partial<Record<CyclePhase, number>> = {};
+  for (const w of workouts) if (w.phase) phaseCounts[w.phase] = (phaseCounts[w.phase] ?? 0) + 1;
+
+  return {
+    workouts,
+    trainCount: workouts.length,
+    phaseCounts,
+    readinessTrain: mean(nums(onTrain.map((s) => s.readiness))),
+    readinessAll: mean(nums(inRange.map((s) => s.readiness))),
+    sleepTrain: mean(nums(onTrain.map((s) => s.sleep_score))),
+    sleepAll: mean(nums(inRange.map((s) => s.sleep_score))),
+  };
+}
+
+const PHASE_ORDER: CyclePhase[] = ['menstrual', 'follicular', 'ovulation', 'luteal'];
+
+function CompareStat({ label, value, vs }: { label: string; value: string; vs: string | null }) {
+  return (
+    <View className="flex-1 rounded-2xl bg-graphite-900 p-4">
+      <Text className="text-2xl font-extrabold text-graphite-50">{value}</Text>
+      <Text className="mt-1 text-xs text-graphite-400">{label}</Text>
+      {vs ? <Text className="mt-0.5 text-[11px] text-graphite-600">{vs}</Text> : null}
+    </View>
+  );
+}
+
+function fmtYmd(ymd: string): string {
+  const [, m, d] = ymd.split('-');
+  return `${Number(d)}.${Number(m)}`;
+}
+
+function CorrRow({ w, unitLabel }: { w: CorrWorkout; unitLabel: string }) {
+  const { t } = useTranslation();
+  const parts: string[] = [];
+  if (w.readiness != null) parts.push(`${t('analytics.readyShort')} ${Math.round(w.readiness)}`);
+  if (w.sleep != null) parts.push(`${t('analytics.sleepShort')} ${Math.round(w.sleep)}`);
+  if (w.avgRpe != null) parts.push(`RPE ${w.avgRpe.toFixed(1)}`);
+  if (w.tonnage > 0) parts.push(`${fmtTonnage(w.tonnage)} ${unitLabel}`);
+  return (
+    <View className="flex-row items-center justify-between border-t border-graphite-800 py-2">
+      <View className="w-24 flex-row items-baseline">
+        <Text className="text-sm font-semibold text-graphite-100">{fmtYmd(w.date)}</Text>
+        {w.phase ? (
+          <Text className="ml-2 text-[10px] text-accent" numberOfLines={1}>
+            {t(`health.cycle.phase.${w.phase}`)}
+          </Text>
+        ) : null}
+      </View>
+      <Text className="ml-2 flex-1 text-right text-xs text-graphite-400" numberOfLines={1}>
+        {parts.join(' · ')}
+      </Text>
+    </View>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-1 rounded-2xl bg-graphite-900 p-4">
@@ -340,8 +473,18 @@ export default function AnalyticsScreen() {
     enabled: !!userId,
   });
 
+  const { data: cycleStarts } = useQuery({
+    queryKey: ['analytics-cycle-starts', userId],
+    queryFn: () => getPeriodStarts(userId as string),
+    enabled: !!userId,
+  });
+
   const a = useMemo(() => analyze(rows ?? [], lang), [rows, lang]);
   const recovery = useMemo(() => analyzeRecovery(snaps ?? [], range), [snaps, range]);
+  const corr = useMemo(
+    () => analyzeCorrelation(rows ?? [], snaps ?? [], cycleStarts ?? [], range),
+    [rows, snaps, cycleStarts, range],
+  );
   const unitLabel = t(`common.${unit}`);
   const secShort = t('workout.secShort');
 
@@ -475,6 +618,64 @@ export default function AnalyticsScreen() {
                 <View className="flex-row flex-wrap justify-between">
                   {recovery.map((m) => (
                     <RecoveryCard key={m.key} m={m} />
+                  ))}
+                </View>
+              </>
+            )}
+
+            {corr.trainCount > 0 && corr.readinessAll != null && (
+              <>
+                <Text className="mb-1 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                  {t('analytics.corrTitle')}
+                </Text>
+                <Text className="mb-3 text-xs text-graphite-600">
+                  {t('analytics.recoveryHint', { n: range })}
+                </Text>
+
+                <View className="flex-row gap-3">
+                  {corr.readinessTrain != null && (
+                    <CompareStat
+                      label={t('analytics.corrReadinessOnTrain')}
+                      value={String(Math.round(corr.readinessTrain))}
+                      vs={
+                        corr.readinessAll != null
+                          ? t('analytics.corrVsAvg', { v: Math.round(corr.readinessAll) })
+                          : null
+                      }
+                    />
+                  )}
+                  {corr.sleepTrain != null && (
+                    <CompareStat
+                      label={t('analytics.corrSleepOnTrain')}
+                      value={String(Math.round(corr.sleepTrain))}
+                      vs={
+                        corr.sleepAll != null
+                          ? t('analytics.corrVsAvg', { v: Math.round(corr.sleepAll) })
+                          : null
+                      }
+                    />
+                  )}
+                </View>
+
+                {Object.keys(corr.phaseCounts).length > 0 && (
+                  <View className="mt-3 rounded-2xl bg-graphite-900 p-4">
+                    <Text className="text-xs uppercase tracking-wide text-graphite-500">
+                      {t('analytics.corrPhases')}
+                    </Text>
+                    <View className="mt-2 flex-row flex-wrap gap-x-4 gap-y-1">
+                      {PHASE_ORDER.filter((p) => corr.phaseCounts[p]).map((p) => (
+                        <Text key={p} className="text-sm text-graphite-200">
+                          {t(`health.cycle.phase.${p}`)}{' '}
+                          <Text className="font-bold text-accent">{corr.phaseCounts[p]}</Text>
+                        </Text>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                <View className="mt-3 rounded-2xl bg-graphite-900 px-4 pb-2 pt-1">
+                  {corr.workouts.slice(0, 15).map((w) => (
+                    <CorrRow key={w.id} w={w} unitLabel={unitLabel} />
                   ))}
                 </View>
               </>

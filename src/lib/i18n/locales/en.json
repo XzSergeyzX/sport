@@ -121,6 +121,13 @@
     "recoveryHint": "average over the last {{n}} days vs the prior {{n}}",
     "avg30": "avg {{v}}",
     "daysShort": "d",
+    "corrTitle": "Training × Recovery",
+    "corrReadinessOnTrain": "Readiness on training days",
+    "corrSleepOnTrain": "Sleep on training days",
+    "corrVsAvg": "vs avg {{v}}",
+    "corrPhases": "Workouts by cycle phase",
+    "readyShort": "rdy",
+    "sleepShort": "slp",
     "soonTitle": "Analytics are coming",
     "soonBody": "Tonnage, volume, per-exercise progress, estimated 1RM, PRs and trends — computed on the backend, visualized here."
   },

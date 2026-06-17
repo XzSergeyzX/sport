@@ -196,7 +196,11 @@ export default function HealthScreen() {
 
   const logCycleMut = useMutation({
     mutationFn: () => logPeriodStart(userId as string),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cycle', userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cycle', userId] });
+      // фазы в корреляциях аналитики считаются из тех же отметок — сбросить их кэш
+      qc.invalidateQueries({ queryKey: ['analytics-cycle-starts', userId] });
+    },
   });
 
   const metrics = buildMetrics(snapshot);
