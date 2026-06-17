@@ -22,8 +22,8 @@ import { useWeightUnit } from '@/lib/use-unit';
 const oneRmEst = (weight: number, reps: number) => weight * (1 + 0.025 * reps);
 
 type TonnagePoint = { date: string; tonnage: number };
-type RepRec = { kind: 'reps'; weight: number; reps: number; oneRm: number; date: string };
-type TimeRec = { kind: 'time'; sec: number; weight: number | null; date: string };
+type RepRec = { kind: 'reps'; weight: number; reps: number; oneRm: number; date: string; cheat?: boolean };
+type TimeRec = { kind: 'time'; sec: number; weight: number | null; date: string; cheat?: boolean };
 type ExRecords = {
   id: string;
   name: string;
@@ -72,11 +72,12 @@ function analyze(rows: LoggedSet[], lang: string) {
     }
 
     totalSets += 1;
+    const cheat = Boolean((r.meta as { cheat?: boolean } | null)?.cheat);
     if (r.duration_sec != null) {
       const key = `${r.duration_sec}@${r.weight ?? ''}`;
       const prev = ex.time.get(key);
       if (!prev || date < prev.date)
-        ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date });
+        ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date, cheat });
     } else if (r.weight != null && r.reps != null) {
       const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
       tn.tonnage += r.weight * r.reps;
@@ -90,6 +91,7 @@ function analyze(rows: LoggedSet[], lang: string) {
           reps: r.reps,
           oneRm: oneRmEst(r.weight, r.reps),
           date,
+          cheat,
         });
     }
   }
@@ -668,7 +670,12 @@ export default function AnalyticsScreen() {
       r.kind === 'reps' ? `≈${Math.round(r.oneRm)} · ${fmtDate(r.date)}` : fmtDate(r.date);
     return (
       <View key={i} className="flex-row items-center justify-between py-1">
-        <Text className="flex-1 text-sm text-graphite-200">{left}</Text>
+        <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
+          {left}
+          {r.cheat ? (
+            <Text className="text-xs font-semibold text-amber-500"> · {t('workout.cheat')}</Text>
+          ) : null}
+        </Text>
         <Text className="ml-2 text-xs text-graphite-500">{right}</Text>
       </View>
     );

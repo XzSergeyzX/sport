@@ -9,6 +9,7 @@ export type LoggedSet = {
   reps: number | null;
   duration_sec: number | null;
   rpe: number | null;
+  meta: Record<string, unknown> | null;
   workout_exercises: {
     exercise_id: string;
     display_name: string | null;
@@ -18,7 +19,7 @@ export type LoggedSet = {
 };
 
 const SELECT =
-  'weight, reps, duration_sec, rpe, workout_exercises!inner(exercise_id, display_name, exercises(name_en, name_uk, cluster), workouts!inner(id, started_at, ended_at))';
+  'weight, reps, duration_sec, rpe, meta, workout_exercises!inner(exercise_id, display_name, exercises(name_en, name_uk, cluster), workouts!inner(id, started_at, ended_at))';
 
 /** Все залогированные подходы пользователя (с пагинацией — не упираемся в лимит строк). */
 export async function getLoggedSets(): Promise<LoggedSet[]> {
