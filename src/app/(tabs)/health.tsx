@@ -164,6 +164,9 @@ export default function HealthScreen() {
       setSyncInfo(res);
       setSyncErr(null);
       qc.invalidateQueries({ queryKey: ['oura-snapshot', userId] });
+      // глубокий бэкафилл наполняет историю — сбросить и кэш аналитики «Відновлення»,
+      // иначе графики держат старое окно и периоды 90/180 выглядят одинаково
+      qc.invalidateQueries({ queryKey: ['analytics-recovery', userId] });
     },
     onError: (e: Error) => setSyncErr(e.message || 'sync_failed'),
   });
