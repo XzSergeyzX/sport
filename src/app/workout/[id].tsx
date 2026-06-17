@@ -357,6 +357,18 @@ function EmomTimer({ intervalSec }: { intervalSec: number }) {
   );
 }
 
+// Сторона нужна для односторонних (one-arm/однією рукою/на одній нозі…) и хвата (по руке).
+// Двусторонние — подтягивания, жимы, тяги штанги, становая, запрыгивания — без выбора стороны.
+const SIDE_RE =
+  /one[-\s]?arm|single[-\s]?(arm|leg)|one[-\s]?leg|однією рук|одною рук|одной рук|однорук|на одній (руці|нозі)|per[-\s]?side|each[-\s]?side|wrist|кист/i;
+function isSided(
+  ex?: { name_en?: string; name_uk?: string; category?: string | null; log_kind?: string | null } | null,
+  displayName?: string | null,
+): boolean {
+  if (ex?.log_kind === 'gripper' || ex?.category === 'grip') return true;
+  return SIDE_RE.test(`${ex?.name_en ?? ''} ${ex?.name_uk ?? ''} ${displayName ?? ''}`);
+}
+
 function SetRow({
   index,
   set,
@@ -368,6 +380,8 @@ function SetRow({
   onToggleDone,
   onDelete,
   headerLabel,
+  sided = false,
+  locked = false,
 }: {
   index: number;
   set: SetRowType;
@@ -379,6 +393,8 @@ function SetRow({
   onToggleDone: (set: SetRowType) => void;
   onDelete: (id: string) => void;
   headerLabel?: string;
+  sided?: boolean; // показывать выбор стороны (односторонние / хват), для двусторонних — нет
+  locked?: boolean; // блок/упражнение завершён → только чтение (правка после «Відновити»)
 }) {
   const { t } = useTranslation();
   // временной подход: дефолт упражнения = 'time' ИЛИ у подхода уже есть длительность
@@ -447,10 +463,12 @@ function SetRow({
         value={value}
         onChangeText={onChange}
         onEndEditing={() => save()}
+        editable={!locked}
         placeholder={placeholder}
         placeholderTextColor={PLACEHOLDER}
         keyboardType={keyboardType}
         className="rounded-lg bg-graphite-800 px-2 py-2 text-center text-sm text-graphite-50"
+        style={{ opacity: locked ? 0.6 : 1 }}
       />
       <Text className="mt-0.5 text-center text-[10px] text-graphite-600">{caption}</Text>
     </View>
@@ -466,13 +484,16 @@ function SetRow({
           {headerLabel ?? `${t('workout.set')} ${index}`}
           {done && set.rest_sec != null ? `  ·  ${t('workout.rest')} ${fmt(set.rest_sec)}` : ''}
         </Text>
-        <Pressable onPress={() => onDelete(set.id)} hitSlop={8}>
-          <Text className="text-xs text-graphite-600">✕</Text>
-        </Pressable>
+        {!locked && (
+          <Pressable onPress={() => onDelete(set.id)} hitSlop={8}>
+            <Text className="text-xs text-graphite-600">✕</Text>
+          </Pressable>
+        )}
       </View>
       {isGripper && (
         <View className="mb-2 flex-row gap-2">
           <Pressable
+            disabled={locked}
             onPress={() => setGripOpen(true)}
             className="flex-1 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
           >
@@ -486,6 +507,7 @@ function SetRow({
             <Text className="mt-0.5 text-center text-[10px] text-graphite-600">{t('workout.gripper')}</Text>
           </Pressable>
           <Pressable
+            disabled={locked}
             onPress={() => setGripOpen(true)}
             className="flex-1 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
           >
@@ -506,6 +528,7 @@ function SetRow({
           ? field(amount, setAmount, t('workout.duration'), t('workout.secShort'), 'number-pad')
           : field(amount, setAmount, t('workout.reps'), t('workout.repsShort'), 'number-pad')}
         <Pressable
+          disabled={locked}
           onPress={() => setRpeOpen(true)}
           className="flex-1 flex-row items-center justify-center gap-1.5 rounded-lg bg-graphite-800 px-2 py-2 active:opacity-80"
         >
@@ -522,6 +545,7 @@ function SetRow({
           </Text>
         </Pressable>
         <Pressable
+          disabled={locked}
           onPress={() => onToggleDone(set)}
           className="h-9 w-9 items-center justify-center rounded-lg active:opacity-80"
           style={{ backgroundColor: done ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
@@ -530,12 +554,19 @@ function SetRow({
         </Pressable>
       </View>
       <View className="mt-2 flex-row items-center gap-2 px-1">
-        <Pressable onPress={cycleSide} className="rounded-md bg-graphite-800 px-2.5 py-1 active:opacity-70">
-          <Text className="text-[11px]" style={{ color: meta.side ? '#E5E7EB' : PLACEHOLDER }}>
-            {meta.side ? t(`workout.side_${meta.side}`) : t('workout.side')}
-          </Text>
-        </Pressable>
+        {sided && (
+          <Pressable
+            disabled={locked}
+            onPress={cycleSide}
+            className="rounded-md bg-graphite-800 px-2.5 py-1 active:opacity-70"
+          >
+            <Text className="text-[11px]" style={{ color: meta.side ? '#E5E7EB' : PLACEHOLDER }}>
+              {meta.side ? t(`workout.side_${meta.side}`) : t('workout.side')}
+            </Text>
+          </Pressable>
+        )}
         <Pressable
+          disabled={locked}
           onPress={toggleCheat}
           className="flex-row items-center gap-1 rounded-md px-2.5 py-1 active:opacity-70"
           style={{ backgroundColor: meta.cheat ? 'rgba(245,158,11,0.18)' : 'rgba(255,255,255,0.04)' }}
@@ -908,19 +939,23 @@ export default function WorkoutScreen() {
             metric={we.exercise?.metric ?? 'reps'}
             logKind={we.exercise?.log_kind ?? null}
             grippers={grippers ?? []}
+            sided={isSided(we.exercise, we.display_name)}
+            locked={!!we.done_at}
             onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
             onToggleDone={onToggleDone}
             onDelete={(setId) => deleteSetMut.mutate(setId)}
           />
         ))}
         <View className="mt-3 flex-row gap-2">
-          <Pressable
-            disabled={addSetMut.isPending}
-            onPress={() => addSetMut.mutate({ weId: we.id, input: {} })}
-            className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
-          >
-            <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
-          </Pressable>
+          {!we.done_at && (
+            <Pressable
+              disabled={addSetMut.isPending}
+              onPress={() => addSetMut.mutate({ weId: we.id, input: {} })}
+              className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+            >
+              <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
+            </Pressable>
+          )}
           {we.done_at ? (
             <Pressable
               onPress={() => finishExerciseMut.mutate({ weId: we.id, done: false })}
@@ -1003,6 +1038,8 @@ export default function WorkoutScreen() {
                         logKind={it.exercise?.log_kind ?? null}
                         grippers={grippers ?? []}
                         headerLabel={exName(it)}
+                        sided={isSided(it.exercise, it.display_name)}
+                        locked={allDone}
                         onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
                         onToggleDone={onToggleDone}
                         onDelete={(setId) => deleteSetMut.mutate(setId)}
@@ -1013,13 +1050,15 @@ export default function WorkoutScreen() {
               </View>
             ))}
             <View className="mt-1 flex-row gap-2">
-              <Pressable
-                disabled={addSetMut.isPending}
-                onPress={() => g.items.forEach((it) => addSetMut.mutate({ weId: it.id, input: {} }))}
-                className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
-              >
-                <Text className="text-sm font-semibold text-graphite-200">{t('workout.addRound')}</Text>
-              </Pressable>
+              {!allDone && (
+                <Pressable
+                  disabled={addSetMut.isPending}
+                  onPress={() => g.items.forEach((it) => addSetMut.mutate({ weId: it.id, input: {} }))}
+                  className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+                >
+                  <Text className="text-sm font-semibold text-graphite-200">{t('workout.addRound')}</Text>
+                </Pressable>
+              )}
               <Pressable
                 onPress={() => {
                   const done = !allDone;
