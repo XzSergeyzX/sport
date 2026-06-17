@@ -43,7 +43,26 @@ export type Exercise = {
   is_base: boolean;
   log_kind: string | null; // null=обычная форма, 'gripper'=поля эспандера
   is_global: boolean;
+  unilateral: boolean; // одностороннее (есть выбор стороны ліва/права/обидві)
 };
+
+// «есть сторона»: явный флаг unilateral, иначе эвристика (хват / one-arm / wrist / однією рукою…)
+const SIDE_RE =
+  /one[-\s]?arm|single[-\s]?(arm|leg)|one[-\s]?leg|однією рук|одною рук|одной рук|однорук|на одній (руці|нозі)|per[-\s]?side|each[-\s]?side|wrist|кист/i;
+export function exerciseSided(
+  ex?: {
+    name_en?: string;
+    name_uk?: string;
+    category?: string | null;
+    log_kind?: string | null;
+    unilateral?: boolean | null;
+  } | null,
+  displayName?: string | null,
+): boolean {
+  if (ex?.unilateral != null) return ex.unilateral; // ground truth из каталога
+  if (ex?.log_kind === 'gripper' || ex?.category === 'grip') return true;
+  return SIDE_RE.test(`${ex?.name_en ?? ''} ${ex?.name_uk ?? ''} ${displayName ?? ''}`);
+}
 
 export function exerciseName(ex: Pick<Exercise, 'name_en' | 'name_uk'>, lang: string): string {
   return lang === 'uk' ? ex.name_uk : ex.name_en;
@@ -214,10 +233,18 @@ export async function deleteExercise(id: string): Promise<void> {
  * дневной лимит на спам — триггер enforce_exercise_daily_cap (код ошибки 'exercise_daily_cap').
  */
 export async function createCustomExercise(userId: string, name: string): Promise<Exercise> {
-  const clean = name.trim().slice(0, 200);
+  const trimmed = name.trim().slice(0, 200);
+  // авто-капитализация первой буквы (пользователь ввёл с маленькой)
+  const clean = trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
   const { data, error } = await supabase
     .from('exercises')
-    .insert({ owner_id: userId, name_en: clean, name_uk: clean, is_global: false })
+    .insert({
+      owner_id: userId,
+      name_en: clean,
+      name_uk: clean,
+      is_global: false,
+      unilateral: exerciseSided({ name_en: clean, name_uk: clean }),
+    })
     .select('*')
     .single();
   if (error) {

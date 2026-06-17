@@ -25,6 +25,7 @@ import {
   enableDiscipline,
   type Exercise,
   exerciseName,
+  exerciseSided,
   getDisciplines,
   GRIP_SET_TYPES,
   type GripMeta,
@@ -362,18 +363,6 @@ function EmomTimer({ intervalSec }: { intervalSec: number }) {
       </View>
     </View>
   );
-}
-
-// Сторона нужна для односторонних (one-arm/однією рукою/на одній нозі…) и хвата (по руке).
-// Двусторонние — подтягивания, жимы, тяги штанги, становая, запрыгивания — без выбора стороны.
-const SIDE_RE =
-  /one[-\s]?arm|single[-\s]?(arm|leg)|one[-\s]?leg|однією рук|одною рук|одной рук|однорук|на одній (руці|нозі)|per[-\s]?side|each[-\s]?side|wrist|кист/i;
-function isSided(
-  ex?: { name_en?: string; name_uk?: string; category?: string | null; log_kind?: string | null } | null,
-  displayName?: string | null,
-): boolean {
-  if (ex?.log_kind === 'gripper' || ex?.category === 'grip') return true;
-  return SIDE_RE.test(`${ex?.name_en ?? ''} ${ex?.name_uk ?? ''} ${displayName ?? ''}`);
 }
 
 function SetRow({
@@ -964,7 +953,7 @@ export default function WorkoutScreen() {
             metric={we.exercise?.metric ?? 'reps'}
             logKind={we.exercise?.log_kind ?? null}
             grippers={grippers ?? []}
-            sided={isSided(we.exercise, we.display_name)}
+            sided={exerciseSided(we.exercise, we.display_name)}
             locked={!!we.done_at}
             onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
             onToggleDone={onToggleDone}
@@ -1104,7 +1093,7 @@ export default function WorkoutScreen() {
                         logKind={it.exercise?.log_kind ?? null}
                         grippers={grippers ?? []}
                         headerLabel={exName(it)}
-                        sided={isSided(it.exercise, it.display_name)}
+                        sided={exerciseSided(it.exercise, it.display_name)}
                         locked={allDone}
                         onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
                         onToggleDone={onToggleDone}
