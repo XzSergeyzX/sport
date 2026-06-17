@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -166,14 +165,6 @@ export default function HealthScreen() {
     },
     onError: (e: Error) => setSyncErr(e.message || 'sync_failed'),
   });
-
-  // авто-обновление при каждом заходе на вкладку (как только OURA API догонит — подтянется)
-  useFocusEffect(
-    useCallback(() => {
-      if (connected) syncMut.mutate();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [connected]),
-  );
 
   const connectMut = useMutation({
     mutationFn: () => connectOura(token.trim()),

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getLoggedSets, type LoggedSet } from '@/lib/db/analytics';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
+import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
 import { useWeightUnit } from '@/lib/use-unit';
 
@@ -133,6 +134,146 @@ function fmtDate(iso: string): string {
   return `${d.getDate()}.${d.getMonth() + 1}.${String(d.getFullYear()).slice(2)}`;
 }
 
+// ——— OURA «Відновлення»: середні за 30 днів + спарклайн + дельта до попередніх 30 ———
+
+function ymdDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function fmtClock(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+// dir: 1 = чем больше тем лучше, -1 = чем меньше тем лучше, 0 = нейтрально (только тренд)
+type RecoverySpec = {
+  key: string;
+  unit?: string;
+  get: (s: HealthSnapshot) => number | null;
+  fmt: (v: number) => string;
+  dir: 1 | -1 | 0;
+};
+const r0 = (v: number) => String(Math.round(v));
+const r1 = (v: number) => v.toFixed(1);
+const RECOVERY_SPECS: RecoverySpec[] = [
+  { key: 'readiness', get: (s) => s.readiness, fmt: r0, dir: 1 },
+  { key: 'sleep', get: (s) => s.sleep_score, fmt: r0, dir: 1 },
+  { key: 'hrv', unit: 'ms', get: (s) => s.hrv, fmt: r0, dir: 1 },
+  { key: 'rhr', unit: 'bpm', get: (s) => s.rhr, fmt: r0, dir: -1 },
+  { key: 'duration', unit: 'h', get: (s) => s.sleep_total_min, fmt: fmtClock, dir: 1 },
+  { key: 'efficiency', unit: 'pct', get: (s) => s.sleep_efficiency, fmt: r0, dir: 1 },
+  { key: 'respiratory', unit: 'brmin', get: (s) => s.respiratory_rate, fmt: r1, dir: 0 },
+  { key: 'temp', unit: 'c', get: (s) => s.temp, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`, dir: 0 },
+  { key: 'spo2', unit: 'pct', get: (s) => s.spo2_avg, fmt: r1, dir: 1 },
+  { key: 'stress', unit: 'min', get: (s) => s.stress_high_min, fmt: r0, dir: -1 },
+  { key: 'steps', get: (s) => s.steps, fmt: r0, dir: 1 },
+];
+
+type RecoveryMetric = {
+  key: string;
+  unit?: string;
+  dir: 1 | -1 | 0;
+  latest: string;
+  avg: string;
+  spark: number[];
+  deltaPct: number | null;
+};
+
+const SPARK_BARS = 28;
+// длинный ряд → ~28 бакетов (среднее по бакету), чтобы спарклайн читался на любом периоде
+function downsample(vals: number[], buckets = SPARK_BARS): number[] {
+  if (vals.length <= buckets) return vals;
+  const out: number[] = [];
+  const size = vals.length / buckets;
+  for (let i = 0; i < buckets; i++) {
+    const a = Math.floor(i * size);
+    const b = Math.max(Math.floor((i + 1) * size), a + 1);
+    const slice = vals.slice(a, b);
+    out.push(slice.reduce((n, v) => n + v, 0) / slice.length);
+  }
+  return out;
+}
+
+// snaps — отсортированы по дате asc (getSnapshotsRange). rangeDays — выбранное окно.
+function analyzeRecovery(snaps: HealthSnapshot[], rangeDays: number): RecoveryMetric[] {
+  const curFrom = ymdDaysAgo(rangeDays - 1);
+  const prevFrom = ymdDaysAgo(rangeDays * 2 - 1);
+  const mean = (xs: number[]) => xs.reduce((n, v) => n + v, 0) / xs.length;
+  const out: RecoveryMetric[] = [];
+  for (const spec of RECOVERY_SPECS) {
+    const pts = snaps
+      .map((s) => ({ date: s.date, v: spec.get(s) }))
+      .filter((p): p is { date: string; v: number } => p.v != null);
+    if (pts.length < 3) continue;
+    const cur = pts.filter((p) => p.date >= curFrom);
+    if (cur.length === 0) continue;
+    const prev = pts.filter((p) => p.date >= prevFrom && p.date < curFrom);
+    const avg = mean(cur.map((p) => p.v));
+    const prevAvg = prev.length ? mean(prev.map((p) => p.v)) : null;
+    const deltaPct =
+      prevAvg != null && prevAvg !== 0 ? ((avg - prevAvg) / Math.abs(prevAvg)) * 100 : null;
+    out.push({
+      key: spec.key,
+      unit: spec.unit,
+      dir: spec.dir,
+      latest: spec.fmt(pts[pts.length - 1].v),
+      avg: spec.fmt(avg),
+      spark: downsample(cur.map((p) => p.v)),
+      deltaPct,
+    });
+  }
+  return out;
+}
+
+function Sparkline({ data }: { data: number[] }) {
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  return (
+    <View className="mt-2 h-7 flex-row items-end gap-px">
+      {data.map((v, i) => (
+        <View
+          key={i}
+          className="flex-1 rounded-sm bg-accent/70"
+          style={{ height: Math.max(2, ((v - min) / range) * 28) }}
+        />
+      ))}
+    </View>
+  );
+}
+
+function RecoveryCard({ m }: { m: RecoveryMetric }) {
+  const { t } = useTranslation();
+  // % показываем только у метрик с понятным «лучше/хуже» (dir≠0) и ненулевой базой;
+  // у температуры/дыхания база ~0 → процент бессмысленный (даёт «134%»), оставляем только тренд.
+  const showDelta = m.deltaPct != null && m.dir !== 0 && m.deltaPct !== 0;
+  const good = m.deltaPct != null && (m.deltaPct > 0 ? m.dir === 1 : m.dir === -1);
+  return (
+    <View className="mb-3 w-[48%] rounded-2xl bg-graphite-900 p-4">
+      <Text className="text-xs text-graphite-400" numberOfLines={1}>
+        {t(`health.metrics.${m.key}`)}
+      </Text>
+      <View className="mt-1 flex-row items-baseline">
+        <Text className="text-2xl font-extrabold text-graphite-50">{m.latest}</Text>
+        {m.unit ? (
+          <Text className="ml-1 text-xs text-graphite-500">{t(`health.units.${m.unit}`)}</Text>
+        ) : null}
+      </View>
+      <View className="mt-0.5 flex-row items-center justify-between">
+        <Text className="text-[11px] text-graphite-500">{t('analytics.avg30', { v: m.avg })}</Text>
+        {showDelta ? (
+          <Text className={`text-[11px] font-semibold ${good ? 'text-accent' : 'text-red-400'}`}>
+            {m.deltaPct! > 0 ? '▲' : '▼'} {Math.abs(Math.round(m.deltaPct!))}%
+          </Text>
+        ) : null}
+      </View>
+      <Sparkline data={m.spark} />
+    </View>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-1 rounded-2xl bg-graphite-900 p-4">
@@ -185,6 +326,7 @@ export default function AnalyticsScreen() {
   const userId = session?.user.id;
   const [openClusters, setOpenClusters] = useState<Record<string, boolean>>({});
   const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
+  const [range, setRange] = useState<number>(30);
 
   const { data: rows, isLoading } = useQuery({
     queryKey: ['analytics-sets', userId],
@@ -192,7 +334,14 @@ export default function AnalyticsScreen() {
     enabled: !!userId,
   });
 
+  const { data: snaps } = useQuery({
+    queryKey: ['analytics-recovery', userId],
+    queryFn: () => getSnapshotsRange(userId as string, ymdDaysAgo(365)),
+    enabled: !!userId,
+  });
+
   const a = useMemo(() => analyze(rows ?? [], lang), [rows, lang]);
+  const recovery = useMemo(() => analyzeRecovery(snaps ?? [], range), [snaps, range]);
   const unitLabel = t(`common.${unit}`);
   const secShort = t('workout.secShort');
 
@@ -220,12 +369,14 @@ export default function AnalyticsScreen() {
           <View className="mt-10 items-center">
             <ActivityIndicator color="#848D9A" />
           </View>
-        ) : a.workouts === 0 ? (
+        ) : a.workouts === 0 && recovery.length === 0 ? (
           <View className="mt-6 rounded-2xl bg-graphite-900 p-5">
             <Text className="text-sm leading-5 text-graphite-400">{t('analytics.empty')}</Text>
           </View>
         ) : (
           <>
+            {a.workouts > 0 && (
+              <>
             <View className="mt-5 gap-3">
               <View className="flex-row gap-3">
                 <Stat label={t('analytics.statWorkouts')} value={String(a.workouts)} />
@@ -295,6 +446,39 @@ export default function AnalyticsScreen() {
                 );
               })}
             </View>
+              </>
+            )}
+
+            {recovery.length > 0 && (
+              <>
+                <Text className="mb-1 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                  {t('analytics.recovery')}
+                </Text>
+                <View className="mb-3 flex-row gap-2">
+                  {[30, 90, 180].map((n) => (
+                    <Pressable
+                      key={n}
+                      onPress={() => setRange(n)}
+                      className={`rounded-full px-3 py-1 active:opacity-80 ${range === n ? 'bg-accent' : 'bg-graphite-800'}`}
+                    >
+                      <Text
+                        className={`text-xs font-semibold ${range === n ? 'text-graphite-950' : 'text-graphite-300'}`}
+                      >
+                        {n} {t('analytics.daysShort')}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text className="mb-3 text-xs text-graphite-600">
+                  {t('analytics.recoveryHint', { n: range })}
+                </Text>
+                <View className="flex-row flex-wrap justify-between">
+                  {recovery.map((m) => (
+                    <RecoveryCard key={m.key} m={m} />
+                  ))}
+                </View>
+              </>
+            )}
           </>
         )}
       </ScrollView>

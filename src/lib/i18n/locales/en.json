@@ -117,6 +117,10 @@
     "tonnageHint": "each bar = one workout",
     "records": "Records",
     "est1rm": "est. 1RM",
+    "recovery": "Recovery",
+    "recoveryHint": "average over the last {{n}} days vs the prior {{n}}",
+    "avg30": "avg {{v}}",
+    "daysShort": "d",
     "soonTitle": "Analytics are coming",
     "soonBody": "Tonnage, volume, per-exercise progress, estimated 1RM, PRs and trends — computed on the backend, visualized here."
   },
