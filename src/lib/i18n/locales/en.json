@@ -128,6 +128,11 @@
     "corrPhases": "Workouts by cycle phase",
     "readyShort": "rdy",
     "sleepShort": "slp",
+    "calendar": "Calendar",
+    "workoutYes": "Workout",
+    "noDataDay": "No data for this day",
+    "markDay1": "Mark cycle day 1",
+    "day1Marked": "Cycle day 1 ✓",
     "soonTitle": "Analytics are coming",
     "soonBody": "Tonnage, volume, per-exercise progress, estimated 1RM, PRs and trends — computed on the backend, visualized here."
   },

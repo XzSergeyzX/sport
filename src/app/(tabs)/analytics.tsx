@@ -1,12 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { getLoggedSets, type LoggedSet } from '@/lib/db/analytics';
-import { type CyclePhase, getPeriodStarts, phaseForDate } from '@/lib/db/cycle';
+import {
+  type CyclePhase,
+  getPeriodStarts,
+  getTrackCycle,
+  logPeriodStart,
+  phaseForDate,
+} from '@/lib/db/cycle';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
@@ -378,9 +384,10 @@ function CompareStat({ label, value, vs }: { label: string; value: string; vs: s
   );
 }
 
+// полная дата ДД.ММ.РРРР — читается как день, а не как «параграф» 15.6
 function fmtYmd(ymd: string): string {
-  const [, m, d] = ymd.split('-');
-  return `${Number(d)}.${Number(m)}`;
+  const [y, m, d] = ymd.split('-');
+  return `${d}.${m}.${y}`;
 }
 
 function CorrRow({ w, unitLabel }: { w: CorrWorkout; unitLabel: string }) {
@@ -392,10 +399,10 @@ function CorrRow({ w, unitLabel }: { w: CorrWorkout; unitLabel: string }) {
   if (w.tonnage > 0) parts.push(`${fmtTonnage(w.tonnage)} ${unitLabel}`);
   return (
     <View className="flex-row items-center justify-between border-t border-graphite-800 py-2">
-      <View className="w-24 flex-row items-baseline">
+      <View className="w-28">
         <Text className="text-sm font-semibold text-graphite-100">{fmtYmd(w.date)}</Text>
         {w.phase ? (
-          <Text className="ml-2 text-[10px] text-accent" numberOfLines={1}>
+          <Text className="text-[10px] text-accent" numberOfLines={1}>
             {t(`health.cycle.phase.${w.phase}`)}
           </Text>
         ) : null}
@@ -451,6 +458,125 @@ function TonnageBars({ series, unit, hint }: { series: TonnagePoint[]; unit: str
   );
 }
 
+// ——— Календар: тренування + готовність + фаза по днях, тап → деталі / відмітка «день 1» ———
+
+type DayInfo = {
+  workout: boolean;
+  tonnage: number;
+  readiness: number | null;
+  sleep: number | null;
+  phase: CyclePhase | null;
+};
+
+const PHASE_TINT: Record<CyclePhase, string> = {
+  menstrual: 'bg-red-500/25',
+  follicular: 'bg-accent/20',
+  ovulation: 'bg-sky-500/25',
+  luteal: 'bg-amber-500/25',
+};
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function Calendar({
+  monthOffset,
+  info,
+  starts,
+  onPrev,
+  onNext,
+  onSelectDay,
+}: {
+  monthOffset: number;
+  info: Map<string, DayInfo>;
+  starts: Set<string>;
+  onPrev: () => void;
+  onNext: () => void;
+  onSelectDay: (ymd: string) => void;
+}) {
+  const { t } = useTranslation();
+  const locale = i18n.language === 'uk' ? 'uk-UA' : 'en-US';
+  const base = new Date();
+  base.setDate(1);
+  base.setMonth(base.getMonth() + monthOffset);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const title = base.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // понеділок = 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const week = [...Array(7)].map((_, i) =>
+    new Date(2024, 0, 1 + i).toLocaleDateString(locale, { weekday: 'short' }),
+  );
+  const cells: (string | null)[] = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(`${year}-${pad2(month + 1)}-${pad2(d)}`);
+
+  return (
+    <View className="rounded-2xl bg-graphite-900 p-3">
+      <View className="flex-row items-center justify-between px-1 pb-2">
+        <Pressable onPress={onPrev} hitSlop={12} className="px-2 active:opacity-60">
+          <Text className="text-lg text-graphite-300">‹</Text>
+        </Pressable>
+        <Text className="text-sm font-semibold capitalize text-graphite-100">{title}</Text>
+        <Pressable onPress={onNext} hitSlop={12} className="px-2 active:opacity-60">
+          <Text className="text-lg text-graphite-300">›</Text>
+        </Pressable>
+      </View>
+      <View className="flex-row">
+        {week.map((w, i) => (
+          <Text key={i} className="flex-1 text-center text-[10px] uppercase text-graphite-600">
+            {w}
+          </Text>
+        ))}
+      </View>
+      <View className="flex-row flex-wrap">
+        {cells.map((ymd, i) => {
+          if (!ymd)
+            return (
+              <View key={`b${i}`} className="w-[14.28%] p-0.5">
+                <View className="h-11" />
+              </View>
+            );
+          const di = info.get(ymd);
+          const tint = di?.phase ? PHASE_TINT[di.phase] : 'bg-graphite-800';
+          const day = Number(ymd.split('-')[2]);
+          return (
+            <View key={ymd} className="w-[14.28%] p-0.5">
+              <Pressable
+                onPress={() => onSelectDay(ymd)}
+                className={`h-11 items-center justify-center rounded-lg ${tint} active:opacity-70 ${starts.has(ymd) ? 'border border-red-400' : ''}`}
+              >
+                <Text className="text-xs text-graphite-100">{day}</Text>
+                <View
+                  className={`mt-0.5 h-1.5 w-1.5 rounded-full ${di?.workout ? 'bg-accent' : ''}`}
+                />
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+      <View className="mt-2 flex-row flex-wrap items-center gap-x-3 gap-y-1 px-1">
+        <View className="flex-row items-center gap-1">
+          <View className="h-1.5 w-1.5 rounded-full bg-accent" />
+          <Text className="text-[10px] text-graphite-500">{t('analytics.workoutYes')}</Text>
+        </View>
+        {PHASE_ORDER.map((p) => (
+          <View key={p} className="flex-row items-center gap-1">
+            <View className={`h-2.5 w-2.5 rounded-sm ${PHASE_TINT[p]}`} />
+            <Text className="text-[10px] text-graphite-500">{t(`health.cycle.phase.${p}`)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-center justify-between py-1">
+      <Text className="text-sm text-graphite-400">{label}</Text>
+      <Text className="text-sm font-semibold text-graphite-100">{value}</Text>
+    </View>
+  );
+}
+
 export default function AnalyticsScreen() {
   const { t } = useTranslation();
   const unit = useWeightUnit();
@@ -479,12 +605,57 @@ export default function AnalyticsScreen() {
     enabled: !!userId,
   });
 
+  const qc = useQueryClient();
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  const { data: trackCycle } = useQuery({
+    queryKey: ['track-cycle', userId],
+    queryFn: () => getTrackCycle(userId as string),
+    enabled: !!userId,
+  });
+
+  const markMut = useMutation({
+    mutationFn: (day: string) => logPeriodStart(userId as string, day),
+    onSuccess: () => {
+      setSelectedDay(null);
+      qc.invalidateQueries({ queryKey: ['analytics-cycle-starts', userId] });
+      qc.invalidateQueries({ queryKey: ['cycle', userId] });
+    },
+  });
+
   const a = useMemo(() => analyze(rows ?? [], lang), [rows, lang]);
   const recovery = useMemo(() => analyzeRecovery(snaps ?? [], range), [snaps, range]);
   const corr = useMemo(
     () => analyzeCorrelation(rows ?? [], snaps ?? [], cycleStarts ?? [], range),
     [rows, snaps, cycleStarts, range],
   );
+
+  const dayInfo = useMemo(() => {
+    const starts = cycleStarts ?? [];
+    const m = new Map<string, DayInfo>();
+    for (const s of snaps ?? [])
+      m.set(s.date, {
+        workout: false,
+        tonnage: 0,
+        readiness: s.readiness,
+        sleep: s.sleep_score,
+        phase: phaseForDate(s.date, starts),
+      });
+    for (const r of rows ?? []) {
+      const w = r.workout_exercises?.workouts;
+      if (!w) continue;
+      const d = ymdLocal(w.started_at);
+      const e =
+        m.get(d) ??
+        ({ workout: false, tonnage: 0, readiness: null, sleep: null, phase: phaseForDate(d, starts) } as DayInfo);
+      e.workout = true;
+      if (r.weight != null && r.reps != null && r.duration_sec == null) e.tonnage += r.weight * r.reps;
+      m.set(d, e);
+    }
+    return m;
+  }, [snaps, rows, cycleStarts]);
+  const startsSet = useMemo(() => new Set(cycleStarts ?? []), [cycleStarts]);
   const unitLabel = t(`common.${unit}`);
   const secShort = t('workout.secShort');
 
@@ -680,9 +851,99 @@ export default function AnalyticsScreen() {
                 </View>
               </>
             )}
+
+            <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+              {t('analytics.calendar')}
+            </Text>
+            <Calendar
+              monthOffset={monthOffset}
+              info={dayInfo}
+              starts={startsSet}
+              onPrev={() => setMonthOffset((o) => o - 1)}
+              onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
+              onSelectDay={setSelectedDay}
+            />
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={!!selectedDay}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedDay(null)}
+      >
+        <Pressable
+          className="flex-1 justify-end"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onPress={() => setSelectedDay(null)}
+        >
+          <Pressable onPress={() => {}} className="rounded-t-3xl bg-graphite-900 px-6 pb-10 pt-5">
+            {selectedDay
+              ? (() => {
+                  const di = dayInfo.get(selectedDay);
+                  return (
+                    <>
+                      <Text className="text-xl font-extrabold text-graphite-50">
+                        {fmtYmd(selectedDay)}
+                      </Text>
+                      {di?.phase ? (
+                        <Text className="mt-1 text-sm text-accent">
+                          {t(`health.cycle.phase.${di.phase}`)}
+                        </Text>
+                      ) : null}
+                      <View className="mt-4">
+                        {di?.readiness != null ? (
+                          <DetailLine
+                            label={t('health.metrics.readiness')}
+                            value={String(Math.round(di.readiness))}
+                          />
+                        ) : null}
+                        {di?.sleep != null ? (
+                          <DetailLine
+                            label={t('health.metrics.sleep')}
+                            value={String(Math.round(di.sleep))}
+                          />
+                        ) : null}
+                        {di?.workout ? (
+                          <DetailLine
+                            label={t('analytics.workoutYes')}
+                            value={di.tonnage > 0 ? `${fmtTonnage(di.tonnage)} ${unitLabel}` : '✓'}
+                          />
+                        ) : null}
+                        {!di ? (
+                          <Text className="text-sm text-graphite-500">{t('analytics.noDataDay')}</Text>
+                        ) : null}
+                      </View>
+                      {trackCycle ? (
+                        <Pressable
+                          disabled={markMut.isPending || startsSet.has(selectedDay)}
+                          onPress={() => markMut.mutate(selectedDay)}
+                          className="mt-5 items-center rounded-xl bg-accent py-3 active:opacity-80"
+                          style={{ opacity: startsSet.has(selectedDay) ? 0.5 : 1 }}
+                        >
+                          <Text className="text-sm font-bold text-graphite-950">
+                            {startsSet.has(selectedDay)
+                              ? t('analytics.day1Marked')
+                              : t('analytics.markDay1')}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable
+                        onPress={() => setSelectedDay(null)}
+                        className="mt-2 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
+                      >
+                        <Text className="text-sm font-semibold text-graphite-200">
+                          {t('summary.done')}
+                        </Text>
+                      </Pressable>
+                    </>
+                  );
+                })()
+              : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
