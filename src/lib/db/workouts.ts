@@ -189,6 +189,18 @@ export async function setSetLogged(
   if (error) throw error;
 }
 
+/** Переставить упражнения тренировки: idsInOrder[k] получает order_index = orderValues[k]. */
+export async function reorderWorkoutExercises(
+  idsInOrder: string[],
+  orderValues: number[],
+): Promise<void> {
+  await Promise.all(
+    idsInOrder.map((id, k) =>
+      supabase.from('workout_exercises').update({ order_index: orderValues[k] }).eq('id', id),
+    ),
+  );
+}
+
 /** Завершить/возобновить упражнение (для сворачивания карточки). */
 export async function setExerciseDone(workoutExerciseId: string, done: boolean): Promise<void> {
   const { error } = await supabase

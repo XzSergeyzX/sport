@@ -44,6 +44,7 @@ import {
   finishWorkout,
   getRecentExercises,
   getWorkoutDetail,
+  reorderWorkoutExercises,
   type SetInput,
   type SetRow as SetRowType,
   setExerciseDone,
@@ -277,15 +278,21 @@ function GripPicker({
   );
 }
 
-function ElapsedTimer({ startedAt }: { startedAt: string }) {
+function ElapsedTimer({ startedAt, endedAt }: { startedAt: string; endedAt?: string | null }) {
   const { t } = useTranslation();
-  const calc = () => Math.max(0, Math.floor((Date.now() - +new Date(startedAt)) / 1000));
+  const calc = () =>
+    Math.max(0, Math.floor(((endedAt ? +new Date(endedAt) : Date.now()) - +new Date(startedAt)) / 1000));
   const [sec, setSec] = useState(calc);
   useEffect(() => {
+    // завершённая тренировка (редактирование) — время заморожено на реальной длительности, без тикания
+    if (endedAt) {
+      setSec(calc());
+      return;
+    }
     const id = setInterval(() => setSec(calc()), 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startedAt]);
+  }, [startedAt, endedAt]);
   return (
     <Text className="text-sm text-graphite-400">
       {t('workout.elapsed')}: {fmt(sec)}
@@ -849,6 +856,22 @@ export default function WorkoutScreen() {
     onSuccess: invalidate,
   });
 
+  const moveWorkoutExMut = useMutation({
+    mutationFn: (v: { ids: string[]; orders: number[] }) =>
+      reorderWorkoutExercises(v.ids, v.orders),
+    onSuccess: invalidate,
+  });
+  // переставить упражнение внутри кластера на dir (-1 вверх / +1 вниз).
+  // order_index в тренировке глобальный → переиспользуем существующие слоты группы (не 0..n-1).
+  const moveClusterItem = (items: WorkoutExercise[], i: number, dir: number) => {
+    const target = i + dir;
+    if (target < 0 || target >= items.length) return;
+    const ids = items.map((e) => e.id);
+    [ids[i], ids[target]] = [ids[target], ids[i]];
+    const orders = items.map((e) => e.order_index).sort((a, b) => a - b);
+    moveWorkoutExMut.mutate({ ids, orders });
+  };
+
   const setLoggedMut = useMutation({
     mutationFn: (v: { id: string; logged: boolean; restSec: number | null }) =>
       setSetLogged(v.id, v.logged, v.restSec),
@@ -1019,6 +1042,47 @@ export default function WorkoutScreen() {
         ) : (
           <View className="mt-2">
             {isEmom && <EmomTimer intervalSec={g.intervalSec!} />}
+            {g.items.length > 1 && !allDone && (
+              <View className="mb-3 rounded-xl bg-graphite-800 p-2">
+                <Text className="mb-1 px-1 text-[10px] uppercase tracking-wide text-graphite-500">
+                  {t('workout.blockExercises')}
+                </Text>
+                {g.items.map((it, i) => (
+                  <View key={it.id} className="flex-row items-center justify-between py-1">
+                    <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
+                      {exName(it)}
+                    </Text>
+                    <View className="flex-row items-center gap-1">
+                      <Pressable
+                        disabled={i === 0}
+                        onPress={() => moveClusterItem(g.items, i, -1)}
+                        hitSlop={6}
+                        className="px-1"
+                        style={{ opacity: i === 0 ? 0.3 : 1 }}
+                      >
+                        <Text className="text-base text-graphite-300">↑</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={i === g.items.length - 1}
+                        onPress={() => moveClusterItem(g.items, i, 1)}
+                        hitSlop={6}
+                        className="px-1"
+                        style={{ opacity: i === g.items.length - 1 ? 0.3 : 1 }}
+                      >
+                        <Text className="text-base text-graphite-300">↓</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setRemoveTarget({ ids: [it.id], label: exName(it) })}
+                        hitSlop={6}
+                        className="ml-1 px-1"
+                      >
+                        <Text className="text-base text-red-400">✕</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
             {Array.from({ length: maxRounds }).map((_, r) => (
               <View key={r} className="mb-3">
                 <Text className="mb-1 text-xs font-bold uppercase tracking-wide text-graphite-500">
@@ -1119,8 +1183,8 @@ export default function WorkoutScreen() {
           </Pressable>
         </View>
 
-        <ElapsedTimer startedAt={workout.started_at} />
-        <RestNow anchor={anchor} />
+        <ElapsedTimer startedAt={workout.started_at} endedAt={workout.ended_at} />
+        {!workout.ended_at && <RestNow anchor={anchor} />}
 
         <ScrollView
           className="mt-4 flex-1"
