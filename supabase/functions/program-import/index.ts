@@ -60,9 +60,19 @@ Naming (the "name" field):
   put it in the name: "Жим сидячи однією рукою". Bilateral → no "однією".
 
 Rules:
-- Standalone strength moves → their own "single" block.
+- Standalone strength moves → their own "single" block. Put ONE exercise per "single" block;
+  never pack several different movements into a single "single" block.
+- ONE MOVEMENT = ONE EXERCISE WITH MANY SETS. Never emit the same movement as several separate
+  exercises. Multiple lines/working sets of the same movement → ONE exercise with that many sets.
+  Per-set differences (load, gripper model, band, tempo, side) live ON THE SET — not as a new
+  exercise and not dropped. Put the per-set load into the set's weight; put any non-numeric
+  per-set descriptor (gripper model, band colour, "per side") into that set's notes.
+- GRIPPERS / hand-closers ("еспандер", "Heavy Grips 250", "CoC #2", "expander", "gripper"):
+  the load is the gripper model, NOT a weight. → ONE exercise (e.g. "Стиснення еспандера"),
+  one SET per gripper line, weight=null, reps=the closes, and the gripper model in the set's
+  notes ("Heavy Grips 250"). Three grippers ×5/×2/×4 → one exercise, three sets, three notes.
 - "10 тяг штанги в нахилі (30 кг)" → 1 set, reps 10, weight 30.
-- "3 жима штанги + 2 швунга (22.5-25 кг)" → two exercises in the same block.
+- "3 жима штанги + 2 швунга (22.5-25 кг)" → two DIFFERENT exercises in the same block.
 - "5/5 … на руку", "20/20 сек", "права/ліва рука" mean per-side: keep the per-side number in reps and add "per side" to notes.
 - Weights "8 кг", "22.5-25 кг", "5-10 кг": put the number into weight (range → lower bound).
 - Time holds / planks / hangs / carries measured in time ("20 сек утримання над головою",
@@ -258,13 +268,15 @@ Deno.serve(async (req) => {
         .single();
       if (bErr) return json({ error: bErr.message }, 500);
 
-      const setFields = (s: ParsedSet) => ({
+      // fallbackNote: при слиянии повтора-упражнения переносим его описание (гриппер/снаряд)
+      // на подход, чтобы инфо не терялась, даже если модель положила её в notes упражнения.
+      const setFields = (s: ParsedSet, fallbackNote: string | null = null) => ({
         target_reps: num(s.reps),
         target_duration_sec: num(s.duration_sec),
         target_weight: weightToKg(num(s.weight)),
         target_rpe: num(s.rpe),
         rest_sec: num(s.rest_sec),
-        notes: s.notes ?? null,
+        notes: s.notes ?? fallbackNote ?? null,
       });
 
       // один и тот же снаряд подряд (эспандер на разных грипперах, повтор строки) — это ДОП.
@@ -286,7 +298,7 @@ Deno.serve(async (req) => {
             const rows = sets.map((s, j) => ({
               program_exercise_id: lastPeId,
               order_index: lastSetCount + j,
-              ...setFields(s),
+              ...setFields(s, str(ex.notes)),
             }));
             const { error: sErr } = await admin.from('program_sets').insert(rows);
             if (sErr) return json({ error: sErr.message }, 500);
