@@ -14,6 +14,7 @@ import {
   deleteProgramSet,
   getProgramDetail,
   groupProgram,
+  isClusterBlock,
   type ProgramBlock,
   type ProgramSet,
   reorderProgramExercises,
@@ -281,7 +282,7 @@ export default function ProgramDetailScreen() {
           {program &&
             groupProgram(program).map((g, gi) => {
               const meta = g.block ? blockMeta(g.block, t) : '';
-              const isCluster = !!g.block && (g.block.type !== 'single' || g.exercises.length > 1);
+              const isCluster = isClusterBlock(g.block);
               return (
                 <View
                   key={g.block?.id ?? g.exercises[0]?.id ?? gi}

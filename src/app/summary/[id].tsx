@@ -6,7 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
-import { getWorkoutDetail, type WorkoutExercise, workoutStats } from '@/lib/db/workouts';
+import {
+  getWorkoutDetail,
+  isClusteredWorkoutExercise,
+  type WorkoutExercise,
+  workoutStats,
+} from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { useWeightUnit } from '@/lib/use-unit';
 
@@ -60,8 +65,10 @@ export default function SummaryScreen() {
     // упражнение без единого отмеченного подхода (пустой «висяк» от кривого импорта) не показываем
     if (!we.sets.some((s) => s.logged_at)) continue;
     const last = groups[groups.length - 1];
-    if (we.block_key && last && last.key === we.block_key) last.items.push(we);
-    else if (we.block_key) groups.push({ key: we.block_key, label: we.block_label, items: [we] });
+    // только настоящий кластер группируем под шапку; «single»-блок — отдельные карточки
+    const clustered = isClusteredWorkoutExercise(we);
+    if (clustered && last && last.key === we.block_key) last.items.push(we);
+    else if (clustered) groups.push({ key: we.block_key!, label: we.block_label, items: [we] });
     else groups.push({ key: we.id, label: null, items: [we] });
   }
 

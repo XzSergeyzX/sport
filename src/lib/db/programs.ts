@@ -56,6 +56,15 @@ export type ProgramDetail = Program & {
 /** Группа для отображения: блок (или null для несгруппированных) + его упражнения по порядку. */
 export type ProgramGroup = { block: ProgramBlock | null; exercises: ProgramExercise[] };
 
+/**
+ * Настоящий кластер — суперсет/круг/EMOM/AMRAP и т.п., где упражнения делаются вместе
+ * раунд-за-раундом. «single»-блок кластером НЕ является, даже если импорт ошибочно сложил в
+ * него несколько самостоятельных упражнений — каждое идёт само по себе, без общей шапки.
+ */
+export function isClusterBlock(block: ProgramBlock | null | undefined): boolean {
+  return !!block && block.type != null && block.type !== 'single';
+}
+
 export type ImportResult = {
   program_id: string;
   exercise_count: number;
@@ -122,7 +131,10 @@ export function groupProgram(detail: ProgramDetail): ProgramGroup[] {
     const exercises = detail.program_exercises
       .filter((pe) => pe.block_id === block.id)
       .sort(byOrder);
-    if (exercises.length) groups.push({ block, exercises });
+    if (!exercises.length) continue;
+    // настоящий кластер — одной группой; «single»-блок — каждое упражнение само по себе (без шапки)
+    if (isClusterBlock(block)) groups.push({ block, exercises });
+    else for (const ex of exercises) groups.push({ block: null, exercises: [ex] });
   }
 
   // legacy/несгруппированные упражнения — каждое как отдельная группа без блока
@@ -247,7 +259,7 @@ export async function startWorkoutFromProgram(
 
   for (const group of groupProgram(detail)) {
     const block = group.block;
-    const isCluster = !!block && (block.type !== 'single' || group.exercises.length > 1);
+    const isCluster = isClusterBlock(block);
     // EMOM/E2MOM: круги = длительность ÷ интервал ÷ кол-во упражнений; иначе rounds или 1
     const repeat = isCluster ? blockRounds(block!, group.exercises.length) : 1;
 

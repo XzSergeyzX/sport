@@ -43,6 +43,15 @@ export type Workout = {
 
 export type WorkoutDetail = Workout & { workout_exercises: WorkoutExercise[] };
 
+/**
+ * Настоящий кластер (суперсет/круг/EMOM) — а не «single»-блок самостоятельных упражнений,
+ * которые импорт мог ошибочно сложить в один блок. «single» показываем отдельными карточками,
+ * без общей шапки и без раунд-за-раундом схлопывания подходов.
+ */
+export function isClusteredWorkoutExercise(we: WorkoutExercise): boolean {
+  return !!we.block_key && we.block_type != null && we.block_type !== 'single';
+}
+
 export type SetInput = {
   reps?: number | null;
   duration_sec?: number | null;

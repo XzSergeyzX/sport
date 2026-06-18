@@ -45,6 +45,7 @@ import {
   finishWorkout,
   getRecentExercises,
   getWorkoutDetail,
+  isClusteredWorkoutExercise,
   reorderWorkoutExercises,
   type SetInput,
   type SetRow as SetRowType,
@@ -779,7 +780,7 @@ export default function WorkoutScreen() {
     if (!workout) return;
     const keys: string[] = [];
     for (const we of workout.workout_exercises) {
-      const k = we.block_key ?? we.id;
+      const k = isClusteredWorkoutExercise(we) ? we.block_key! : we.id;
       if (!keys.includes(k)) keys.push(k);
     }
     setCollapsed(Object.fromEntries(keys.map((k, i) => [k, i !== 0])));
@@ -1133,14 +1134,16 @@ export default function WorkoutScreen() {
     );
   };
 
-  // группируем подряд идущие упражнения одного кластера (block_key)
+  // группируем подряд идущие упражнения одного НАСТОЯЩЕГО кластера (суперсет/круг/EMOM);
+  // «single»-блок — каждое упражнение отдельной карточкой (не схлопываем подходы вместе)
   const wgroups: WGroup[] = [];
   for (const we of workout?.workout_exercises ?? []) {
     const last = wgroups[wgroups.length - 1];
-    if (we.block_key && last && last.key === we.block_key) last.items.push(we);
-    else if (we.block_key)
+    const clustered = isClusteredWorkoutExercise(we);
+    if (clustered && last && last.key === we.block_key) last.items.push(we);
+    else if (clustered)
       wgroups.push({
-        key: we.block_key,
+        key: we.block_key!,
         label: we.block_label,
         rounds: we.block_rounds,
         type: we.block_type,
@@ -1187,7 +1190,7 @@ export default function WorkoutScreen() {
             <Text className="text-base text-graphite-400">{t('workout.noExercises')}</Text>
           )}
           {wgroups.map((g) => {
-            const isCluster = g.label != null || g.items.length > 1;
+            const isCluster = g.type != null && g.type !== 'single';
             return isCluster ? renderCluster(g) : renderExercise(g.items[0]);
           })}
         </ScrollView>
