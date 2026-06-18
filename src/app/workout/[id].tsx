@@ -425,9 +425,10 @@ function SetRow({
     save(rpe, next);
   };
 
-  // сторона циклится тапом: нет → ліва → права → обидві → нет (без лишних окон)
+  // сторона циклится тапом: нет → ліва → права → нет (без лишних окон). «Обидві» убрано —
+  // выбор стороны показываем только у односторонних/хвата, где «обидві» противоречива.
   const cycleSide = () => {
-    const order: (SetSide | undefined)[] = [undefined, 'left', 'right', 'both'];
+    const order: (SetSide | undefined)[] = [undefined, 'left', 'right'];
     const i = order.indexOf(meta.side);
     const nextSide = order[(i + 1) % order.length];
     const next = { ...meta };
