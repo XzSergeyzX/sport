@@ -258,12 +258,43 @@ Deno.serve(async (req) => {
         .single();
       if (bErr) return json({ error: bErr.message }, 500);
 
+      const setFields = (s: ParsedSet) => ({
+        target_reps: num(s.reps),
+        target_duration_sec: num(s.duration_sec),
+        target_weight: weightToKg(num(s.weight)),
+        target_rpe: num(s.rpe),
+        rest_sec: num(s.rest_sec),
+        notes: s.notes ?? null,
+      });
+
+      // один и тот же снаряд подряд (эспандер на разных грипперах, повтор строки) — это ДОП.
+      // ПОДХОДЫ, а не новые упражнения. Дописываем их в предыдущее упражнение блока.
+      let lastPeId: string | null = null;
+      let lastExId: string | null = null;
+      let lastSetCount = 0;
+
       for (let ei = 0; ei < exs.length; ei++) {
         const ex = exs[ei];
         const name = (ex.name ?? '').trim().slice(0, 200);
         if (!name) continue;
 
         const exerciseId = await resolveExerciseId(ex);
+        const sets = Array.isArray(ex.sets) ? ex.sets : [];
+
+        if (exerciseId && exerciseId === lastExId && lastPeId) {
+          if (sets.length > 0) {
+            const rows = sets.map((s, j) => ({
+              program_exercise_id: lastPeId,
+              order_index: lastSetCount + j,
+              ...setFields(s),
+            }));
+            const { error: sErr } = await admin.from('program_sets').insert(rows);
+            if (sErr) return json({ error: sErr.message }, 500);
+            lastSetCount += sets.length;
+          }
+          continue;
+        }
+
         exerciseCount++;
 
         const { data: pe, error: peErr } = await admin
@@ -280,21 +311,19 @@ Deno.serve(async (req) => {
           .single();
         if (peErr) return json({ error: peErr.message }, 500);
 
-        const sets = Array.isArray(ex.sets) ? ex.sets : [];
         if (sets.length > 0) {
           const rows = sets.map((s, j) => ({
             program_exercise_id: pe.id,
             order_index: j,
-            target_reps: num(s.reps),
-            target_duration_sec: num(s.duration_sec),
-            target_weight: weightToKg(num(s.weight)),
-            target_rpe: num(s.rpe),
-            rest_sec: num(s.rest_sec),
-            notes: s.notes ?? null,
+            ...setFields(s),
           }));
           const { error: sErr } = await admin.from('program_sets').insert(rows);
           if (sErr) return json({ error: sErr.message }, 500);
         }
+
+        lastPeId = pe.id;
+        lastExId = exerciseId;
+        lastSetCount = sets.length;
       }
     }
 
