@@ -57,6 +57,8 @@ export default function SummaryScreen() {
   type BGroup = { key: string; label: string | null; items: WorkoutExercise[] };
   const groups: BGroup[] = [];
   for (const we of workout.workout_exercises) {
+    // упражнение без единого отмеченного подхода (пустой «висяк» от кривого импорта) не показываем
+    if (!we.sets.some((s) => s.logged_at)) continue;
     const last = groups[groups.length - 1];
     if (we.block_key && last && last.key === we.block_key) last.items.push(we);
     else if (we.block_key) groups.push({ key: we.block_key, label: we.block_label, items: [we] });

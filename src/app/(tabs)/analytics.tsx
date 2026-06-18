@@ -32,6 +32,7 @@ type GripRec = {
   gripperName: string;
   reps: number;
   estKg: number | null;
+  rgcKg: number | null; // от чего считается оценка (RGC эспандера в кг)
   date: string;
 };
 type GripInfo = { rgcKg: number | null; name: string };
@@ -96,7 +97,14 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
       const g = gripMap.get(meta.gripper_id);
       const st = meta.set_type ?? 'none';
       const estKg = g?.rgcKg != null ? (r.reps <= 1 ? g.rgcKg : g.rgcKg * (1 + 0.025 * r.reps)) : null;
-      const cand: GripRec = { setType: st, gripperName: g?.name ?? '—', reps: r.reps, estKg, date };
+      const cand: GripRec = {
+        setType: st,
+        gripperName: g?.name ?? '—',
+        reps: r.reps,
+        estKg,
+        rgcKg: g?.rgcKg ?? null,
+        date,
+      };
       const prev = gripBest.get(st);
       const score = (x: GripRec) => x.estKg ?? -1;
       if (!prev || score(cand) > score(prev) || (score(cand) === score(prev) && cand.reps > prev.reps))
@@ -833,7 +841,9 @@ export default function AnalyticsScreen() {
                           {i18n.exists(`setTypes.${g.setType}`) ? t(`setTypes.${g.setType}`) : t('workout.setType')}
                         </Text>
                         <Text className="text-[11px] text-graphite-500" numberOfLines={1}>
-                          {g.gripperName} · × {g.reps}
+                          {g.gripperName}
+                          {g.rgcKg != null ? ` · RGC ${formatWeight(g.rgcKg, unit)} ${unitLabel}` : ''} · ×{' '}
+                          {g.reps}
                         </Text>
                       </View>
                       <Text className="ml-2 text-sm font-bold text-accent">
