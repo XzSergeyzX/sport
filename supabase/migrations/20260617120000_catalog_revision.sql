@@ -52,12 +52,12 @@ update public.exercises set name_uk = 'Розводка гантелей в ст
 update public.exercises set name_uk = 'Розводка резинки', name_en = 'Band Pull-apart' where id = '7e18cd3c-5a6c-43ac-8f91-78164e610cde';
 update public.exercises set name_uk = 'Утримання над головою', name_en = 'Overhead Hold' where id = 'd78d17f9-6158-4625-9459-483704033b91';
 update public.exercises set name_uk = 'Утримання нижнього положення відтискання з колін', name_en = 'Bottom Push-up Hold (knees)' where id = 'a4078c46-3ba7-48f1-ab89-1ba2d5e7c2e9';
-update public.exercises set name_uk = 'Добре розігрій плечі', name_en = 'Warm up shoulders well' where id = '5575728f-0f05-4450-a7ee-31732724cc82';
+update public.exercises set name_uk = 'Скручування з поворотом', name_en = 'Twisting Crunch' where id = '1c2b461c-eef3-472b-bd6a-00e977cf0800';
 
 -- удаление мусора (только если не используется в тренировках/программах/рекордах)
 delete from public.exercises e where e.id in (
   'af8a4435-d06b-4a23-a2c8-adf3dbbd7a80',
-  '1c2b461c-eef3-472b-bd6a-00e977cf0800',
+  '5575728f-0f05-4450-a7ee-31732724cc82',
   '9b9bf803-d091-4e68-9598-b0e2c95e0b99',
   'c3c8e760-914b-4665-9743-6052721a97be'
 )
