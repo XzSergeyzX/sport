@@ -72,10 +72,22 @@ export default function SummaryScreen() {
       <View className="mt-2 gap-1">
         {we.sets.map((set, i) => {
           const done = !!set.logged_at;
-          const m = (set.meta ?? {}) as { cheat?: boolean; side?: string };
+          const m = (set.meta ?? {}) as {
+            cheat?: boolean;
+            side?: string;
+            gripper_id?: string;
+            set_type?: string;
+          };
           const tags =
             (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
             (m.cheat ? `  · ${t('workout.cheat')}` : '');
+          // гриппер (вес N/A): показываем установку + повторы, а не «– кг»
+          const main =
+            set.duration_sec != null
+              ? `${set.weight != null ? `${set.weight} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
+              : m.gripper_id
+                ? `${m.set_type && i18n.exists(`setTypes.${m.set_type}`) ? `${t(`setTypes.${m.set_type}`)} · ` : ''}× ${set.reps ?? '–'}`
+                : `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}`;
           return (
             <View
               key={set.id}
@@ -88,11 +100,7 @@ export default function SummaryScreen() {
               </Text>
               <Text className="text-sm text-graphite-200">
                 {done
-                  ? `${
-                      set.duration_sec != null
-                        ? `${set.weight != null ? `${set.weight} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
-                        : `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}`
-                    }${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
+                  ? `${main}${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
                       set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''
                     }${tags}`
                   : '—'}

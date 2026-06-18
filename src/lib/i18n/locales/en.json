@@ -117,6 +117,8 @@
     "tonnageHint": "each bar = one workout",
     "records": "Records",
     "est1rm": "est. 1RM",
+    "gripRecords": "Grip strength",
+    "gripHint": "estimated 1RM by gripper RGC, per setup (card / TNS / block / dip-set differ)",
     "recovery": "Recovery",
     "recoveryHint": "average over the last {{n}} days vs the prior {{n}}",
     "avg30": "avg {{v}}",

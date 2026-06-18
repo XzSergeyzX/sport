@@ -217,10 +217,13 @@ export async function deleteWorkout(id: string): Promise<void> {
 }
 
 export async function finishWorkout(id: string): Promise<void> {
+  // ставим время окончания только если ещё не завершена — при редактировании уже
+  // завершённой тренировки «Завершити» не должно раздувать длительность (старт вчера → кінець сьогодні).
   const { error } = await supabase
     .from('workouts')
     .update({ ended_at: new Date().toISOString() })
-    .eq('id', id);
+    .eq('id', id)
+    .is('ended_at', null);
   if (error) throw error;
 }
 

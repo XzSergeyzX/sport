@@ -14,16 +14,27 @@ import {
   phaseForDate,
 } from '@/lib/db/cycle';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
+import { listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
-import { useWeightUnit } from '@/lib/use-unit';
+import { formatWeight, useWeightUnit } from '@/lib/use-unit';
 
-// оценка 1ПМ по О'Коннору: вес × (1 + 0.025 × повторы) — честнее (ниже Эпли)
-const oneRmEst = (weight: number, reps: number) => weight * (1 + 0.025 * reps);
+// оценка 1ПМ по О'Коннору: вес × (1 + 0.025 × повторы) — честнее (ниже Эпли).
+// для сингла (1 повтор) оценка = сам вес: один раз и есть твой максимум, накручивать нечего.
+const oneRmEst = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + 0.025 * reps));
 
 type TonnagePoint = { date: string; tonnage: number };
 type RepRec = { kind: 'reps'; weight: number; reps: number; oneRm: number; date: string; cheat?: boolean };
 type TimeRec = { kind: 'time'; sec: number; weight: number | null; date: string; cheat?: boolean };
+// рекорд хвата: оценка 1ПМ по RGC эспандера, отдельно по виду установки (карта≠дип-сет≠блок≠TNS)
+type GripRec = {
+  setType: string;
+  gripperName: string;
+  reps: number;
+  estKg: number | null;
+  date: string;
+};
+type GripInfo = { rgcKg: number | null; name: string };
 type ExRecords = {
   id: string;
   name: string;
@@ -41,11 +52,12 @@ type Acc = {
   time: Map<string, TimeRec>;
 };
 
-function analyze(rows: LoggedSet[], lang: string) {
+function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>) {
   const exMap = new Map<string, Acc>();
   const wkTonnage = new Map<string, TonnagePoint>();
   const wkDur = new Map<string, number>(); // минуты на тренировку
   const wkSet = new Set<string>();
+  const gripBest = new Map<string, GripRec>(); // лучший по виду установки
   let totalSets = 0;
 
   for (const r of rows) {
@@ -72,12 +84,23 @@ function analyze(rows: LoggedSet[], lang: string) {
     }
 
     totalSets += 1;
-    const cheat = Boolean((r.meta as { cheat?: boolean } | null)?.cheat);
+    const meta = r.meta as { cheat?: boolean; gripper_id?: string; set_type?: string } | null;
+    const cheat = Boolean(meta?.cheat);
     if (r.duration_sec != null) {
       const key = `${r.duration_sec}@${r.weight ?? ''}`;
       const prev = ex.time.get(key);
       if (!prev || date < prev.date)
         ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date, cheat });
+    } else if (meta?.gripper_id && r.reps != null) {
+      // гриппер: оценка 1ПМ по RGC, лучший по каждому виду установки
+      const g = gripMap.get(meta.gripper_id);
+      const st = meta.set_type ?? 'none';
+      const estKg = g?.rgcKg != null ? (r.reps <= 1 ? g.rgcKg : g.rgcKg * (1 + 0.025 * r.reps)) : null;
+      const cand: GripRec = { setType: st, gripperName: g?.name ?? '—', reps: r.reps, estKg, date };
+      const prev = gripBest.get(st);
+      const score = (x: GripRec) => x.estKg ?? -1;
+      if (!prev || score(cand) > score(prev) || (score(cand) === score(prev) && cand.reps > prev.reps))
+        gripBest.set(st, cand);
     } else if (r.weight != null && r.reps != null) {
       const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
       tn.tonnage += r.weight * r.reps;
@@ -121,7 +144,19 @@ function analyze(rows: LoggedSet[], lang: string) {
     }))
     .filter((g) => g.exercises.length > 0);
 
-  return { tonnageSeries, recordGroups, totalTonnage, totalSets, totalMin, workouts: wkSet.size };
+  const gripRecords = [...gripBest.values()].sort(
+    (a, b) => (b.estKg ?? -1) - (a.estKg ?? -1) || b.reps - a.reps,
+  );
+
+  return {
+    tonnageSeries,
+    recordGroups,
+    gripRecords,
+    totalTonnage,
+    totalSets,
+    totalMin,
+    workouts: wkSet.size,
+  };
 }
 
 function fmtDuration(min: number, t: (k: string) => string): string {
@@ -482,6 +517,7 @@ function Calendar({
   monthOffset,
   info,
   starts,
+  showPhases,
   onPrev,
   onNext,
   onSelectDay,
@@ -489,6 +525,7 @@ function Calendar({
   monthOffset: number;
   info: Map<string, DayInfo>;
   starts: Set<string>;
+  showPhases: boolean; // фазы цикла — только если пользователь трекает цикл
   onPrev: () => void;
   onNext: () => void;
   onSelectDay: (ymd: string) => void;
@@ -537,7 +574,7 @@ function Calendar({
               </View>
             );
           const di = info.get(ymd);
-          const tint = di?.phase ? PHASE_TINT[di.phase] : 'bg-graphite-800';
+          const tint = showPhases && di?.phase ? PHASE_TINT[di.phase] : 'bg-graphite-800';
           const day = Number(ymd.split('-')[2]);
           return (
             <View key={ymd} className="w-[14.28%] p-0.5">
@@ -559,12 +596,13 @@ function Calendar({
           <View className="h-1.5 w-1.5 rounded-full bg-accent" />
           <Text className="text-[10px] text-graphite-500">{t('analytics.workoutYes')}</Text>
         </View>
-        {PHASE_ORDER.map((p) => (
-          <View key={p} className="flex-row items-center gap-1">
-            <View className={`h-2.5 w-2.5 rounded-sm ${PHASE_TINT[p]}`} />
-            <Text className="text-[10px] text-graphite-500">{t(`health.cycle.phase.${p}`)}</Text>
-          </View>
-        ))}
+        {showPhases &&
+          PHASE_ORDER.map((p) => (
+            <View key={p} className="flex-row items-center gap-1">
+              <View className={`h-2.5 w-2.5 rounded-sm ${PHASE_TINT[p]}`} />
+              <Text className="text-[10px] text-graphite-500">{t(`health.cycle.phase.${p}`)}</Text>
+            </View>
+          ))}
       </View>
     </View>
   );
@@ -617,6 +655,17 @@ export default function AnalyticsScreen() {
     enabled: !!userId,
   });
 
+  const { data: grippers } = useQuery({
+    queryKey: ['grippers-catalog', userId],
+    queryFn: () => listGripperCatalog(userId as string),
+    enabled: !!userId,
+  });
+  const gripMap = useMemo(() => {
+    const m = new Map<string, GripInfo>();
+    for (const g of grippers ?? []) m.set(g.id, { rgcKg: rgcInKg(g), name: g.name });
+    return m;
+  }, [grippers]);
+
   const markMut = useMutation({
     mutationFn: (day: string) => logPeriodStart(userId as string, day),
     onSuccess: () => {
@@ -626,7 +675,7 @@ export default function AnalyticsScreen() {
     },
   });
 
-  const a = useMemo(() => analyze(rows ?? [], lang), [rows, lang]);
+  const a = useMemo(() => analyze(rows ?? [], lang, gripMap), [rows, lang, gripMap]);
   const recovery = useMemo(() => analyzeRecovery(snaps ?? [], range), [snaps, range]);
   const corr = useMemo(
     () => analyzeCorrelation(rows ?? [], snaps ?? [], cycleStarts ?? [], range),
@@ -767,6 +816,35 @@ export default function AnalyticsScreen() {
                 );
               })}
             </View>
+
+            {a.gripRecords.length > 0 && (
+              <>
+                <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                  {t('analytics.gripRecords')}
+                </Text>
+                <View className="rounded-2xl bg-graphite-900 p-3">
+                  {a.gripRecords.map((g, i) => (
+                    <View
+                      key={g.setType}
+                      className={`flex-row items-center justify-between py-2 ${i > 0 ? 'border-t border-graphite-800' : ''}`}
+                    >
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-graphite-100">
+                          {i18n.exists(`setTypes.${g.setType}`) ? t(`setTypes.${g.setType}`) : t('workout.setType')}
+                        </Text>
+                        <Text className="text-[11px] text-graphite-500" numberOfLines={1}>
+                          {g.gripperName} · × {g.reps}
+                        </Text>
+                      </View>
+                      <Text className="ml-2 text-sm font-bold text-accent">
+                        {g.estKg != null ? `≈${formatWeight(g.estKg, unit)} ${unitLabel}` : `× ${g.reps}`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <Text className="mt-1 px-1 text-[10px] text-graphite-600">{t('analytics.gripHint')}</Text>
+              </>
+            )}
               </>
             )}
 
@@ -866,6 +944,7 @@ export default function AnalyticsScreen() {
               monthOffset={monthOffset}
               info={dayInfo}
               starts={startsSet}
+              showPhases={!!trackCycle}
               onPrev={() => setMonthOffset((o) => o - 1)}
               onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
               onSelectDay={setSelectedDay}
@@ -894,7 +973,7 @@ export default function AnalyticsScreen() {
                       <Text className="text-xl font-extrabold text-graphite-50">
                         {fmtYmd(selectedDay)}
                       </Text>
-                      {di?.phase ? (
+                      {trackCycle && di?.phase ? (
                         <Text className="mt-1 text-sm text-accent">
                           {t(`health.cycle.phase.${di.phase}`)}
                         </Text>
