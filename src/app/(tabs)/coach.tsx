@@ -51,8 +51,12 @@ export default function CoachScreen() {
 
   const sendMut = useMutation({
     mutationFn: (text: string) => sendCoachMessage(text),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['coach-messages', userId] }),
-    onSettled: () => setPending(null),
+    // обновляем список в ЛЮБОМ исходе: сообщение пользователя сохраняется сервером ещё до
+    // ответа модели, поэтому даже при ошибке оно должно остаться на экране (а не «откатить на старт»)
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['coach-messages', userId] });
+      setPending(null);
+    },
   });
 
   const all: CoachMessage[] = messages ?? [];

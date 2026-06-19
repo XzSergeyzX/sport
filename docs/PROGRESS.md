@@ -9,7 +9,7 @@
 **Старт сессии:** `git pull --ff-only` → прочитать этот блок → при нужде глянуть свежий раздел ниже и `docs/BACKLOG.md` (секция «Порядок»).
 
 - **Состояние `main` (на 2026-06-19):** закрыты бэклог 1/2/6b + доводка (single-блок, «обидві», грипперы-как-подходы, импорт-промпт). **§3 ІІ-коуч v1 собран** — tool-агент (SQL-инструменты над данными атлета, без векторов), таб «Коуч», чат на ai_threads/ai_messages, память `coach_facts`. Архитектура согласована: SQL + tool-calling, векторку не берём.
-- **Твои действия (деплой коуча):** `npx supabase db push` (миграция `20260619120000_coach_facts`) + `npx supabase functions deploy coach-chat`. Также висит со вчера `npx supabase functions deploy program-import`.
+- **Твои действия:** db push + `functions deploy coach-chat` — СДЕЛАНО. **Осталось: задать секрет Anthropic** — `npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref sdvegejubjmmlnifvigt` (без него коуч падает `provider_unavailable`; импорт жив, т.к. он на OpenAI). Также висит `functions deploy program-import`.
 - **Следующее:** проверить коуча на устройстве (таб «Коуч» → задать вопрос про тренировки/восстановление, проверить что тянет реальные данные и честно отмечает свежесть OURA). Потом — голос/STT (§3, отдельно) или §4 IA-переезд. Хвост: пустая тренировка `67d7a269` — снести/оставить.
 
 ---
