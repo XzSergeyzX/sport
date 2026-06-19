@@ -28,6 +28,7 @@ Return ONLY JSON:
 {
   "date": "YYYY-MM-DD"|null,
   "title": string,                      // SHORT, e.g. "Кисть + пронація", "Натяжка"
+  "session_note": string|null,          // warm-up / cool-down / finishers WITHOUT numbers, short
   "blocks": [
     {
       "type": "single|superset|rounds|emom|e2mom|amrap|for_time|interval",
@@ -47,15 +48,20 @@ Return ONLY JSON:
   ]
 }
 
-SIDES (important for armwrestling):
-- Same weight done on BOTH hands → ONE set with side="both" (volume counts double automatically).
-- Different per-side numbers ("32.25*6 (ліва 7)", "права 24с, ліва 26с") → TWO sets:
-  side="right" and side="left" with their own reps/seconds.
-- Plain bilateral lift (no per-hand notion) → side=null.
+SIDES — set "side" ONLY when the text says so explicitly; NEVER infer it from the exercise or from a
+multiplier:
+- Explicit "обе"/"обидві"/"both"/"25*12 обе" → ONE set side="both" (volume counts double).
+- Explicit per-hand "Л: 20*10, П: 20*7" / "ліва/права" / "левая/правая" / "(ліва 7)" / "права 24с,
+  ліва 26с" → SEPARATE sets side="left" and side="right" with their own reps/seconds.
+- Anything else (including a "*2"/"x2" multiplier) → side=null.
+
+WARM-UP / COOL-DOWN / FINISHERS WITHOUT NUMBERS ("+ концентрична робота з резиною на пронацію в
+заминці", "розминка ...") → do NOT create an exercise. Summarise them in "session_note". Create an
+exercise ONLY when it has real numbers (weight/reps/seconds).
 
 OTHER RULES:
-- Set multipliers expand into separate sets: "26.25*10*2" → in a per-hand context this is side="both"
-  (both hands ×10); otherwise → two sets. Never output "xN" as a note.
+- Set multipliers ALWAYS expand into that many separate sets with side=null — never a side, never an
+  "xN" note. "26.25*10*2" → TWO sets of 26.25 × 10. "120*8*3" → three sets of 120 × 8.
 - Weights "26.25", "32.25 кг", ranges "22.5-25" → number into weight (range → lower bound). "bar/палку
   considered as base" — keep the stated number.
 - Time holds / statics ("28 статика", "22 секунди") → reps null, seconds into duration_sec.
@@ -168,7 +174,8 @@ Deno.serve(async (req) => {
         started_at: startedAt.toISOString(),
         ended_at: endedAt.toISOString(),
         title: str(parsed.title)?.slice(0, 120) ?? null,
-        notes: 'imported',
+        // разминка/заминка/добивка без чисел — сюда (а не пустыми упражнениями)
+        notes: str(parsed.session_note)?.slice(0, 1000) ?? null,
       })
       .select('id')
       .single();
@@ -207,7 +214,8 @@ Deno.serve(async (req) => {
     let order = 0;
     let exerciseCount = 0;
     for (const b of blocks) {
-      const exs = (b.exercises ?? []).filter((e) => str(e.name));
+      // упражнение без единого подхода (без чисел) не создаём — оно уходит в session_note
+      const exs = (b.exercises ?? []).filter((e) => str(e.name) && (e.sets?.length ?? 0) > 0);
       if (!exs.length) continue;
       const cluster = isCluster(b.type ?? null);
       const blockKey = cluster ? crypto.randomUUID() : null;

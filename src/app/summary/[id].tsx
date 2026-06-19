@@ -150,6 +150,16 @@ export default function SummaryScreen() {
           )}
         </View>
 
+        {/* Заметка тренировки (разминка/заминка/добивка из импорта) */}
+        {workout.notes && workout.notes !== 'imported' && (
+          <View className="rounded-2xl bg-graphite-900 p-4">
+            <Text className="mb-1 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+              {t('summary.notes')}
+            </Text>
+            <Text className="text-sm leading-5 text-graphite-200">{workout.notes}</Text>
+          </View>
+        )}
+
         {/* Таблица сделанного */}
         <View className="gap-3">
           <Text className="text-sm font-semibold uppercase tracking-wide text-graphite-500">

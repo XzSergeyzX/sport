@@ -162,7 +162,7 @@ function makeTools(admin: SupabaseClient, userId: string, units: 'kg' | 'lb') {
       const { data: ws } = await admin
         .from('workouts')
         .select(
-          'id, started_at, ended_at, title, workout_exercises(display_name, exercise_id, exercises(name_en, name_uk), sets(weight, reps, duration_sec, logged_at, rpe))',
+          'id, started_at, ended_at, title, notes, workout_exercises(display_name, exercise_id, exercises(name_en, name_uk), sets(weight, reps, duration_sec, logged_at, rpe, meta))',
         )
         .eq('user_id', userId)
         .gte('started_at', since)
@@ -171,6 +171,7 @@ function makeTools(admin: SupabaseClient, userId: string, units: 'kg' | 'lb') {
       return (ws ?? []).map((wo) => ({
         date: wo.started_at?.slice(0, 10),
         title: wo.title ?? null,
+        note: wo.notes && wo.notes !== 'imported' ? wo.notes : null,
         done: !!wo.ended_at,
         exercises: (wo.workout_exercises ?? [])
           .map((we) => {
