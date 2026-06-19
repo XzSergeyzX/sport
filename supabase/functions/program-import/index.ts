@@ -78,7 +78,10 @@ Rules:
 - Time holds / planks / hangs / carries measured in time ("20 сек утримання над головою",
   "планка 60с", "віс 30 сек") → reps null, put the seconds into duration_sec (the number only).
   "20/20 сек на руку" → duration_sec 20 + "per side" in notes.
-- "4x8" → 4 sets of 8. "120*8*3" → 3 sets of 8 at weight 120. Reps range (8-10) → lower bound.
+- Set multipliers EXPAND into that many separate identical sets — NEVER as a note or "xN" text.
+  "4x8" → 4 sets of 8. "120*8*3" → 3 sets of weight 120 × 8 reps. "26.25*12*2" → TWO sets of
+  26.25 × 12 (not one set with a "x2" note). Within a superset this is fine even if it makes one
+  exercise have more sets than the other — just emit all the real sets. Reps range (8-10) → lower bound.
 - catalog_index: set ONLY when the catalog entry is clearly the SAME exercise (same movement
   AND equipment). For variations, accessory work, band/rubber drills, scapular/holds or anything
   not obviously present — use null. NEVER force a loose match; a wrong match is worse than null.
@@ -123,6 +126,19 @@ const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? v : null;
 const str = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null;
+
+// Страховка: если модель всё же оставила множитель подходов как заметку "x2"/"×3" — разворачиваем
+// в N одинаковых подходов (а не одну строку с припиской). Закрывает кейс "26.25*12*2".
+function expandSetMultipliers(sets: ParsedSet[]): ParsedSet[] {
+  const out: ParsedSet[] = [];
+  for (const s of sets) {
+    const m = typeof s.notes === 'string' ? s.notes.trim().match(/^[x×х*]\s*(\d{1,2})$/i) : null;
+    const n = m ? Math.min(20, Math.max(1, parseInt(m[1], 10))) : 1;
+    const base = m ? { ...s, notes: null } : s;
+    for (let i = 0; i < n; i++) out.push(base);
+  }
+  return out;
+}
 
 // Грубая проверка, что найденное в каталоге совпадение реально похоже на исходное имя —
 // чтобы модель не «лепила» левый индекс (млин з гирею → турецький підйом).
@@ -291,7 +307,7 @@ Deno.serve(async (req) => {
         if (!name) continue;
 
         const exerciseId = await resolveExerciseId(ex);
-        const sets = Array.isArray(ex.sets) ? ex.sets : [];
+        const sets = expandSetMultipliers(Array.isArray(ex.sets) ? ex.sets : []);
 
         if (exerciseId && exerciseId === lastExId && lastPeId) {
           if (sets.length > 0) {

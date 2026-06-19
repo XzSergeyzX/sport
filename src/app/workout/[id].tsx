@@ -544,7 +544,12 @@ function SetRow({
         </Pressable>
         <Pressable
           disabled={locked}
-          onPress={() => onToggleDone(set)}
+          onPress={() => {
+            // фиксируем набранные вес/повторы перед отметкой «зроблено» — иначе значение,
+            // введённое без потери фокуса (onEndEditing не сработал), потеряется
+            if (!done) save();
+            onToggleDone(set);
+          }}
           className="h-9 w-9 items-center justify-center rounded-lg active:opacity-80"
           style={{ backgroundColor: done ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
         >
