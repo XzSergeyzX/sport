@@ -73,6 +73,33 @@ export async function startWorkout(userId: string): Promise<Workout> {
   return data as Workout;
 }
 
+export type WorkoutImportResult = {
+  workout_id: string;
+  date: string;
+  exercise_count: number;
+  duration_min: number;
+};
+
+/** Импорт ПРОШЛОЙ тренировки из текста (постфактум) → сразу завершённая сессия. */
+export async function importPastWorkout(text: string): Promise<WorkoutImportResult> {
+  const { data, error } = await supabase.functions.invoke('workout-import', { body: { text } });
+  if (error) {
+    let code = error.message;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.text === 'function') {
+      try {
+        const parsed = JSON.parse(await ctx.text());
+        code = parsed.error ?? parsed.detail ?? code;
+      } catch {
+        /* оставляем error.message */
+      }
+    }
+    throw new Error(code);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data as WorkoutImportResult;
+}
+
 export async function getWorkoutDetail(id: string): Promise<WorkoutDetail> {
   const { data, error } = await supabase.from('workouts').select(DETAIL_SELECT).eq('id', id).single();
   if (error) throw error;

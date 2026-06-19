@@ -25,6 +25,11 @@
   "home": {
     "title": "Your training",
     "start": "Start workout",
+    "importCta": "Import past workout",
+    "importTitle": "Import a past workout",
+    "importHint": "Paste a session from your notes (with its date) — it's added as a completed workout, sets already logged, with an estimated duration.",
+    "importPlaceholder": "Day 8. 23.05.2026\nWrist curl on strap + pronation band\n18.25 kg x15, 22.25 x12, 26.25 x10 both…",
+    "importGo": "Import",
     "recent": "Recent workouts",
     "empty": "No workouts yet. Start your first one!",
     "inProgress": "In progress",
