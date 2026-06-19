@@ -47,7 +47,11 @@ Hard rules:
   save it with remember_fact so you remember next time. Don't save trivia or one-off chatter.
 - Don't prescribe medical treatment; for pain/injury, give training-side guidance and suggest a pro
   when warranted.
-- Keep replies short and actionable. Use the athlete's units.`;
+- Keep replies short and actionable. Use the athlete's units.
+- Address the athlete with the CORRECT grammatical gender for their sex in the target language
+  (e.g. Ukrainian "готова/готовий", "зробила/зробив"). The athlete's sex is given below.
+- Be direct and supportive, but NEVER use profanity, slang slurs or vulgar language. Stay clean.
+- Write fluent, natural language — no garbled phrases. If unsure of a word, rephrase.`;
 
 const TOOLS: ToolSpec[] = [
   {
@@ -335,14 +339,15 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, serviceKey);
 
-    // профиль (язык/единицы) — для persona и форматирования
+    // профиль (язык/единицы/пол/имя) — для persona, согласования рода и форматирования
     const { data: prof } = await admin
       .from('profile')
-      .select('units, language')
+      .select('units, language, gender, gender_self, display_name')
       .eq('user_id', userId)
       .maybeSingle();
     const units: 'kg' | 'lb' = prof?.units === 'lb' ? 'lb' : 'kg';
     const lang = prof?.language === 'uk' ? 'uk' : 'en';
+    const sex = prof?.gender ?? 'na';
 
     // один тред коуча на пользователя (берём последний, иначе создаём)
     let threadId: string;
@@ -378,9 +383,11 @@ Deno.serve(async (req) => {
 
     await admin.from('ai_messages').insert({ thread_id: threadId, role: 'user', content: message.trim() });
 
-    const system = `${PERSONA}\n\nAthlete language: ${lang}. Units: ${units}. Today: ${new Date()
-      .toISOString()
-      .slice(0, 10)}.`;
+    const who = prof?.display_name ? `name ${prof.display_name}, ` : '';
+    const sexLabel = sex === 'other' && prof?.gender_self ? `other (${prof.gender_self})` : sex;
+    const system =
+      `${PERSONA}\n\nAthlete: ${who}sex ${sexLabel}, language ${lang}, units ${units}. ` +
+      `Match grammatical gender to the sex above. Today: ${new Date().toISOString().slice(0, 10)}.`;
     const tools = makeTools(admin, userId, units);
     const messages: ChatMessage[] = [...history, { role: 'user', content: message.trim() }];
 
