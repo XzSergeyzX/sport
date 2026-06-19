@@ -257,10 +257,12 @@ export function workoutStats(w: WorkoutDetail): WorkoutStats {
     for (const s of we.sets ?? []) {
       if (!s.logged_at) continue; // невыполненные подходы не считаем
       anyDone = true;
+      // «обидві» (обе руки на одном весе) → объём считаем ×2 (повт/тоннаж/удержание)
+      const mult = (s.meta as { side?: string } | null)?.side === 'both' ? 2 : 1;
       sets += 1;
-      reps += s.reps ?? 0;
-      holdSec += s.duration_sec ?? 0;
-      tonnage += (s.weight ?? 0) * (s.reps ?? 0);
+      reps += (s.reps ?? 0) * mult;
+      holdSec += (s.duration_sec ?? 0) * mult;
+      tonnage += (s.weight ?? 0) * (s.reps ?? 0) * mult;
     }
     if (anyDone) exercises += 1;
   }
