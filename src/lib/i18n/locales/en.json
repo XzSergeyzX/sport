@@ -36,9 +36,23 @@
   "tabs": {
     "workouts": "Workouts",
     "programs": "Programs",
+    "coach": "Coach",
     "analytics": "Analytics",
     "health": "Health",
     "account": "Account"
+  },
+  "coach": {
+    "title": "Coach",
+    "subtitle": "Knows your training, recovery and records",
+    "empty": "Your AI coach",
+    "emptyHint": "Ask about training, recovery, your lifts — I see your real data.",
+    "placeholder": "Ask your coach…",
+    "thinking": "Thinking…",
+    "error": "Couldn't reach the coach. Try again.",
+    "send": "Send",
+    "suggest1": "Am I recovered enough to train today?",
+    "suggest2": "How is my bench progressing?",
+    "suggest3": "Plan my next session"
   },
   "account": {
     "title": "Account",

@@ -29,6 +29,8 @@ export type RunResult = {
   cost: number;
   provider: Provider;
   model: string;
+  stopReason?: string;
+  toolUses?: { id: string; name: string; input: unknown }[];
 };
 
 /**

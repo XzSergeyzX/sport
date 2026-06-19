@@ -49,6 +49,7 @@ export default function TabsLayout() {
         name="programs"
         options={{ title: t('tabs.programs'), tabBarIcon: icon('📋') }}
       />
+      <Tabs.Screen name="coach" options={{ title: t('tabs.coach'), tabBarIcon: icon('🧠') }} />
       <Tabs.Screen
         name="analytics"
         options={{ title: t('tabs.analytics'), tabBarIcon: icon('📈') }}
