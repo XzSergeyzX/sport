@@ -49,3 +49,4 @@ catalog-review.xlsx
 
 # Локальные тексты тренировок для test-import-prompt (личные данные)
 scripts/import-fixtures/*.txt
+scripts/.openai-key

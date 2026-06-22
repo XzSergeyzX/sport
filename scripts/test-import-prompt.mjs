@@ -20,7 +20,11 @@ const INDEX_TS = join(ROOT, 'supabase', 'functions', 'workout-import', 'index.ts
 const FIXTURES_DIR = join(__dirname, 'import-fixtures');
 
 const MODEL = process.env.IMPORT_MODEL || 'gpt-5.4-mini'; // = ai_model_routes['program_import']
-const KEY = process.env.OPENAI_API_KEY;
+// Ключ: из окружения, иначе из gitignored scripts/.openai-key (чтобы не светить в команде).
+const KEY_FILE = join(__dirname, '.openai-key');
+const KEY =
+  process.env.OPENAI_API_KEY ||
+  (existsSync(KEY_FILE) ? readFileSync(KEY_FILE, 'utf8').trim() : undefined);
 
 // Небольшой представительный каталог, чтобы catalog_index был осмысленным.
 // (Боевая функция тянет каталог юзера из БД; для проверки сторон/суперсетов хватает этого.)
@@ -104,7 +108,7 @@ function summarize(p) {
 
 async function main() {
   if (!KEY) {
-    console.error('✗ Нет OPENAI_API_KEY в окружении. PowerShell: $env:OPENAI_API_KEY="sk-..."');
+    console.error('✗ Нет ключа. Положи его в scripts/.openai-key или $env:OPENAI_API_KEY="sk-..."');
     process.exit(1);
   }
   const system =
