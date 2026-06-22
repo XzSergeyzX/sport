@@ -50,10 +50,17 @@ Return ONLY JSON:
 
 SIDES — set "side" ONLY when the text says so explicitly; NEVER infer it from the exercise or from a
 multiplier:
-- Explicit "обе"/"обидві"/"both"/"25*12 обе" → ONE set side="both" (volume counts double).
-- Explicit per-hand "Л: 20*10, П: 20*7" / "ліва/права" / "левая/правая" / "(ліва 7)" / "права 24с,
-  ліва 26с" → SEPARATE sets side="left" and side="right" with their own reps/seconds.
+- "обе"/"обидві"/"both"/"25*12 обе" → ONE set side="both" (volume counts double).
+- Per-hand sides are keyed on the LEFT marker being present: "ліва/левая/Л:" = left,
+  "права/правая/П:" = right. Treat single letters "Л:/П:" as sides ONLY when an "Л" (left) marker is
+  actually present. e.g. "Л: 20*10, П: 20*7" → one left set + one right set; "32.25*6 (ліва 7)" /
+  "права 24с, ліва 26с" → separate right & left sets.
 - Anything else (including a "*2"/"x2" multiplier) → side=null.
+
+SUPERSET LABELS ARE NOT SIDES: short letters/numbers that NAME the exercises of a superset — e.g.
+"Н:" (Натяжка) + "П:" (Пронація), or "1." / "2." — are EXERCISE labels, NOT sides. Keep them as
+SEPARATE exercises inside ONE superset block. NEVER merge a superset into a single exercise, and NEVER
+turn "Н:"/"П:" exercise labels into left/right. (Sides need an "Л"/"ліва"/"права" word present.)
 
 WARM-UP / COOL-DOWN / FINISHERS WITHOUT NUMBERS ("+ концентрична робота з резиною на пронацію в
 заминці", "розминка ...") → do NOT create an exercise. Summarise them in "session_note". Create an
