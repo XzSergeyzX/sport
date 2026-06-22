@@ -46,3 +46,6 @@ example
 # review artifacts
 catalog-review.xlsx
 ~$*
+
+# Локальные тексты тренировок для test-import-prompt (личные данные)
+scripts/import-fixtures/*.txt
