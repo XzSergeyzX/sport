@@ -35,6 +35,8 @@ type GripRec = {
   rgcKg: number | null; // от чего считается оценка (RGC эспандера в кг)
   date: string;
 };
+// секція рекордів хвата: топ-3 на кожен вид установки (дип-сет/блоки/карта/TNS …)
+type GripGroup = { setType: string; top: GripRec[]; headline: number };
 type GripInfo = { rgcKg: number | null; name: string };
 type ExRecords = {
   id: string;
@@ -58,7 +60,7 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
   const wkTonnage = new Map<string, TonnagePoint>();
   const wkDur = new Map<string, number>(); // минуты на тренировку
   const wkSet = new Set<string>();
-  const gripBest = new Map<string, GripRec>(); // лучший по виду установки
+  const gripBuckets = new Map<string, Map<string, GripRec>>(); // setType → (ключ → запис), для топ-3 на секцію
   let totalSets = 0;
 
   for (const r of rows) {
@@ -107,10 +109,15 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
         rgcKg: g?.rgcKg ?? null,
         date,
       };
-      const prev = gripBest.get(st);
-      const score = (x: GripRec) => x.estKg ?? -1;
-      if (!prev || score(cand) > score(prev) || (score(cand) === score(prev) && cand.reps > prev.reps))
-        gripBest.set(st, cand);
+      let bucket = gripBuckets.get(st);
+      if (!bucket) {
+        bucket = new Map();
+        gripBuckets.set(st, bucket);
+      }
+      // дедуп однакових результатів (той самий еспандер × ті самі повтори) — лишаємо найранішу дату
+      const gkey = `${cand.gripperName}@${cand.reps}`;
+      const prev = bucket.get(gkey);
+      if (!prev || date < prev.date) bucket.set(gkey, cand);
     } else if (r.weight != null && r.reps != null) {
       const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
       tn.tonnage += r.weight * r.reps * volMult;
@@ -154,14 +161,21 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
     }))
     .filter((g) => g.exercises.length > 0);
 
-  const gripRecords = [...gripBest.values()].sort(
-    (a, b) => (b.estKg ?? -1) - (a.estKg ?? -1) || b.reps - a.reps,
-  );
+  // топ-3 на кожну секцію (вид установки); секції сортуємо за найкращою оцінкою
+  const gripGroups: GripGroup[] = [...gripBuckets.entries()]
+    .map(([setType, bucket]) => {
+      const top = [...bucket.values()]
+        .sort((a, b) => (b.estKg ?? -1) - (a.estKg ?? -1) || b.reps - a.reps)
+        .slice(0, 3);
+      return { setType, top, headline: top[0]?.estKg ?? -1 };
+    })
+    .filter((g) => g.top.length > 0)
+    .sort((a, b) => b.headline - a.headline);
 
   return {
     tonnageSeries,
     recordGroups,
-    gripRecords,
+    gripGroups,
     totalTonnage,
     totalSets,
     totalMin,
@@ -742,6 +756,20 @@ export default function AnalyticsScreen() {
     );
   };
 
+  // рядок рекорду хвата (один з топ-3 у секції): № · еспандер · RGC · ×повтори → оцінка · дата
+  const gripLine = (r: GripRec, i: number) => (
+    <View key={i} className="flex-row items-center justify-between py-1">
+      <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
+        {i + 1}.  {r.gripperName}
+        {r.rgcKg != null ? ` · RGC ${formatWeight(r.rgcKg, unit)} ${unitLabel}` : ''} · ×{r.reps}
+      </Text>
+      <Text className="ml-2 text-xs text-graphite-500">
+        {r.estKg != null ? `≈${formatWeight(r.estKg, unit)} ${unitLabel} · ` : ''}
+        {fmtDate(r.date)}
+      </Text>
+    </View>
+  );
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: 32 }}>
@@ -829,30 +857,29 @@ export default function AnalyticsScreen() {
               })}
             </View>
 
-            {a.gripRecords.length > 0 && (
+            {a.gripGroups.length > 0 && (
               <>
                 <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
                   {t('analytics.gripRecords')}
                 </Text>
-                <View className="rounded-2xl bg-graphite-900 p-3">
-                  {a.gripRecords.map((g, i) => (
-                    <View
-                      key={g.setType}
-                      className={`flex-row items-center justify-between py-2 ${i > 0 ? 'border-t border-graphite-800' : ''}`}
-                    >
-                      <View className="flex-1">
-                        <Text className="text-sm font-semibold text-graphite-100">
-                          {i18n.exists(`setTypes.${g.setType}`) ? t(`setTypes.${g.setType}`) : t('workout.setType')}
+                <View className="gap-2">
+                  {a.gripGroups.map((g) => (
+                    <View key={g.setType} className="rounded-2xl bg-graphite-900 p-3">
+                      <View className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1">
+                        <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                          {i18n.exists(`setTypes.${g.setType}`)
+                            ? t(`setTypes.${g.setType}`)
+                            : t('workout.setType')}
                         </Text>
-                        <Text className="text-[11px] text-graphite-500" numberOfLines={1}>
-                          {g.gripperName}
-                          {g.rgcKg != null ? ` · RGC ${formatWeight(g.rgcKg, unit)} ${unitLabel}` : ''} · ×{' '}
-                          {g.reps}
-                        </Text>
+                        {g.headline > 0 && (
+                          <Text className="ml-2 text-sm font-bold text-accent">
+                            ≈{formatWeight(g.headline, unit)} {unitLabel}
+                          </Text>
+                        )}
                       </View>
-                      <Text className="ml-2 text-sm font-bold text-accent">
-                        {g.estKg != null ? `≈${formatWeight(g.estKg, unit)} ${unitLabel}` : `× ${g.reps}`}
-                      </Text>
+                      <View className="mt-2 border-t border-graphite-800 pt-1">
+                        {g.top.map((r, i) => gripLine(r, i))}
+                      </View>
                     </View>
                   ))}
                 </View>

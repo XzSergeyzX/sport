@@ -95,44 +95,74 @@ export default function SummaryScreen() {
             gripper_id?: string;
             set_type?: string;
           };
-          const tags =
-            (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
-            (m.cheat ? `  · ${t('workout.cheat')}` : '');
-          // гриппер (вес N/A): показываем МОДЕЛЬ + RGC + установку + повторы, а не голый «дип-сет ×3»
           const grip = m.gripper_id ? gripMap.get(m.gripper_id) : undefined;
           const gripRgc = grip ? rgcInKg(grip) : null;
+          const label = (
+            <Text className="text-sm text-graphite-400">
+              {t('workout.set')} {i + 1}
+              {!done ? ` · ${t('workout.notDone')}` : ''}
+            </Text>
+          );
+
+          // Гриппер (вес N/A): структурно в две строки, иначе всё в одну вылазит за экран и
+          // дробится по-дурному. Строка 1 — модель + RGC, строка 2 — установка · разы · RPE · отдых · рука.
+          if (m.gripper_id) {
+            const title = [
+              grip ? gripperName(grip) : null,
+              gripRgc != null ? `RGC ${Math.round(gripRgc)} ${unitLabel}` : null,
+            ]
+              .filter(Boolean)
+              .join('  ·  ');
+            const meta = [
+              m.set_type && i18n.exists(`setTypes.${m.set_type}`) ? t(`setTypes.${m.set_type}`) : null,
+              `× ${set.reps ?? '–'}`,
+              set.rpe != null ? `RPE ${set.rpe}` : null,
+              set.rest_sec != null ? fmtRest(set.rest_sec) : null,
+              m.side ? t(`workout.side_${m.side}`) : null,
+              m.cheat ? t('workout.cheat') : null,
+            ]
+              .filter(Boolean)
+              .join('  ·  ');
+            return (
+              <View key={set.id} style={{ opacity: done ? 1 : 0.45 }}>
+                {label}
+                {done ? (
+                  <>
+                    <Text className="mt-0.5 text-sm text-graphite-100">{title || '—'}</Text>
+                    {meta ? <Text className="mt-0.5 text-xs text-graphite-400">{meta}</Text> : null}
+                  </>
+                ) : (
+                  <Text className="mt-0.5 text-sm text-graphite-200">—</Text>
+                )}
+              </View>
+            );
+          }
+
+          // Обычный подход: вес × повторы / секунды + теги — одной строкой справа, с переносом.
           const main =
             set.duration_sec != null
               ? `${set.weight != null ? `${set.weight} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
-              : m.gripper_id
-                ? [
-                    grip ? gripperName(grip) : null,
-                    gripRgc != null ? `RGC ${Math.round(gripRgc)} ${unitLabel}` : null,
-                    m.set_type && i18n.exists(`setTypes.${m.set_type}`) ? t(`setTypes.${m.set_type}`) : null,
-                    `× ${set.reps ?? '–'}`,
-                  ].filter(Boolean).join(' · ')
-                : set.reps != null
-                  ? `${set.weight ?? '–'} ${unitLabel} × ${set.reps}`
-                  : set.weight != null
-                    ? `${set.weight} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
-                    : '–';
+              : set.reps != null
+                ? `${set.weight ?? '–'} ${unitLabel} × ${set.reps}`
+                : set.weight != null
+                  ? `${set.weight} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
+                  : '–';
+          const tags =
+            (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
+            (m.cheat ? `  · ${t('workout.cheat')}` : '');
+          const detail = done
+            ? `${main}${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
+                set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''
+              }${tags}`
+            : '—';
           return (
             <View
               key={set.id}
-              className="flex-row justify-between"
+              className="flex-row justify-between gap-3"
               style={{ opacity: done ? 1 : 0.45 }}
             >
-              <Text className="text-sm text-graphite-400">
-                {t('workout.set')} {i + 1}
-                {!done ? ` · ${t('workout.notDone')}` : ''}
-              </Text>
-              <Text className="text-sm text-graphite-200">
-                {done
-                  ? `${main}${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
-                      set.rest_sec != null ? `  · ${fmtRest(set.rest_sec)}` : ''
-                    }${tags}`
-                  : '—'}
-              </Text>
+              {label}
+              <Text className="flex-1 text-right text-sm text-graphite-200">{detail}</Text>
             </View>
           );
         })}

@@ -22,9 +22,17 @@
     "ukrainian": "Українська",
     "cancel": "Cancel"
   },
+  "count": {
+    "exercises": { "one": "{{n}} exercise", "other": "{{n}} exercises" },
+    "sets": { "one": "{{n}} set", "other": "{{n}} sets" },
+    "reps": { "one": "{{n}} rep", "other": "{{n}} reps" },
+    "workouts": { "one": "{{n}} workout", "other": "{{n}} workouts" }
+  },
   "home": {
     "title": "Your training",
     "start": "Start workout",
+    "resume": "Continue workout",
+    "thisWeek": "This week",
     "importCta": "Import past workout",
     "importTitle": "Import a past workout",
     "importHint": "Paste a session from your notes (with its date) — it's added as a completed workout, sets already logged, with an estimated duration.",
@@ -431,7 +439,7 @@
     "reps": "Reps",
     "exercises": "Exercises",
     "duration": "Duration",
-    "holdTime": "Hold time",
+    "holdTime": "Static",
     "min": "min",
     "breakdown": "Breakdown",
     "done": "Done",

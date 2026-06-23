@@ -14,8 +14,19 @@ import {
   startWorkout,
   workoutStats,
 } from '@/lib/db/workouts';
+import i18n from '@/lib/i18n';
+import { pluralCount } from '@/lib/plural';
+import { useWeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
+
+// «21.06.26, сб» — спершу дата, потім (після коми) день тижня, мовою застосунку
+function humanDate(iso: string, locale: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const wd = d.toLocaleDateString(locale, { weekday: 'short' });
+  return `${date}, ${wd}`;
+}
 const IMPORT_ERROR_KEYS: Record<string, string> = {
   budget_exceeded: 'programs.errBudget',
   provider_unavailable: 'programs.errProvider',
@@ -69,15 +80,54 @@ export default function WorkoutsScreen() {
     },
   });
 
+  // ——— дані для шапки: пульс (останнє/цей тиждень) + активне тренування ———
+  const lang = i18n.language;
+  const locale = lang === 'uk' ? 'uk-UA' : 'en-US';
+  const unit = useWeightUnit();
+  const unitLabel = t(`common.${unit}`);
+
+  const list = workouts ?? [];
+  const total = list.length;
+  const active = list.find((w) => !w.ended_at); // незавершене тренування (підняти нагору)
+
+  // понеділок поточного тижня (00:00) для зведення «цього тижня»
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  const weekList = list.filter((w) => new Date(w.started_at) >= weekStart);
+  const weekTonnage = weekList.reduce((n, w) => n + workoutStats(w).tonnage, 0);
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <View className="flex-1 px-6 pt-4">
         <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
 
+        {total > 0 && (
+          <Text className="mt-2 text-sm text-graphite-400">
+            {t('home.thisWeek')}: {pluralCount(t, lang, 'workouts', weekList.length)}
+            {weekTonnage > 0 ? ` · ${Math.round(weekTonnage)} ${unitLabel}` : ''}
+          </Text>
+        )}
+
+        {active && (
+          <Pressable
+            onPress={() => router.push({ pathname: '/workout/[id]', params: { id: active.id } })}
+            className="mt-4 flex-row items-center justify-between rounded-2xl border border-accent bg-graphite-900 px-5 py-4 active:opacity-80"
+          >
+            <View>
+              <Text className="text-base font-bold text-accent">{t('home.resume')}</Text>
+              <Text className="mt-0.5 text-xs text-graphite-400">
+                {humanDate(active.started_at, locale)}
+              </Text>
+            </View>
+            <Text className="text-xl text-accent">▸</Text>
+          </Pressable>
+        )}
+
         <Pressable
           disabled={startMut.isPending}
           onPress={() => startMut.mutate()}
-          className="mt-6 items-center rounded-2xl bg-accent py-4 active:opacity-80"
+          className="mt-4 items-center rounded-2xl bg-accent py-4 active:opacity-80"
         >
           {startMut.isPending ? (
             <ActivityIndicator color="#0C0E12" />
@@ -143,10 +193,15 @@ export default function WorkoutsScreen() {
           <Text className="text-base text-graphite-400">{t('home.empty')}</Text>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
-            {workouts.map((w) => {
+            {list.map((w, idx) => {
               const s = workoutStats(w);
               const done = !!w.ended_at;
-              const date = new Date(w.started_at).toLocaleDateString();
+              const num = total - idx; // абсолютний номер тренування (свіжа = найбільший), стабільний поки ≤30
+              const counts = [
+                pluralCount(t, lang, 'exercises', s.exercises),
+                pluralCount(t, lang, 'sets', s.sets),
+                pluralCount(t, lang, 'reps', s.reps),
+              ].join(' · ');
               return (
                 <Pressable
                   key={w.id}
@@ -160,20 +215,25 @@ export default function WorkoutsScreen() {
                   className="rounded-2xl bg-graphite-900 p-4 active:opacity-80"
                 >
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-base font-semibold text-graphite-100">{date}</Text>
-                    <View className="flex-row items-center gap-4">
+                    <Text className="flex-1 text-base font-semibold capitalize text-graphite-100">
+                      <Text className="text-xs font-bold text-graphite-600">№{num}  </Text>
+                      {humanDate(w.started_at, locale)}
+                    </Text>
+                    <View className="flex-row items-center gap-3">
                       {!done && (
                         <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
                       )}
                       <Pressable onPress={() => setPendingDelete(w.id)} hitSlop={10}>
-                        <Text className="text-base text-graphite-600">🗑</Text>
+                        <Text className="text-base" style={{ opacity: 0.35 }}>🗑</Text>
                       </Pressable>
                     </View>
                   </View>
-                  <Text className="mt-1 text-sm text-graphite-400">
-                    {s.exercises} · {s.sets} {t('summary.sets').toLowerCase()} · {s.reps}{' '}
-                    {t('summary.reps').toLowerCase()}
-                  </Text>
+                  <Text className="mt-1 text-sm text-graphite-400">{counts}</Text>
+                  {s.tonnage > 0 && (
+                    <Text className="mt-0.5 text-sm text-graphite-500">
+                      {Math.round(s.tonnage)} {unitLabel}
+                    </Text>
+                  )}
                 </Pressable>
               );
             })}
