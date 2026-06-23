@@ -1,3 +1,63 @@
-# Expo HAS CHANGED
+# Expo SDK — зафиксирована версия
 
-Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing any code.
+Проект запинен на **Expo SDK 54** (требование — совместимость с Expo Go на устройствах тестировщиков).
+**Не обновлять Expo/React Native без явного согласования** — это меняет нативный слой и может сломать Expo Go.
+
+Перед написанием любого Expo-специфичного кода — смотри версионированные доки именно под 54:
+https://docs.expo.dev/versions/v54.0.0/
+
+> История: здесь раньше было указано v56 — это устарело и не совпадало с реальным пином проекта.
+> Если когда-нибудь будет осознанный апгрейд SDK — обнови и эту версию, и ссылку выше в одном коммите.
+
+---
+
+# Sporty_SM — правила проекта
+
+> Полное ТЗ: `docs/SPEC.md`. Приоритеты/решения: `docs/BACKLOG.md`.
+> Текущее состояние: `docs/PROGRESS.md` → блок `▶ START HERE` (читать в начале каждой сессии).
+
+## Стек (зафиксирован, не менять без согласования)
+- Expo SDK 54 + React Native + TypeScript + Expo Router; NativeWind; TanStack Query
+- expo-sqlite — offline-first запись + очередь синка в Supabase
+- Supabase (Postgres + Auth + Storage + Edge Functions/Deno + RLS)
+- ИИ — гейтвей в `supabase/functions/_shared/ai/` (адаптеры Claude/OpenAI/Gemini), tool-calling, без векторки
+- i18n — только `en`/`uk` (см. правило ниже)
+- Установлен официальный Expo-плагин Claude Code (`expo@claude-plugins-official`, см. `.claude/settings.json`) — он уже несёт skills по Router/NativeWind/EAS/CI-CD. Не дублировать его инструкции здесь.
+
+## Языки — жёстко
+- В UI **только** en/uk. **Никогда** не добавлять `ru` в `src/lib/i18n/locales/`.
+- Документация (SPEC/BACKLOG/PROGRESS) — на русском, это нормально и не трогается.
+- Любая новая строка в UI добавляется сразу в оба файла: `locales/en.json` И `locales/uk.json`.
+
+## Жёсткие правила (косты/безопасность — см. SPEC §5)
+- Бюджет ИИ+инфра — до $30/мес суммарно на двоих юзеров. Любое изменение в ИИ-гейтвее проверяется через `ai-gateway-reviewer` (см. ниже).
+- Новая/изменённая таблица с пользовательскими данными — RLS обязателен, без исключений.
+- Метрики (тоннаж/объём/1ПМ/PR/тренды) считаются в SQL/RPC. ИИ их не вычисляет — только озвучивает готовые числа.
+- Загруженные файлы (xlsx/docx/pdf) и видео-клипы **не хранятся**: распарсили → структура в БД → исходник выкинут.
+- Ключи (Claude/OpenAI/Gemini/OURA) — только на сервере (Edge Functions), никогда в клиентском коде/логах.
+- Контекст коуча компактный: последние ~8 сообщений + сводка с бэка + сегодняшний OURA-снимок. Не вся история.
+
+## Команды
+- `npx tsc --noEmit` — проверка типов. **Сейчас это основная верификация — тестов нет.** Не утверждай, что что-то "протестировано", если есть только это.
+- `npx supabase db push` — применить миграции
+- `npx supabase functions deploy <name>` — задеплоить Edge Function
+- `npx expo start` — дев-сервер (порт 8081 иногда занят `EUSAProcess.exe` → см. `.claude/launch.json`, дефолтный порт там — 8090)
+
+## Миграции
+- Именование: `YYYYMMDDHHMMSS_description.sql`, timestamp строго больше последнего файла в `supabase/migrations/`.
+- Любую новую/изменённую миграцию ревьюй инлайн по чек-листу до `db push`: RLS на пользовательских таблицах обязателен; нет деструктива без явного согласования; timestamp строго больше последнего файла.
+
+## Структура
+- `src/app/` — экраны (expo-router, табы в `(tabs)/`)
+- `src/lib/db/` — доступ к данным, по одному файлу на домен (profile/exercises/programs/workouts/oura/cycle/analytics/coach)
+- `src/lib/i18n/locales/` — переводы en/uk
+- `supabase/functions/` — Edge Functions (Deno); `_shared/ai/` — гейтвей с адаптерами провайдеров
+- `supabase/migrations/` — схема БД
+
+## Ревью изменений
+- `ai-gateway-reviewer` (subagent, `.claude/agents/`) — **вызывать проактивно** после изменений в `_shared/ai/**`, `coach-chat`, `program-import`, `workout-import`. Сторожит бюджет $30/мес и ключи.
+- Миграции — инлайн-чек-лист (см. раздел «Миграции»), отдельного агента нет.
+- Код нетривиальной RN/TS-фичи перед «готово» — через встроенный `/code-review` (multi-agent по diff ветки), отдельного агента нет.
+
+## Журнал сессии
+- В конце сессии — обновить `docs/PROGRESS.md` по формату из skill `progress-log` (там же — правило архивации, когда файл разрастается).
