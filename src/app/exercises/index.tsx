@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomSheet } from '@/components/bottom-sheet';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   CATEGORY_ORDER,
@@ -14,11 +15,14 @@ import {
   type Cluster,
   CLUSTER_ORDER,
   clusterKey,
+  countExerciseUsage,
   deleteExercise,
   type Exercise,
   exerciseName,
+  listExercises,
   listMyExercises,
   type Metric,
+  replaceExercise,
   updateExercise,
 } from '@/lib/db/exercises';
 import i18n from '@/lib/i18n';
@@ -66,21 +70,38 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
     onSuccess: done,
   });
 
+  const [delMode, setDelMode] = useState<'idle' | 'confirm' | 'inuse' | 'pick'>('idle');
+  const [usage, setUsage] = useState(0);
+
+  const doneReplace = () => {
+    // ссылки в тренировках/программах перецеплены → освежаем эти кэши тоже
+    qc.invalidateQueries({ queryKey: ['workouts'] });
+    qc.invalidateQueries({ queryKey: ['programs'] });
+    qc.invalidateQueries({ queryKey: ['analytics'] });
+    done();
+  };
+
   const delMut = useMutation({
     mutationFn: () => deleteExercise(exercise.id),
     onSuccess: done,
-    onError: (e: Error) =>
-      Alert.alert(
-        '',
-        /foreign key|23503/i.test(e.message) ? t('exercises.deleteInUse') : t('programs.errGeneric'),
-      ),
+    onError: () => setDelMode('inuse'), // ссылка появилась между проверкой и удалением → предлагаем замену
+  });
+  const replaceMut = useMutation({
+    mutationFn: (newId: string) => replaceExercise(exercise.id, newId),
+    onSuccess: doneReplace,
   });
 
-  const confirmDelete = () =>
-    Alert.alert(t('exercises.deleteConfirm'), exercise.name_uk, [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('exercises.delete'), style: 'destructive', onPress: () => delMut.mutate() },
-    ]);
+  // перед удалением считаем использование: если задействовано — предлагаем замену, а не тупик «не можна»
+  const onDeletePress = async () => {
+    try {
+      const u = await countExerciseUsage(exercise.id);
+      const total = u.workouts + u.programs;
+      setUsage(total);
+      setDelMode(total > 0 ? 'inuse' : 'confirm');
+    } catch {
+      setDelMode('confirm');
+    }
+  };
 
   return (
     <>
@@ -159,10 +180,112 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
               <Text className="text-sm font-bold text-graphite-950">{t('exercises.save')}</Text>
             )}
           </Pressable>
-          <Pressable onPress={confirmDelete} className="mt-3 items-center py-2 active:opacity-70">
-            <Text className="text-sm font-semibold text-red-400">{t('exercises.delete')}</Text>
+          <Pressable
+            onPress={onDeletePress}
+            disabled={delMut.isPending || replaceMut.isPending}
+            className="mt-3 items-center py-2 active:opacity-70"
+          >
+            <Text className="text-sm font-semibold text-red-400">
+              {replaceMut.isPending ? t('exercises.replacing') : t('exercises.delete')}
+            </Text>
           </Pressable>
+
+      {/* простое удаление (не используется нигде) */}
+      <ConfirmDialog
+        visible={delMode === 'confirm'}
+        title={t('exercises.deleteConfirm')}
+        message={exercise.name_uk}
+        confirmLabel={t('exercises.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          setDelMode('idle');
+          delMut.mutate();
+        }}
+        onCancel={() => setDelMode('idle')}
+      />
+      {/* используется → предлагаем замену вместо тупика */}
+      <ConfirmDialog
+        visible={delMode === 'inuse'}
+        title={t('exercises.inUseTitle')}
+        message={t('exercises.inUseBody', { count: usage })}
+        confirmLabel={t('exercises.chooseReplacement')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => setDelMode('pick')}
+        onCancel={() => setDelMode('idle')}
+      />
+      <ReplacePicker
+        visible={delMode === 'pick'}
+        excludeId={exercise.id}
+        onPick={(newId) => {
+          setDelMode('idle');
+          replaceMut.mutate(newId);
+        }}
+        onClose={() => setDelMode('idle')}
+      />
     </>
+  );
+}
+
+/** Пикер замены: список упражнений (свои + каталог) с поиском, тематический. */
+function ReplacePicker({
+  visible,
+  excludeId,
+  onPick,
+  onClose,
+}: {
+  visible: boolean;
+  excludeId: string;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const lang = i18n.language;
+  const [q, setQ] = useState('');
+  const { data: all } = useQuery({
+    queryKey: ['exercises-all'],
+    queryFn: listExercises,
+    enabled: visible,
+  });
+  const needle = q.trim().toLowerCase();
+  const list = (all ?? [])
+    .filter((e) => e.id !== excludeId)
+    .filter((e) => !needle || `${e.name_uk} ${e.name_en}`.toLowerCase().includes(needle))
+    .slice(0, 60);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
+        <Pressable style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.6)' }]} onPress={onClose} />
+        <View className="w-full self-center rounded-2xl bg-graphite-900 p-5" style={{ maxWidth: 420, maxHeight: '78%' }}>
+          <Text className="text-lg font-bold text-graphite-50">{t('exercises.replacePickTitle')}</Text>
+          <TextInput
+            value={q}
+            onChangeText={setQ}
+            placeholder={t('exercises.searchExercise')}
+            placeholderTextColor={PLACEHOLDER}
+            className="mt-3 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
+          />
+          <ScrollView className="mt-3" keyboardShouldPersistTaps="handled">
+            {list.map((e) => (
+              <Pressable
+                key={e.id}
+                onPress={() => onPick(e.id)}
+                className="mb-1.5 rounded-xl bg-graphite-800 px-4 py-3 active:opacity-80"
+              >
+                <Text className="text-sm font-semibold text-graphite-100">{exerciseName(e, lang)}</Text>
+              </Pressable>
+            ))}
+            {list.length === 0 ? (
+              <Text className="px-1 py-3 text-sm text-graphite-500">{t('exercises.empty')}</Text>
+            ) : null}
+          </ScrollView>
+          <Pressable onPress={onClose} className="mt-2 items-center py-2 active:opacity-70">
+            <Text className="text-sm font-semibold text-graphite-300">{t('common.cancel')}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 

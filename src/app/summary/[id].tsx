@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
+import { gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
   getWorkoutDetail,
   isClusteredWorkoutExercise,
@@ -44,6 +45,13 @@ export default function SummaryScreen() {
     queryFn: () => getWorkoutDetail(workoutId),
     enabled: !!session,
   });
+  // каталог эспандеров — чтобы показать модель + RGC у гриппер-подходов, а не голый «дип-сет ×3»
+  const { data: grippers } = useQuery({
+    queryKey: ['grippers', session?.user.id],
+    queryFn: () => listGripperCatalog(session!.user.id),
+    enabled: !!session,
+  });
+  const gripMap = new Map((grippers ?? []).map((g) => [g.id, g]));
 
   if (!initializing && !session) return <Redirect href="/auth" />;
 
@@ -90,13 +98,24 @@ export default function SummaryScreen() {
           const tags =
             (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
             (m.cheat ? `  · ${t('workout.cheat')}` : '');
-          // гриппер (вес N/A): показываем установку + повторы, а не «– кг»
+          // гриппер (вес N/A): показываем МОДЕЛЬ + RGC + установку + повторы, а не голый «дип-сет ×3»
+          const grip = m.gripper_id ? gripMap.get(m.gripper_id) : undefined;
+          const gripRgc = grip ? rgcInKg(grip) : null;
           const main =
             set.duration_sec != null
               ? `${set.weight != null ? `${set.weight} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
               : m.gripper_id
-                ? `${m.set_type && i18n.exists(`setTypes.${m.set_type}`) ? `${t(`setTypes.${m.set_type}`)} · ` : ''}× ${set.reps ?? '–'}`
-                : `${set.weight ?? '–'} ${unitLabel} × ${set.reps ?? '–'}`;
+                ? [
+                    grip ? gripperName(grip) : null,
+                    gripRgc != null ? `RGC ${Math.round(gripRgc)} ${unitLabel}` : null,
+                    m.set_type && i18n.exists(`setTypes.${m.set_type}`) ? t(`setTypes.${m.set_type}`) : null,
+                    `× ${set.reps ?? '–'}`,
+                  ].filter(Boolean).join(' · ')
+                : set.reps != null
+                  ? `${set.weight ?? '–'} ${unitLabel} × ${set.reps}`
+                  : set.weight != null
+                    ? `${set.weight} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
+                    : '–';
           return (
             <View
               key={set.id}

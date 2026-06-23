@@ -85,8 +85,10 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
     }
 
     totalSets += 1;
-    const meta = r.meta as { cheat?: boolean; gripper_id?: string; set_type?: string } | null;
+    const meta = r.meta as { cheat?: boolean; gripper_id?: string; set_type?: string; side?: string } | null;
     const cheat = Boolean(meta?.cheat);
+    // «обидві» = сделано на обе стороны на одном весе → объём/тоннаж считается ×2
+    const volMult = meta?.side === 'both' ? 2 : 1;
     if (r.duration_sec != null) {
       const key = `${r.duration_sec}@${r.weight ?? ''}`;
       const prev = ex.time.get(key);
@@ -111,7 +113,7 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
         gripBest.set(st, cand);
     } else if (r.weight != null && r.reps != null) {
       const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
-      tn.tonnage += r.weight * r.reps;
+      tn.tonnage += r.weight * r.reps * volMult;
       wkTonnage.set(wk.id, tn);
       const key = `${r.weight}x${r.reps}`;
       const prev = ex.reps.get(key);
@@ -374,7 +376,8 @@ function analyzeCorrelation(
       e = { date, tonnage: 0, rpeSum: 0, rpeN: 0 };
       wk.set(w.id, e);
     }
-    if (r.weight != null && r.reps != null && r.duration_sec == null) e.tonnage += r.weight * r.reps;
+    if (r.weight != null && r.reps != null && r.duration_sec == null)
+      e.tonnage += r.weight * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
     if (r.rpe != null) {
       e.rpeSum += r.rpe;
       e.rpeN += 1;
@@ -709,7 +712,8 @@ export default function AnalyticsScreen() {
         m.get(d) ??
         ({ workout: false, tonnage: 0, readiness: null, sleep: null, phase: phaseForDate(d, starts) } as DayInfo);
       e.workout = true;
-      if (r.weight != null && r.reps != null && r.duration_sec == null) e.tonnage += r.weight * r.reps;
+      if (r.weight != null && r.reps != null && r.duration_sec == null)
+        e.tonnage += r.weight * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
       m.set(d, e);
     }
     return m;

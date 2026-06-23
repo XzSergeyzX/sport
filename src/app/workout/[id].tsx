@@ -394,8 +394,10 @@ function SetRow({
   locked?: boolean; // блок/упражнение завершён → только чтение (правка после «Відновити»)
 }) {
   const { t } = useTranslation();
-  // временной подход: дефолт упражнения = 'time' ИЛИ у подхода уже есть длительность
-  const isTime = metric === 'time' || set.duration_sec != null;
+  // временной подход: дефолт упражнения = 'time' ИЛИ у подхода уже есть длительность.
+  // per-set: режим переопределяется тумблером (натяжку можно держать статикой на сек,
+  // а следующий подход делать на повторы — в одном упражнении).
+  const [isTime, setIsTime] = useState(metric === 'time' || set.duration_sec != null);
   const isGripper = logKind === 'gripper';
   const [weight, setWeight] = useState(set.weight?.toString() ?? '');
   const [amount, setAmount] = useState(
@@ -407,17 +409,29 @@ function SetRow({
   const [gripOpen, setGripOpen] = useState(false);
   const done = !!set.logged_at;
 
-  const save = (nextRpe: number | null = rpe, nextMeta: GripMeta = meta) => {
+  const save = (
+    nextRpe: number | null = rpe,
+    nextMeta: GripMeta = meta,
+    timeMode: boolean = isTime,
+  ) => {
     const n = parseNum(amount);
     const rounded = n === null ? null : Math.round(n);
     onSave(set.id, {
       weight: isGripper ? null : parseNum(weight),
-      reps: isTime ? null : rounded,
-      duration_sec: isTime ? rounded : null,
+      reps: timeMode ? null : rounded,
+      duration_sec: timeMode ? rounded : null,
       rpe: nextRpe,
       // meta теперь общий: эспандер + читинг/сторона. Сохраняем, когда есть что сохранять.
       meta: Object.keys(nextMeta).length > 0 ? nextMeta : undefined,
     });
+  };
+
+  // переключить режим этого подхода reps⟷сек: введённое число переезжает в нужную колонку,
+  // вторая обнуляется (save с явным timeMode, т.к. setState асинхронен).
+  const toggleMetric = () => {
+    const next = !isTime;
+    setIsTime(next);
+    save(rpe, meta, next);
   };
 
   const onChangeMeta = (next: GripMeta) => {
@@ -557,6 +571,17 @@ function SetRow({
         </Pressable>
       </View>
       <View className="mt-2 flex-row items-center gap-2 px-1">
+        {!isGripper && (
+          <Pressable
+            disabled={locked}
+            onPress={toggleMetric}
+            className="rounded-md bg-graphite-800 px-2.5 py-1 active:opacity-70"
+          >
+            <Text className="text-[11px] text-graphite-300">
+              {isTime ? t('workout.modeTime') : t('workout.modeReps')}
+            </Text>
+          </Pressable>
+        )}
         {sided && (
           <Pressable
             disabled={locked}

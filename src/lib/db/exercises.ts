@@ -228,6 +228,29 @@ export async function deleteExercise(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Сколько раз упражнение используется — в тренировках и программах (для «заменить или удалить»). */
+export async function countExerciseUsage(id: string): Promise<{ workouts: number; programs: number }> {
+  const [w, p] = await Promise.all([
+    supabase.from('workout_exercises').select('id', { count: 'exact', head: true }).eq('exercise_id', id),
+    supabase.from('program_exercises').select('id', { count: 'exact', head: true }).eq('exercise_id', id),
+  ]);
+  return { workouts: w.count ?? 0, programs: p.count ?? 0 };
+}
+
+/**
+ * Заменить упражнение `oldId` на `newId` во ВСЕХ тренировках и программах, затем удалить старое.
+ * Подходы/настройки сохраняются (перецепляется только ссылка exercise_id). Так юзер может убрать
+ * своё упражнение, даже если оно уже где-то используется, не теряя историю.
+ */
+export async function replaceExercise(oldId: string, newId: string): Promise<void> {
+  const we = await supabase.from('workout_exercises').update({ exercise_id: newId }).eq('exercise_id', oldId);
+  if (we.error) throw we.error;
+  const pe = await supabase.from('program_exercises').update({ exercise_id: newId }).eq('exercise_id', oldId);
+  if (pe.error) throw pe.error;
+  const del = await supabase.from('exercises').delete().eq('id', oldId);
+  if (del.error) throw del.error;
+}
+
 /**
  * Создать своё (приватное) упражнение. RLS делает его видимым только владельцу;
  * дневной лимит на спам — триггер enforce_exercise_daily_cap (код ошибки 'exercise_daily_cap').
