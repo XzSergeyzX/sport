@@ -86,7 +86,10 @@ export default function CoachScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // padding и на Android: при edge-to-edge (SDK 54) окно не ресайзится под клавиатуру,
+        // поэтому undefined-behavior оставлял поле ввода под клавиатурой. Таб-бар прячется
+        // через tabBarHideOnKeyboard, так что лишнего отступа снизу нет.
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {isLoading ? (

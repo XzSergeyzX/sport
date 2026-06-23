@@ -4,6 +4,7 @@ import '@/lib/i18n';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -21,6 +22,9 @@ export default function RootLayout() {
   // index не выполняется, поэтому язык нужно поднять здесь, иначе сбрасывается на en.
   const [prefsReady, setPrefsReady] = useState(false);
   useEffect(() => {
+    // Тёмный фон нативного рут-вью: иначе при переходах между экранами на миг
+    // проступает белая «подложка» окна (мерцание). Делаем в рантайме — работает в Expo Go.
+    SystemUI.setBackgroundColorAsync('#0C0E12');
     Promise.all([loadStoredLanguage(), initWeightUnit()]).then(([lng]) => {
       if (lng) i18n.changeLanguage(lng);
       setPrefsReady(true);
