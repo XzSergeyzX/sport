@@ -97,7 +97,12 @@ function summarize(p) {
       const sets = ex.sets ?? [];
       const sides = sets.map((s) => s.side ?? '·').join(',');
       const reps = sets
-        .map((s) => `${s.weight ?? '–'}×${s.reps ?? (s.duration_sec ? s.duration_sec + 'с' : '?')}`)
+        .map((s) => {
+          const base = `${s.weight ?? '–'}×${s.reps ?? (s.duration_sec ? s.duration_sec + 'с' : '?')}`;
+          const grip = s.gripper ? ` {${s.gripper}${s.set_type ? '/' + s.set_type : ''}}` : '';
+          const ch = s.cheat ? ' ✶cheat' : '';
+          return base + grip + ch;
+        })
         .join(' | ');
       lines.push(`      • ${ex.name}  [${sets.length} підх; side: ${sides}]  ${reps}`);
       for (const s of sets) if (s.notes) lines.push(`          note: ${s.notes}`);

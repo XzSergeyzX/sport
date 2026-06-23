@@ -24,6 +24,36 @@ year). Format YYYY-MM-DD, else null.
 Group exercises into BLOCKS exactly like a program: "single" = one standalone exercise; "superset" =
 exercises done together/alternating; "rounds"/"emom"/"e2mom"/"amrap"/"for_time"/"interval" as stated.
 
+ONE ITEM = ONE EXERCISE: a numbered/bulleted heading ("1.", "2.", "- ", "Натяжка ...:") is a SINGLE
+exercise; EVERY set-line beneath it until the next heading belongs to that SAME exercise. Dynamic
+(reps) and static (seconds) sets mixed in one exercise are normal and correct — e.g. "Натяжка с нижнего
+блока: 25*12 обе; 28 статика правая 26,22с, левая 2*22с" is ONE exercise with 5 sets (1 reps + 4 time).
+Do NOT spin off a second exercise just because some sets are statics/holds or carry a technique note
+("через кисть"). A trailing sub-movement of the same item ("+ с той же позиции работа конусом ... по 1
+подходу на каждую") = EXTRA sets of that same exercise.
+An equipment/assist descriptor joined with "+" to a movement name ("Сгибание кисти ... + резинка
+пронации", "+ резиной", "+ гумка") is the SAME exercise done with that aid — NEVER a separate
+"резинка ..." exercise, and never an extra empty set. Keep the movement name CLEAN ("Сгибание кисти
+ручкой на лямках"), and move the aid into the exercise "notes" ("резинка через пронацію"), not the name.
+A movement with no weight/reps numbers is STILL one set, never zero: "подконтрольно красиво" → 1 set
+(weight from context, reps null); never drop it. "по 1 подходу на каждую/each" = EXACTLY 2 sets, one
+side="right" + one side="left", weight/reps null (a "1 подход" is a SET count, NEVER reps=1). So "Бок: 16 кг подконтрольно красиво + работа конусом
+по 1 подходу на каждую" → 3 sets: [16, reps null] + [right, null] + [left, null]. NEVER output an
+exercise with an empty sets array, and NEVER drop a movement the user wrote down.
+SPLIT into a SUPERSET of several exercises ONLY when the text explicitly alternates NAMED movements:
+"чередуя с …"/"alternating with", per-set movement tags on EVERY set ("(кисть)" vs "(відведення)"), or
+"Н:/П:" exercise labels. Plain statics with no such alternation marker are NOT a split.
+When sets carry alternating movement tags, build a superset of EXACTLY those tagged movements and route
+EACH set to the ONE exercise its own tag names — every "(кисть)" set into the кисть exercise, every
+"(відведення)/(отведение)" set into the відведення exercise. NEVER place a set under both, NEVER leave
+the alternation interleaved inside one exercise, NEVER duplicate the same sets as a separate exercise.
+Worked example: "22.25*12 (кисть), 22.5*3 (отведение), 26.25*10 (кисть), 26.25*3 (отведение), 32.25*6
+(кисть), 32.25*3 (отведение), 29.25*10 (кисть)" → кисть = [22.25×12, 26.25×10, 32.25×6, 29.25×10],
+отведение = [22.5×3, 26.25×3, 32.25×3]. Each set keeps its OWN weight×reps — never swap reps between the
+two movements (26.25 was ×10 under кисть but ×3 under отведение).
+A trailing static block ("28 статика (правая 24, левая 26)") with no tag belongs to the FIRST/main
+movement of the superset (the one the статика was performed on), not a new exercise.
+
 Return ONLY JSON:
 {
   "date": "YYYY-MM-DD"|null,
@@ -35,12 +65,14 @@ Return ONLY JSON:
       "label": string|null,
       "exercises": [
         {
-          "name": string,               // CLEAN base movement, do not translate, strip numbers
+          "name": string,               // the USER'S OWN wording, cleaned of numbers; NEVER renamed to a catalog entry
           "catalog_index": number|null, // catalog number if clearly the SAME movement, else null
           "notes": string|null,
           "sets": [
             { "reps": number|null, "duration_sec": number|null, "weight": number|null,
-              "rpe": number|null, "side": "left"|"right"|"both"|null, "notes": string|null }
+              "rpe": number|null, "side": "left"|"right"|"both"|null, "cheat": boolean|null,
+              "gripper": string|null, "set_type": "tns"|"card"|"block_38"|"block_20"|"deep"|null,
+              "notes": string|null }
           ]
         }
       ]
@@ -55,6 +87,9 @@ multiplier:
   "права/правая/П:" = right. Treat single letters "Л:/П:" as sides ONLY when an "Л" (left) marker is
   actually present. e.g. "Л: 20*10, П: 20*7" → one left set + one right set; "32.25*6 (ліва 7)" /
   "права 24с, ліва 26с" → separate right & left sets.
+- A LIST of values after ONE side marker = one set PER value on that side, never collapse them:
+  "права 26, 22 с" → right 26s + right 22s; "ліва 2*22 с" → two left sets of 22s. So "2 подхода,
+  правая 26, 22 секунди, левая 2*22 секунди" → right[26s, 22s] + left[22s, 22s] = 4 sets.
 - Anything else (including a "*2"/"x2" multiplier) → side=null.
 
 SUPERSET LABELS ARE NOT SIDES: short letters/numbers that NAME the exercises of a superset — e.g.
@@ -72,8 +107,29 @@ OTHER RULES:
 - Weights "26.25", "32.25 кг", ranges "22.5-25" → number into weight (range → lower bound). "bar/палку
   considered as base" — keep the stated number.
 - Time holds / statics ("28 статика", "22 секунди") → reps null, seconds into duration_sec.
+- CHEAT: a set done in a cheating/looser form sets "cheat": true. In particular "с согнутой кисти" /
+  "зігнутою кистю" (bent-wrist rep) → cheat true (keep the phrase in that set's "notes" too). Otherwise
+  cheat null/false.
+- A weight/"статика" line that introduces per-side values is a HEADER, not a set — emit ONLY the listed
+  values as sets at that weight, and NEVER an extra set for the bare "статика"/"N подходов" token. Works
+  for BOTH formats: "28 статика. 2 подхода, правая 26 и 22с, левая 2*22с" → 4 sets (right 26s, right 22s,
+  left 22s, left 22s); "28*статика (правая 24, левая 26)" → EXACTLY 2 sets (right 24s, left 26s), no
+  third "28×?" set. "N подходов/подхода" is a COUNT of the sets that follow, never an additional set.
 - "10 тяг (30 кг)" → 1 set reps 10 weight 30. Reps range (8-10) → lower bound. rpe 1..10 or null.
+- GRIPPERS / hand-closers ("эспандер", "гриппер", "Heavy Grips 300", "CoC #2", "expander"): the load is
+  the gripper MODEL, NOT a weight. → name the exercise "Стиснення еспандера" (catalog gripper), ONE set
+  per gripper line with weight=null, reps=the closes ("на 3 раза" → reps 3), "gripper"=the model string
+  ("Heavy Grips 300"), and "set_type" if a grip setup is named ("дипсет"/"дип-сет"→"deep", "TNS"→"tns",
+  "карта"→"card", "блок 38"→"block_38", "блок 20"→"block_20"). An "RGC"/"ргц" number ("72 rgc") is the
+  gripper's spec — put it in the set "notes", NEVER in weight. KEEP the colour/identifier ("blue",
+  "black", "Gods of Grip") INSIDE the "gripper" model string — it distinguishes same-numbered grippers
+  ("Heavy Grips 300 blue" vs "300 black"); do NOT strip it to notes.
+- "name" excludes leading narration verbs ("Поделал"/"Сделал"/"Делал"/"Поробив"/"Did") — keep only the
+  movement itself: "Поделал сгибание кисти ручкой на лямках" → "Сгибание кисти ручкой на лямках".
 - catalog_index ONLY when clearly the same movement AND equipment; else null (saved as user's own).
+  Do NOT map to a DIFFERENT-named entry by mere similarity: "Бок"/"боковое"/"бокове" (side pressure) is
+  NOT "Натяжка через відведення" (abduction pull). Map a "відведення/отведение" movement ONLY when that
+  word actually appears in the text for that exercise; otherwise keep the user's own name, index null.
 - Output valid JSON only, no markdown.`;
 
 type PSet = {
@@ -82,12 +138,15 @@ type PSet = {
   weight: number | null;
   rpe: number | null;
   side: 'left' | 'right' | 'both' | null;
+  cheat: boolean | null;
+  gripper: string | null;   // модель эспандера ("Heavy Grips 300") — для grip-подходов; вес=null
+  set_type: string | null;  // установка гриппера: tns|card|block_38|block_20|deep
   notes: string | null;
 };
 type PEx = { name: string; catalog_index: number | null; notes: string | null; sets: PSet[] };
 type PBlock = { type: string | null; label: string | null; exercises: PEx[] };
 type Parsed = { date: string | null; title: string; blocks: PBlock[] };
-type CatalogItem = { id: string; name_en: string; name_uk: string };
+type CatalogItem = { id: string; name_en: string; name_uk: string; log_kind: string | null };
 
 const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -140,10 +199,47 @@ Deno.serve(async (req) => {
 
     const { data: catRows } = await admin
       .from('exercises')
-      .select('id, name_en, name_uk')
+      .select('id, name_en, name_uk, log_kind')
       .or(`owner_id.eq.${userId},is_global.eq.true`)
       .order('name_en');
     const catalog: CatalogItem[] = (catRows ?? []) as CatalogItem[];
+    // каноническое гриппер-упражнение (предпочесть «сжатие», не «удержание»)
+    const gripperEx =
+      catalog.find((c) => c.log_kind === 'gripper' && /close|стиснення/i.test(`${c.name_en} ${c.name_uk}`)) ??
+      catalog.find((c) => c.log_kind === 'gripper') ??
+      null;
+
+    // каталог эспандеров (свои + глобальные) для резолва gripper_id по модели из текста
+    const { data: gripRows } = await admin
+      .from('grippers')
+      .select('id, brand, name, owner_id')
+      .or(`owner_id.eq.${userId},is_global.eq.true`);
+    type GripRow = { id: string; brand: string | null; name: string; owner_id: string | null };
+    // личные эспандеры — первыми: если у юзера свой "blue", матчим его, а не глобальный из чарта
+    const grippers: GripRow[] = ((gripRows ?? []) as GripRow[]).sort(
+      (a, b) => (a.owner_id ? 0 : 1) - (b.owner_id ? 0 : 1),
+    );
+    const SET_TYPES = ['tns', 'card', 'block_38', 'block_20', 'deep'];
+    const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    // "Heavy Grips 300 blue" → ищем гриппер (личные первыми). Два прохода:
+    // 1) полное имя содержится в строке; 2) бренд + ключевой токен имени (число «300»),
+    //    чтобы «Heavy Grips 300 (Gods of Grip)» сматчился на «...300 blue».
+    const resolveGripperId = (model: string): string | null => {
+      const m = norm(model);
+      for (const g of grippers) {
+        const b = norm(g.brand ?? '');
+        const n = norm(g.name);
+        if (n && m.includes(n) && (!b || m.includes(b))) return g.id;
+      }
+      // фолбэк по бренд+номер — ТОЛЬКО если однозначно. У юзера бывает несколько «300»
+      // (blue / Gods of Grip), различимых лишь цветом → при неоднозначности не угадываем.
+      const byKey = grippers.filter((g) => {
+        const b = norm(g.brand ?? '');
+        const key = norm(g.name).split(' ')[0]; // «300 (blue)» → «300»
+        return key && b && m.includes(b) && m.includes(key);
+      });
+      return byKey.length === 1 ? byKey[0].id : null;
+    };
     const catalogBlock = catalog.map((c, i) => `${i + 1}. ${c.name_en} / ${c.name_uk}`).join('\n');
 
     const result = await runIntent(admin, userId, 'program_import', {
@@ -228,7 +324,10 @@ Deno.serve(async (req) => {
       const blockKey = cluster ? crypto.randomUUID() : null;
 
       for (const ex of exs) {
-        const exerciseId = await resolveId(ex);
+        // гриппер-упражнение (подходы несут модель эспандера) → каноническое «Стиснення еспандера»
+        // с log_kind='gripper', а не кастомное упр. по тексту юзера (иначе грип-UI/рекорды не подхватят)
+        const isGripperEx = !!gripperEx && (ex.sets ?? []).some((s) => str(s.gripper));
+        const exerciseId = isGripperEx ? gripperEx!.id : await resolveId(ex);
         if (!exerciseId) continue;
         exerciseCount++;
         const { data: we, error: weErr } = await admin
@@ -237,7 +336,7 @@ Deno.serve(async (req) => {
             workout_id: workout.id,
             exercise_id: exerciseId,
             order_index: order++,
-            display_name: ex.name.trim().slice(0, 200),
+            display_name: (isGripperEx ? gripperEx!.name_uk : ex.name).trim().slice(0, 200),
             done_at: endedAt.toISOString(),
             block_key: blockKey,
             block_label: cluster ? (str(b.label) ?? null) : null,
@@ -251,14 +350,23 @@ Deno.serve(async (req) => {
         if (sets.length) {
           const rows = sets.map((s) => {
             const side = s.side === 'left' || s.side === 'right' || s.side === 'both' ? s.side : null;
+            const cheat = s.cheat === true;
+            const gripperId = str(s.gripper) ? resolveGripperId(s.gripper!) : null;
+            const setType = SET_TYPES.includes(s.set_type ?? '') ? s.set_type : null;
+            const meta: Record<string, unknown> = {};
+            if (side) meta.side = side;
+            if (cheat) meta.cheat = true;
+            if (gripperId) meta.gripper_id = gripperId;
+            if (setType) meta.set_type = setType;
             return {
               workout_exercise_id: we.id,
-              weight: toKg(num(s.weight)),
+              // у гриппера нагрузка = модель (gripper_id), не вес → weight всегда null
+              weight: gripperId ? null : toKg(num(s.weight)),
               reps: num(s.reps),
               duration_sec: num(s.duration_sec),
               rpe: num(s.rpe),
               logged_at: endedAt.toISOString(),
-              meta: side ? { side } : null,
+              meta: Object.keys(meta).length ? meta : null,
             };
           });
           const { error: sErr } = await admin.from('sets').insert(rows);
