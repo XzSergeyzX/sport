@@ -130,6 +130,10 @@ OTHER RULES:
   Do NOT map to a DIFFERENT-named entry by mere similarity: "Бок"/"боковое"/"бокове" (side pressure) is
   NOT "Натяжка через відведення" (abduction pull). Map a "відведення/отведение" movement ONLY when that
   word actually appears in the text for that exercise; otherwise keep the user's own name, index null.
+- WRIST-FLEXION SIDE PULL is ONE catalog movement "Натяжка через кисть": "натяжка через кисть",
+  "через кисть", "натяжка кистю/кистью", AND "натяжка з нижнього блока"/"з нижнього блока"/"нижній блок"
+  (ru "с нижнего блока"/"нижний блок") ALL map to it — same exercise on the lower cable. (Still distinct
+  from "через відведення" abduction pull and "Бок" side pressure above.)
 - Output valid JSON only, no markdown.`;
 
 type PSet = {

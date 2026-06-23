@@ -16,7 +16,7 @@ import {
 } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
-import { useWeightUnit } from '@/lib/use-unit';
+import { fromKg, useWeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
 
@@ -231,7 +231,7 @@ export default function WorkoutsScreen() {
                   <Text className="mt-1 text-sm text-graphite-400">{counts}</Text>
                   {s.tonnage > 0 && (
                     <Text className="mt-0.5 text-sm text-graphite-500">
-                      {Math.round(s.tonnage)} {unitLabel}
+                      {Math.round(fromKg(s.tonnage, unit) ?? 0)} {unitLabel}
                     </Text>
                   )}
                 </Pressable>

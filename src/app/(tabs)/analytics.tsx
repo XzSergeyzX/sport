@@ -17,7 +17,7 @@ import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/
 import { listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
-import { formatWeight, useWeightUnit } from '@/lib/use-unit';
+import { formatWeight, fromKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 // оценка 1ПМ по О'Коннору: вес × (1 + 0.025 × повторы) — честнее (ниже Эпли).
 // для сингла (1 повтор) оценка = сам вес: один раз и есть твой максимум, накручивать нечего.
@@ -38,13 +38,16 @@ type GripRec = {
 // секція рекордів хвата: топ-3 на кожен вид установки (дип-сет/блоки/карта/TNS …)
 type GripGroup = { setType: string; top: GripRec[]; headline: number };
 type GripInfo = { rgcKg: number | null; name: string };
+// одно упражнение может нести ОБА вида рекордов: вес×повторы и время-с-весом
+// (натяжка: часть подходов на повторы, часть — статика). Показываем оба, повторы — выше.
 type ExRecords = {
   id: string;
   name: string;
   cluster: Cluster | null;
-  kind: 'reps' | 'time';
-  top: (RepRec | TimeRec)[];
+  reps: RepRec[];
+  time: TimeRec[];
   headline: number;
+  headlineKind: 'reps' | 'time';
 };
 type RecordGroup = { cluster: Cluster | null; exercises: ExRecords[] };
 
@@ -91,13 +94,8 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
     const cheat = Boolean(meta?.cheat);
     // «обидві» = сделано на обе стороны на одном весе → объём/тоннаж считается ×2
     const volMult = meta?.side === 'both' ? 2 : 1;
-    if (r.duration_sec != null) {
-      const key = `${r.duration_sec}@${r.weight ?? ''}`;
-      const prev = ex.time.get(key);
-      if (!prev || date < prev.date)
-        ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date, cheat });
-    } else if (meta?.gripper_id && r.reps != null) {
-      // гриппер: оценка 1ПМ по RGC, лучший по каждому виду установки
+    if (meta?.gripper_id && r.reps != null) {
+      // гриппер: оценка 1ПМ по RGC, лучший по каждому виду установки (отдельная ветка)
       const g = gripMap.get(meta.gripper_id);
       const st = meta.set_type ?? 'none';
       const estKg = g?.rgcKg != null ? (r.reps <= 1 ? g.rgcKg : g.rgcKg * (1 + 0.025 * r.reps)) : null;
@@ -118,21 +116,34 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
       const gkey = `${cand.gripperName}@${cand.reps}`;
       const prev = bucket.get(gkey);
       if (!prev || date < prev.date) bucket.set(gkey, cand);
-    } else if (r.weight != null && r.reps != null) {
-      const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
-      tn.tonnage += r.weight * r.reps * volMult;
-      wkTonnage.set(wk.id, tn);
-      const key = `${r.weight}x${r.reps}`;
-      const prev = ex.reps.get(key);
-      if (!prev || date < prev.date)
-        ex.reps.set(key, {
-          kind: 'reps',
-          weight: r.weight,
-          reps: r.reps,
-          oneRm: oneRmEst(r.weight, r.reps),
-          date,
-          cheat,
-        });
+    } else {
+      // не гриппер: подход может дать СРАЗУ оба рекорда — вес×повторы И время-с-весом
+      // (натяжка: чередует силовые повторы и статику; раньше «время» глушило «повторы»).
+      if (r.weight != null && r.reps != null) {
+        const key = `${r.weight}x${r.reps}`;
+        const prev = ex.reps.get(key);
+        if (!prev || date < prev.date)
+          ex.reps.set(key, {
+            kind: 'reps',
+            weight: r.weight,
+            reps: r.reps,
+            oneRm: oneRmEst(r.weight, r.reps),
+            date,
+            cheat,
+          });
+      }
+      if (r.duration_sec != null) {
+        const key = `${r.duration_sec}@${r.weight ?? ''}`;
+        const prev = ex.time.get(key);
+        if (!prev || date < prev.date)
+          ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date, cheat });
+      }
+      // тоннаж — только с «чистых» силовых подходов (без статики), поведение прежнее
+      if (r.duration_sec == null && r.weight != null && r.reps != null) {
+        const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
+        tn.tonnage += r.weight * r.reps * volMult;
+        wkTonnage.set(wk.id, tn);
+      }
     }
   }
 
@@ -142,13 +153,13 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
 
   const exList: ExRecords[] = [];
   for (const [id, ex] of exMap) {
-    if (ex.time.size > 0) {
-      const top = [...ex.time.values()].sort((a, b) => b.sec - a.sec).slice(0, 5);
-      exList.push({ id, name: ex.name, cluster: ex.cluster, kind: 'time', top, headline: top[0].sec });
-    } else if (ex.reps.size > 0) {
-      const top = [...ex.reps.values()].sort((a, b) => b.oneRm - a.oneRm).slice(0, 5);
-      exList.push({ id, name: ex.name, cluster: ex.cluster, kind: 'reps', top, headline: top[0].oneRm });
-    }
+    const reps = [...ex.reps.values()].sort((a, b) => b.oneRm - a.oneRm).slice(0, 5);
+    const time = [...ex.time.values()].sort((a, b) => b.sec - a.sec).slice(0, 5);
+    if (reps.length === 0 && time.length === 0) continue;
+    // заголовок секции — приоритет вес×повторы (оценка 1ПМ), иначе лучшее время
+    const headlineKind: 'reps' | 'time' = reps.length ? 'reps' : 'time';
+    const headline = reps.length ? reps[0].oneRm : time[0].sec;
+    exList.push({ id, name: ex.name, cluster: ex.cluster, reps, time, headline, headlineKind });
   }
 
   const order: (Cluster | null)[] = [...CLUSTER_ORDER, null];
@@ -157,7 +168,13 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
       cluster: c,
       exercises: exList
         .filter((e) => e.cluster === c)
-        .sort((a, b) => (a.kind === b.kind ? b.headline - a.headline : a.kind === 'reps' ? -1 : 1)),
+        .sort((a, b) =>
+          a.headlineKind === b.headlineKind
+            ? b.headline - a.headline
+            : a.headlineKind === 'reps'
+              ? -1
+              : 1,
+        ),
     }))
     .filter((g) => g.exercises.length > 0);
 
@@ -452,13 +469,13 @@ function fmtYmd(ymd: string): string {
   return `${d}.${m}.${y}`;
 }
 
-function CorrRow({ w, unitLabel }: { w: CorrWorkout; unitLabel: string }) {
+function CorrRow({ w, unit, unitLabel }: { w: CorrWorkout; unit: WeightUnit; unitLabel: string }) {
   const { t } = useTranslation();
   const parts: string[] = [];
   if (w.readiness != null) parts.push(`${t('analytics.readyShort')} ${Math.round(w.readiness)}`);
   if (w.sleep != null) parts.push(`${t('analytics.sleepShort')} ${Math.round(w.sleep)}`);
   if (w.avgRpe != null) parts.push(`RPE ${w.avgRpe.toFixed(1)}`);
-  if (w.tonnage > 0) parts.push(`${fmtTonnage(w.tonnage)} ${unitLabel}`);
+  if (w.tonnage > 0) parts.push(`${fmtTonnage(fromKg(w.tonnage, unit) ?? 0)} ${unitLabel}`);
   return (
     <View className="flex-row items-center justify-between border-t border-graphite-800 py-2">
       <View className="w-28">
@@ -739,12 +756,12 @@ export default function AnalyticsScreen() {
   const recLine = (r: RepRec | TimeRec, i: number) => {
     const left =
       r.kind === 'reps'
-        ? `${i + 1}.  ${r.weight} ${unitLabel} × ${r.reps}`
-        : `${i + 1}.  ${fmtSec(r.sec, secShort)}${r.weight != null ? ` · ${r.weight} ${unitLabel}` : ''}`;
+        ? `${i + 1}.  ${formatWeight(r.weight, unit)} ${unitLabel} × ${r.reps}`
+        : `${i + 1}.  ${fmtSec(r.sec, secShort)}${r.weight != null ? ` · ${formatWeight(r.weight, unit)} ${unitLabel}` : ''}`;
     const right =
-      r.kind === 'reps' ? `≈${Math.round(r.oneRm)} · ${fmtDate(r.date)}` : fmtDate(r.date);
+      r.kind === 'reps' ? `≈${formatWeight(r.oneRm, unit)} · ${fmtDate(r.date)}` : fmtDate(r.date);
     return (
-      <View key={i} className="flex-row items-center justify-between py-1">
+      <View key={`${r.kind}-${i}`} className="flex-row items-center justify-between py-1">
         <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
           {left}
           {r.cheat ? (
@@ -756,16 +773,21 @@ export default function AnalyticsScreen() {
     );
   };
 
-  // рядок рекорду хвата (один з топ-3 у секції): № · еспандер · RGC · ×повтори → оцінка · дата
+  // рядок рекорду хвата (один з топ-3 у секції): дві лінії, щоб довге ім'я еспандера
+  // не з'їдало RGC·повтори. Рядок 1 — № · ім'я → оцінка · дата; рядок 2 — RGC · ×повтори.
   const gripLine = (r: GripRec, i: number) => (
-    <View key={i} className="flex-row items-center justify-between py-1">
-      <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
-        {i + 1}.  {r.gripperName}
-        {r.rgcKg != null ? ` · RGC ${formatWeight(r.rgcKg, unit)} ${unitLabel}` : ''} · ×{r.reps}
-      </Text>
-      <Text className="ml-2 text-xs text-graphite-500">
-        {r.estKg != null ? `≈${formatWeight(r.estKg, unit)} ${unitLabel} · ` : ''}
-        {fmtDate(r.date)}
+    <View key={`${r.gripperName}-${r.reps}-${i}`} className="py-1">
+      <View className="flex-row items-baseline justify-between">
+        <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
+          {i + 1}.  {r.gripperName}
+        </Text>
+        <Text className="ml-2 text-xs text-graphite-500">
+          {r.estKg != null ? `≈${formatWeight(r.estKg, unit)} ${unitLabel} · ` : ''}
+          {fmtDate(r.date)}
+        </Text>
+      </View>
+      <Text className="ml-5 text-xs text-graphite-500" numberOfLines={1}>
+        {r.rgcKg != null ? `RGC ${formatWeight(r.rgcKg, unit)} ${unitLabel} · ` : ''}×{r.reps}
       </Text>
     </View>
   );
@@ -790,7 +812,7 @@ export default function AnalyticsScreen() {
             <View className="mt-5 gap-3">
               <View className="flex-row gap-3">
                 <Stat label={t('analytics.statWorkouts')} value={String(a.workouts)} />
-                <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={fmtTonnage(a.totalTonnage)} />
+                <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={fmtTonnage(fromKg(a.totalTonnage, unit) ?? 0)} />
               </View>
               <View className="flex-row gap-3">
                 <Stat label={t('summary.sets')} value={String(a.totalSets)} />
@@ -801,7 +823,11 @@ export default function AnalyticsScreen() {
             <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
               {t('analytics.tonnageTrend')}
             </Text>
-            <TonnageBars series={a.tonnageSeries} unit={unitLabel} hint={t('analytics.tonnageHint')} />
+            <TonnageBars
+              series={a.tonnageSeries.map((p) => ({ date: p.date, tonnage: fromKg(p.tonnage, unit) ?? 0 }))}
+              unit={unitLabel}
+              hint={t('analytics.tonnageHint')}
+            />
 
             <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
               {t('analytics.records')}
@@ -827,8 +853,8 @@ export default function AnalyticsScreen() {
                         {g.exercises.map((ex) => {
                           const xOpen = !!openEx[ex.id];
                           const head =
-                            ex.kind === 'reps'
-                              ? `≈${Math.round(ex.headline)} ${unitLabel}`
+                            ex.headlineKind === 'reps'
+                              ? `≈${formatWeight(ex.headline, unit)} ${unitLabel}`
                               : fmtSec(ex.headline, secShort);
                           return (
                             <View key={ex.id} className="rounded-xl bg-graphite-800 p-3">
@@ -844,7 +870,12 @@ export default function AnalyticsScreen() {
                               </Pressable>
                               {xOpen && (
                                 <View className="mt-2 border-t border-graphite-700 pt-1">
-                                  {ex.top.map((r, i) => recLine(r, i))}
+                                  {/* вес×повторы — выше по приоритету; статика-с-весом — ниже */}
+                                  {ex.reps.map((r, i) => recLine(r, i))}
+                                  {ex.reps.length > 0 && ex.time.length > 0 ? (
+                                    <View className="my-1 border-t border-graphite-800" />
+                                  ) : null}
+                                  {ex.time.map((r, i) => recLine(r, i))}
                                 </View>
                               )}
                             </View>
@@ -972,7 +1003,7 @@ export default function AnalyticsScreen() {
 
                 <View className="mt-3 rounded-2xl bg-graphite-900 px-4 pb-2 pt-1">
                   {corr.workouts.slice(0, 15).map((w) => (
-                    <CorrRow key={w.id} w={w} unitLabel={unitLabel} />
+                    <CorrRow key={w.id} w={w} unit={unit} unitLabel={unitLabel} />
                   ))}
                 </View>
               </>
@@ -1035,7 +1066,7 @@ export default function AnalyticsScreen() {
                         {di?.workout ? (
                           <DetailLine
                             label={t('analytics.workoutYes')}
-                            value={di.tonnage > 0 ? `${fmtTonnage(di.tonnage)} ${unitLabel}` : '✓'}
+                            value={di.tonnage > 0 ? `${fmtTonnage(fromKg(di.tonnage, unit) ?? 0)} ${unitLabel}` : '✓'}
                           />
                         ) : null}
                         {!di ? (

@@ -57,7 +57,7 @@ import {
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
 import { setsLabel } from '@/lib/i18n/plural';
-import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
+import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
 
@@ -399,7 +399,8 @@ function SetRow({
   // а следующий подход делать на повторы — в одном упражнении).
   const [isTime, setIsTime] = useState(metric === 'time' || set.duration_sec != null);
   const isGripper = logKind === 'gripper';
-  const [weight, setWeight] = useState(set.weight?.toString() ?? '');
+  // вес храним канонически в кг; поле редактируем в выбранной единице (кг↔lb)
+  const [weight, setWeight] = useState(set.weight != null ? formatWeight(set.weight, unit) : '');
   const [amount, setAmount] = useState(
     (isTime ? set.duration_sec : set.reps)?.toString() ?? '',
   );
@@ -417,7 +418,7 @@ function SetRow({
     const n = parseNum(amount);
     const rounded = n === null ? null : Math.round(n);
     onSave(set.id, {
-      weight: isGripper ? null : parseNum(weight),
+      weight: isGripper ? null : toKg(parseNum(weight), unit),
       reps: timeMode ? null : rounded,
       duration_sec: timeMode ? rounded : null,
       rpe: nextRpe,
@@ -904,10 +905,18 @@ export default function WorkoutScreen() {
     onSuccess: invalidate,
   });
 
-  // отметить/снять «подход сделан»; при отметке отдых = разрыв с прошлым сделанным
+  // отметить/снять «подход сделан»; при отметке отдых = разрыв с прошлым сделанным.
+  // Авто-отдых по настенным часам осмыслен ТОЛЬКО в живой тренировке. При правке завершённой
+  // (есть ended_at) переотметка идёт «сегодня» → разрыв с подходом недельной давности = бред
+  // («бешеное время отдыха»). В этом случае не пересчитываем, а сохраняем уже записанный rest_sec.
   const onToggleDone = (set: SetRowType) => {
     const logged = !!set.logged_at;
-    const rest = !logged && anchor ? Math.max(0, Math.round((Date.now() - anchor) / 1000)) : null;
+    const live = !workout?.ended_at;
+    const rest = !logged
+      ? live && anchor
+        ? Math.max(0, Math.round((Date.now() - anchor) / 1000))
+        : set.rest_sec
+      : null;
     setLoggedMut.mutate({ id: set.id, logged: !logged, restSec: rest });
   };
 
@@ -939,7 +948,7 @@ export default function WorkoutScreen() {
       const sub = doneSets.length
         ? `${setsLabel(doneSets.length)}${
             best?.weight != null
-              ? ` · ${best.weight} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
+              ? ` · ${formatWeight(best.weight, unit)} ${t(`common.${unit}`)}${best.reps != null ? ` × ${best.reps}` : ''}`
               : ''
           }`
         : setsLabel(we.sets.length);

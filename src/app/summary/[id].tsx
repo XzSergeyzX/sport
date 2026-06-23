@@ -14,7 +14,7 @@ import {
   workoutStats,
 } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
-import { useWeightUnit } from '@/lib/use-unit';
+import { formatWeight, fromKg, useWeightUnit } from '@/lib/use-unit';
 
 function fmtRest(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -86,8 +86,10 @@ export default function SummaryScreen() {
       <Text className="text-base font-bold text-graphite-50">
         {we.exercise ? exerciseName(we.exercise, lang) : (we.display_name ?? '—')}
       </Text>
-      <View className="mt-2 gap-1">
+      <View className="mt-2">
         {we.sets.map((set, i) => {
+          // тонкий разделитель между подходами (кроме первого) — чтобы строки не сливались
+          const sep = i > 0 ? 'mt-2 border-t border-graphite-800 pt-2' : '';
           const done = !!set.logged_at;
           const m = (set.meta ?? {}) as {
             cheat?: boolean;
@@ -124,7 +126,7 @@ export default function SummaryScreen() {
               .filter(Boolean)
               .join('  ·  ');
             return (
-              <View key={set.id} style={{ opacity: done ? 1 : 0.45 }}>
+              <View key={set.id} className={sep} style={{ opacity: done ? 1 : 0.45 }}>
                 {label}
                 {done ? (
                   <>
@@ -141,11 +143,11 @@ export default function SummaryScreen() {
           // Обычный подход: вес × повторы / секунды + теги — одной строкой справа, с переносом.
           const main =
             set.duration_sec != null
-              ? `${set.weight != null ? `${set.weight} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
+              ? `${set.weight != null ? `${formatWeight(set.weight, unit)} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
               : set.reps != null
-                ? `${set.weight ?? '–'} ${unitLabel} × ${set.reps}`
+                ? `${set.weight != null ? formatWeight(set.weight, unit) : '–'} ${unitLabel} × ${set.reps}`
                 : set.weight != null
-                  ? `${set.weight} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
+                  ? `${formatWeight(set.weight, unit)} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
                   : '–';
           const tags =
             (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
@@ -158,7 +160,7 @@ export default function SummaryScreen() {
           return (
             <View
               key={set.id}
-              className="flex-row justify-between gap-3"
+              className={`flex-row justify-between gap-3 ${sep}`}
               style={{ opacity: done ? 1 : 0.45 }}
             >
               {label}
@@ -182,7 +184,7 @@ export default function SummaryScreen() {
         {/* Инфографика */}
         <View className="gap-3">
           <View className="flex-row gap-3">
-            <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={String(Math.round(s.tonnage))} />
+            <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={String(Math.round(fromKg(s.tonnage, unit) ?? 0))} />
             <Stat label={t('summary.exercises')} value={String(s.exercises)} />
           </View>
           <View className="flex-row gap-3">
