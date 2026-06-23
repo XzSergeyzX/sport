@@ -4,14 +4,16 @@
     {
       "name": "Expo (Metro)",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start"],
-      "port": 8081
+      "runtimeArgs": ["run", "start", "--", "--port", "8090"],
+      "port": 8090,
+      "autoPort": false
     },
     {
       "name": "Expo Web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "web"],
-      "port": 8081
+      "runtimeArgs": ["run", "web", "--", "--port", "8090"],
+      "port": 8090,
+      "autoPort": false
     }
   ]
 }
