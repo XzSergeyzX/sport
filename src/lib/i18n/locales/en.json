@@ -1,4 +1,9 @@
 {
+  "sync": {
+    "offline": "Offline",
+    "offlinePending": "Offline · pending sync: {{count}}",
+    "syncing": "Syncing: {{count}}…"
+  },
   "auth": {
     "title": "Welcome",
     "subtitle": "Sign in to sync your training across devices.",

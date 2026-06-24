@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { resetQueryCache } from '@/lib/query';
 import { supabase } from '@/lib/supabase';
 
 type AuthState = {
@@ -34,6 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // чистим кэш и его персист-снимок, чтобы данные этого юзера не показались следующему
+    await resetQueryCache();
   };
 
   return (

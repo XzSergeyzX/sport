@@ -16,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { SyncStatus } from '@/components/sync-status';
 
 import {
   categoryKey,
@@ -38,9 +39,7 @@ import {
 } from '@/lib/db/exercises';
 import { type Gripper, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
-  addSet,
   addWorkoutExercise,
-  deleteSet,
   deleteWorkoutExercise,
   finishWorkout,
   getRecentExercises,
@@ -50,11 +49,20 @@ import {
   type SetInput,
   type SetRow as SetRowType,
   setExerciseDone,
-  setSetLogged,
-  updateSet,
   type WorkoutExercise,
 } from '@/lib/db/workouts';
 import { useAuth } from '@/lib/auth/auth-context';
+import { newId } from '@/lib/db/ids';
+import {
+  type AddSetVars,
+  type DeleteSetVars,
+  type LogSetVars,
+  SET_ADD,
+  SET_DELETE,
+  SET_LOG,
+  SET_UPDATE,
+  type UpdateSetVars,
+} from '@/lib/db/workout-mutations';
 import i18n from '@/lib/i18n';
 import { setsLabel } from '@/lib/i18n/plural';
 import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -858,19 +866,11 @@ export default function WorkoutScreen() {
     addExerciseMut.mutate(ex.id);
   };
 
-  const addSetMut = useMutation({
-    mutationFn: (v: { weId: string; input: SetInput }) => addSet(v.weId, v.input),
-    onSuccess: invalidate,
-  });
-
-  const updateSetMut = useMutation({
-    mutationFn: (v: { id: string; input: SetInput }) => updateSet(v.id, v.input),
-  });
-
-  const deleteSetMut = useMutation({
-    mutationFn: (setId: string) => deleteSet(setId),
-    onSuccess: invalidate,
-  });
+  // Мутации логирования — только по mutationKey; fn+оптимистика живут в defaults на QueryClient
+  // (registerWorkoutMutationDefaults), чтобы оффлайн-запись пережила перезапуск (SPEC §4, шаг 2).
+  const addSetMut = useMutation<SetRowType, Error, AddSetVars>({ mutationKey: SET_ADD });
+  const updateSetMut = useMutation<void, Error, UpdateSetVars>({ mutationKey: SET_UPDATE });
+  const deleteSetMut = useMutation<void, Error, DeleteSetVars>({ mutationKey: SET_DELETE });
 
   // убрать упражнение/блок из тренировки целиком (для кластера — все его упражнения)
   const removeExerciseMut = useMutation({
@@ -894,11 +894,7 @@ export default function WorkoutScreen() {
     moveWorkoutExMut.mutate({ ids, orders });
   };
 
-  const setLoggedMut = useMutation({
-    mutationFn: (v: { id: string; logged: boolean; restSec: number | null }) =>
-      setSetLogged(v.id, v.logged, v.restSec),
-    onSuccess: invalidate,
-  });
+  const setLoggedMut = useMutation<void, Error, LogSetVars>({ mutationKey: SET_LOG });
 
   const finishExerciseMut = useMutation({
     mutationFn: (v: { weId: string; done: boolean }) => setExerciseDone(v.weId, v.done),
@@ -917,7 +913,7 @@ export default function WorkoutScreen() {
         ? Math.max(0, Math.round((Date.now() - anchor) / 1000))
         : set.rest_sec
       : null;
-    setLoggedMut.mutate({ id: set.id, logged: !logged, restSec: rest });
+    setLoggedMut.mutate({ workoutId, id: set.id, logged: !logged, restSec: rest });
   };
 
   const finishMut = useMutation({
@@ -996,16 +992,16 @@ export default function WorkoutScreen() {
             grippers={grippers ?? []}
             sided={exerciseSided(we.exercise, we.display_name)}
             locked={!!we.done_at}
-            onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
+            onSave={(setId, input) => updateSetMut.mutate({ workoutId, id: setId, input })}
             onToggleDone={onToggleDone}
-            onDelete={(setId) => deleteSetMut.mutate(setId)}
+            onDelete={(setId) => deleteSetMut.mutate({ workoutId, setId })}
           />
         ))}
         <View className="mt-3 flex-row gap-2">
           {!we.done_at && (
             <Pressable
               disabled={addSetMut.isPending}
-              onPress={() => addSetMut.mutate({ weId: we.id, input: {} })}
+              onPress={() => addSetMut.mutate({ workoutId, weId: we.id, input: {}, id: newId() })}
               className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
             >
               <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
@@ -1136,9 +1132,9 @@ export default function WorkoutScreen() {
                         headerLabel={exName(it)}
                         sided={exerciseSided(it.exercise, it.display_name)}
                         locked={allDone}
-                        onSave={(setId, input) => updateSetMut.mutate({ id: setId, input })}
+                        onSave={(setId, input) => updateSetMut.mutate({ workoutId, id: setId, input })}
                         onToggleDone={onToggleDone}
-                        onDelete={(setId) => deleteSetMut.mutate(setId)}
+                        onDelete={(setId) => deleteSetMut.mutate({ workoutId, setId })}
                       />
                     );
                   })}
@@ -1149,7 +1145,7 @@ export default function WorkoutScreen() {
               {!allDone && (
                 <Pressable
                   disabled={addSetMut.isPending}
-                  onPress={() => g.items.forEach((it) => addSetMut.mutate({ weId: it.id, input: {} }))}
+                  onPress={() => g.items.forEach((it) => addSetMut.mutate({ workoutId, weId: it.id, input: {}, id: newId() }))}
                   className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
                 >
                   <Text className="text-sm font-semibold text-graphite-200">{t('workout.addRound')}</Text>
@@ -1218,6 +1214,7 @@ export default function WorkoutScreen() {
         </View>
 
         <ElapsedTimer startedAt={workout.started_at} endedAt={workout.ended_at} />
+        <SyncStatus />
         {!workout.ended_at && <RestNow anchor={anchor} />}
 
         <ScrollView

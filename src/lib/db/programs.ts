@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { fromKg, type WeightUnit } from '@/lib/use-unit';
 
+import { newId } from './ids';
 import { startWorkout } from './workouts';
 
 export type ProgramSet = {
@@ -239,6 +240,7 @@ export async function startWorkoutFromProgram(
 
   // Собираем всё заранее и вставляем пакетно (без десятков последовательных запросов).
   type WeRow = {
+    id: string;
     workout_id: string;
     exercise_id: string;
     order_index: number;
@@ -267,6 +269,7 @@ export async function startWorkoutFromProgram(
       if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
       const weIndex = weRows.length;
       weRows.push({
+        id: newId(),
         workout_id: workout.id,
         exercise_id: pe.exercise_id,
         order_index: weIndex,
@@ -294,25 +297,21 @@ export async function startWorkoutFromProgram(
 
   if (weRows.length === 0) return workout.id;
 
-  // 1 запрос: вставляем упражнения, получаем id (order_index === weIndex)
-  const { data: inserted, error: weErr } = await supabase
-    .from('workout_exercises')
-    .insert(weRows)
-    .select('id, order_index');
+  // 1 запрос: вставляем упражнения (id уже сгенерены на клиенте — offline-first, SPEC §4;
+  // больше не зависим от возврата сервера и от уникальности order_index при маппинге)
+  const { error: weErr } = await supabase.from('workout_exercises').upsert(weRows);
   if (weErr) throw weErr;
-  const idByIndex = new Map<number, string>(
-    (inserted ?? []).map((r) => [r.order_index as number, r.id as string]),
-  );
 
-  // 1 запрос: вставляем все подходы
+  // 1 запрос: вставляем все подходы, ссылаясь напрямую на клиентские id упражнений
   const setRows = setPlan.map((p) => ({
-    workout_exercise_id: idByIndex.get(p.weIndex) as string,
+    id: newId(),
+    workout_exercise_id: weRows[p.weIndex].id,
     weight: p.weight,
     reps: p.reps,
     duration_sec: p.durationSec,
   }));
   if (setRows.length) {
-    const { error: sErr } = await supabase.from('sets').insert(setRows);
+    const { error: sErr } = await supabase.from('sets').upsert(setRows);
     if (sErr) throw sErr;
   }
   return workout.id;

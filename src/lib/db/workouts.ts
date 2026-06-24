@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 import type { Exercise } from './exercises';
+import { newId } from './ids';
 
 export type SetRow = {
   id: string;
@@ -64,9 +65,11 @@ export type SetInput = {
 const DETAIL_SELECT = '*, workout_exercises(*, exercise:exercises(*), sets(*))';
 
 export async function startWorkout(userId: string): Promise<Workout> {
+  // id генерим на клиенте (offline-first, SPEC §4): сущность получает стабильный id до сети.
+  // upsert по id → доигрывание/повтор оффлайн-мутации безопасны (не плодит дубль).
   const { data, error } = await supabase
     .from('workouts')
-    .insert({ user_id: userId })
+    .upsert({ id: newId(), user_id: userId })
     .select('*')
     .single();
   if (error) throw error;
@@ -170,7 +173,8 @@ export async function addWorkoutExercise(
 ): Promise<string> {
   const { data, error } = await supabase
     .from('workout_exercises')
-    .insert({
+    .upsert({
+      id: newId(),
       workout_id: workoutId,
       exercise_id: exerciseId,
       order_index: orderIndex,
@@ -186,10 +190,16 @@ export async function addWorkoutExercise(
   return data.id as string;
 }
 
-export async function addSet(workoutExerciseId: string, input: SetInput): Promise<SetRow> {
+export async function addSet(
+  workoutExerciseId: string,
+  input: SetInput,
+  id: string = newId(),
+): Promise<SetRow> {
+  // id принимаем извне, чтобы оптимистичный подход в кэше и реальная вставка были одним id
+  // (иначе правка оффлайн-подхода ушла бы в несуществующую строку). upsert → повтор безопасен.
   const { data, error } = await supabase
     .from('sets')
-    .insert({ workout_exercise_id: workoutExerciseId, ...input })
+    .upsert({ id, workout_exercise_id: workoutExerciseId, ...input })
     .select('*')
     .single();
   if (error) throw error;

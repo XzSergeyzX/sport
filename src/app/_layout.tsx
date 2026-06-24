@@ -1,7 +1,7 @@
 import '@/global.css';
 import '@/lib/i18n';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
@@ -12,9 +12,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
 import { loadStoredLanguage } from '@/lib/prefs';
+import { asyncPersister, queryClient } from '@/lib/query';
 import { initWeightUnit } from '@/lib/use-unit';
-
-const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -34,7 +33,14 @@ export default function RootLayout() {
   if (!prefsReady) return null;
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
+      onSuccess={() => {
+        // кэш восстановлен из персиста → доигрываем мутации, поставленные на паузу в оффлайне
+        void queryClient.resumePausedMutations();
+      }}
+    >
       <SafeAreaProvider>
         <AuthProvider>
           <Stack
@@ -52,6 +58,6 @@ export default function RootLayout() {
           <StatusBar style={colorScheme === 'light' ? 'dark' : 'light'} />
         </AuthProvider>
       </SafeAreaProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }
