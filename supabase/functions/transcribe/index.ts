@@ -51,7 +51,6 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const audioB64 = typeof body.audio === 'string' ? body.audio : '';
     const mime = typeof body.mime === 'string' ? body.mime : 'audio/m4a';
-    const durationSec = typeof body.durationSec === 'number' ? body.durationSec : 0;
     if (!audioB64) return json({ error: 'empty_input' }, 400);
 
     const bytes = b64ToBytes(audioB64);
@@ -95,10 +94,11 @@ Deno.serve(async (req) => {
     const text = typeof out.text === 'string' ? out.text.trim() : '';
 
     // Учёт расхода: STT по аудио-минутам (токенов нет), requests=1 → попадает под caps.
-    // durationSec приходит с клиента — не доверяем ему как единственному источнику: ставим
-    // нижнюю границу по размеру файла (~128 kbps AAC ≈ 16 КБ/с), чтобы кост не обнулился при 0.
-    const estSec = bytes.length / 16000;
-    const billSec = Math.max(durationSec, estSec, 0);
+    // Кост считаем ТОЛЬКО по размеру файла (~128 kbps AAC ≈ 16 КБ/с). Клиентскому durationSec
+    // НЕ доверяем вовсе: однажды recorder.currentTime пришёл эпохой в мс (~1.78e12) и раздул
+    // месячный кост до ~$89M → упёрся month_cost_cap, заблокировав весь ИИ. Размер ограничен
+    // MAX_BYTES (8 МБ) → жёсткая верхняя граница ~$0.026 за запрос, абуз/баг костов исключён.
+    const billSec = bytes.length / 16000;
     const cost = (billSec / 60) * USD_PER_MIN;
     await admin.rpc('ai_record_usage', {
       p_user: userId,
