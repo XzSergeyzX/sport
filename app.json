@@ -37,7 +37,13 @@
       ],
       "expo-localization",
       "expo-sqlite",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Sporty to use the microphone for voice messages to the coach."
+        }
+      ]
     ]
   }
 }

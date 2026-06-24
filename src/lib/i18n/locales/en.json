@@ -65,7 +65,12 @@
     "send": "Send",
     "suggest1": "Am I recovered enough to train today?",
     "suggest2": "How is my bench progressing?",
-    "suggest3": "Plan my next session"
+    "suggest3": "Plan my next session",
+    "recording": "Recording…",
+    "transcribing": "Transcribing…",
+    "micPermission": "Microphone access is needed for voice messages.",
+    "micError": "Couldn't record audio. Try again.",
+    "micEmpty": "Didn't catch that — try again."
   },
   "account": {
     "title": "Account",

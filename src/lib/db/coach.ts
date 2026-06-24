@@ -56,3 +56,32 @@ export async function sendCoachMessage(message: string): Promise<string> {
   if (data?.error) throw new Error(data.error);
   return (data?.reply as string) ?? '';
 }
+
+/**
+ * Расшифровать голосовую реплику в текст (STT). Аудио в base64 → edge-функция `transcribe`
+ * (OpenAI) → текст. Аудио на сервере не хранится. Текст падает в инпут — юзер правит и шлёт сам.
+ */
+export async function transcribeAudio(
+  audioBase64: string,
+  mime: string,
+  durationSec: number,
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('transcribe', {
+    body: { audio: audioBase64, mime, durationSec },
+  });
+  if (error) {
+    let code = error.message;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.text === 'function') {
+      try {
+        const parsed = JSON.parse(await ctx.text());
+        code = parsed.error ?? parsed.detail ?? code;
+      } catch {
+        /* оставляем error.message */
+      }
+    }
+    throw new Error(code);
+  }
+  if (data?.error) throw new Error(data.error);
+  return (data?.text as string) ?? '';
+}
