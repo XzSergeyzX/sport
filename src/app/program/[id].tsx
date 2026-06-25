@@ -25,7 +25,7 @@ import {
   updateProgramSet,
 } from '@/lib/db/programs';
 import { WORKOUT_START } from '@/lib/db/workout-mutations';
-import type { WorkoutDetail } from '@/lib/db/workouts';
+import { summarizeWorkout, type WorkoutDetail, type WorkoutSummary } from '@/lib/db/workouts';
 import { repsLabel } from '@/lib/i18n/plural';
 import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
@@ -187,8 +187,8 @@ export default function ProgramDetailScreen() {
     // посев СИНХРОННО до навигации: дерево тренировки + список недавних → экран тренировки
     // открывается мгновенно и работает оффлайн; серверная запись уходит фоном (см. ниже)
     qc.setQueryData(['workout', workout.id], workout);
-    qc.setQueryData<WorkoutDetail[]>(['workouts', session.user.id], (old) =>
-      old ? [workout, ...old] : [workout],
+    qc.setQueryData<WorkoutSummary[]>(['workouts', session.user.id], (old) =>
+      old ? [summarizeWorkout(workout), ...old] : [summarizeWorkout(workout)],
     );
     startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
     router.replace({ pathname: '/workout/[id]', params: { id: workout.id } });

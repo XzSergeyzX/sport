@@ -162,15 +162,51 @@ export async function getWorkoutDetail(id: string): Promise<WorkoutDetail> {
   return detail;
 }
 
-export async function listWorkouts(userId: string): Promise<WorkoutDetail[]> {
+/** Строка сводки для списка тренировок: агрегаты посчитаны в SQL-вью workout_summaries —
+ *  без вложенных подходов, поэтому можно тянуть все тренировки без обрезки. */
+export type WorkoutSummary = {
+  id: string;
+  user_id: string;
+  started_at: string;
+  ended_at: string | null;
+  title: string | null;
+  notes: string | null;
+  exercise_count: number;
+  set_count: number;
+  rep_count: number;
+  hold_sec: number;
+  tonnage: number;
+};
+
+/** Список тренировок для главного экрана — лёгкие сводки из вью (RLS через security_invoker).
+ *  Без limit: строка крошечная, показываем всю историю; нумерация считается от полного списка. */
+export async function listWorkoutSummaries(userId: string): Promise<WorkoutSummary[]> {
   const { data, error } = await supabase
-    .from('workouts')
-    .select(DETAIL_SELECT)
+    .from('workout_summaries')
+    .select('*')
     .eq('user_id', userId)
-    .order('started_at', { ascending: false })
-    .limit(30);
+    .order('started_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as WorkoutDetail[];
+  return (data ?? []) as WorkoutSummary[];
+}
+
+/** Свести локальный WorkoutDetail к строке сводки — для оптимистичного посева в кэш списка при
+ *  старте тренировки (свежая тренировка ещё без logged-подходов → агрегаты нулевые, это верно). */
+export function summarizeWorkout(w: WorkoutDetail): WorkoutSummary {
+  const s = workoutStats(w);
+  return {
+    id: w.id,
+    user_id: w.user_id,
+    started_at: w.started_at,
+    ended_at: w.ended_at,
+    title: w.title,
+    notes: w.notes,
+    exercise_count: s.exercises,
+    set_count: s.sets,
+    rep_count: s.reps,
+    hold_sec: s.holdSec,
+    tonnage: s.tonnage,
+  };
 }
 
 /**

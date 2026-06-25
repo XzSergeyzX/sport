@@ -35,7 +35,10 @@ export default function RootLayout() {
   return (
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 }}
+      // 30 дней: offline-first приоритет #1 — снимок должен пережить «не открывал апку неделю,
+      // пришёл в зал без сети». Данные копеечные (пара программ + 30 тренировок), gcTime тоже 24ч
+      // в памяти, но на диске держим дольше.
+      persistOptions={{ persister: asyncPersister, maxAge: 1000 * 60 * 60 * 24 * 30 }}
       onSuccess={() => {
         // кэш восстановлен из персиста → доигрываем мутации, поставленные на паузу в оффлайне
         void queryClient.resumePausedMutations();

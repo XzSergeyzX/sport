@@ -36,7 +36,7 @@ export default function ProgramsScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['programs', userId] }),
   });
 
-  const { data: programs } = useQuery({
+  const { data: programs, isLoading } = useQuery({
     queryKey: ['programs', userId],
     queryFn: () => listPrograms(userId as string),
     enabled: !!userId,
@@ -113,7 +113,13 @@ export default function ProgramsScreen() {
         <Text className="mt-7 text-xs font-semibold uppercase tracking-wide text-graphite-500">
           {t('programs.yours')}
         </Text>
-        {programs && programs.length > 0 ? (
+        {isLoading && !programs ? (
+          <View className="mt-3 gap-3">
+            {[0, 1, 2].map((i) => (
+              <View key={i} className="h-[68px] rounded-2xl bg-graphite-900 opacity-60" />
+            ))}
+          </View>
+        ) : programs && programs.length > 0 ? (
           <View className="mt-3 gap-3 pb-8">
             {programs.map((p) => (
               <Link key={p.id} href={`/program/${p.id}`} asChild>

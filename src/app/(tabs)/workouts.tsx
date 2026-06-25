@@ -13,9 +13,10 @@ import {
   buildEmptyWorkout,
   deleteWorkout,
   importPastWorkout,
-  listWorkouts,
+  listWorkoutSummaries,
+  summarizeWorkout,
   type WorkoutDetail,
-  workoutStats,
+  type WorkoutSummary,
 } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
@@ -47,7 +48,7 @@ export default function WorkoutsScreen() {
 
   const { data: workouts, isLoading } = useQuery({
     queryKey: ['workouts', userId],
-    queryFn: () => listWorkouts(userId as string),
+    queryFn: () => listWorkoutSummaries(userId as string),
     enabled: !!userId,
   });
 
@@ -59,8 +60,8 @@ export default function WorkoutsScreen() {
     if (!userId) return;
     const workout = buildEmptyWorkout(userId);
     qc.setQueryData(['workout', workout.id], workout);
-    qc.setQueryData<WorkoutDetail[]>(['workouts', userId], (old) =>
-      old ? [workout, ...old] : [workout],
+    qc.setQueryData<WorkoutSummary[]>(['workouts', userId], (old) =>
+      old ? [summarizeWorkout(workout), ...old] : [summarizeWorkout(workout)],
     );
     startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
     router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
@@ -105,7 +106,7 @@ export default function WorkoutsScreen() {
   weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const weekList = list.filter((w) => new Date(w.started_at) >= weekStart);
-  const weekTonnage = weekList.reduce((n, w) => n + workoutStats(w).tonnage, 0);
+  const weekTonnage = weekList.reduce((n, w) => n + (w.tonnage ?? 0), 0);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
@@ -195,19 +196,22 @@ export default function WorkoutsScreen() {
         </Text>
 
         {isLoading ? (
-          <ActivityIndicator color="#848D9A" />
+          <View className="gap-3">
+            {[0, 1, 2].map((i) => (
+              <View key={i} className="h-[84px] rounded-2xl bg-graphite-900 opacity-60" />
+            ))}
+          </View>
         ) : !workouts?.length ? (
           <Text className="text-base text-graphite-400">{t('home.empty')}</Text>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
             {list.map((w, idx) => {
-              const s = workoutStats(w);
               const done = !!w.ended_at;
-              const num = total - idx; // абсолютний номер тренування (свіжа = найбільший), стабільний поки ≤30
+              const num = total - idx; // абсолютний номер тренування (свіжа = найбільший) від ПОВНОГО списку
               const counts = [
-                pluralCount(t, lang, 'exercises', s.exercises),
-                pluralCount(t, lang, 'sets', s.sets),
-                pluralCount(t, lang, 'reps', s.reps),
+                pluralCount(t, lang, 'exercises', w.exercise_count ?? 0),
+                pluralCount(t, lang, 'sets', w.set_count ?? 0),
+                pluralCount(t, lang, 'reps', w.rep_count ?? 0),
               ].join(' · ');
               return (
                 <Pressable
@@ -236,9 +240,9 @@ export default function WorkoutsScreen() {
                     </View>
                   </View>
                   <Text className="mt-1 text-sm text-graphite-400">{counts}</Text>
-                  {s.tonnage > 0 && (
+                  {(w.tonnage ?? 0) > 0 && (
                     <Text className="mt-0.5 text-sm text-graphite-500">
-                      {Math.round(fromKg(s.tonnage, unit) ?? 0)} {unitLabel}
+                      {Math.round(fromKg(w.tonnage, unit) ?? 0)} {unitLabel}
                     </Text>
                   )}
                 </Pressable>
