@@ -3,14 +3,22 @@
 //
 // Запуск (PowerShell):
 //   $env:SUPABASE_SERVICE_ROLE_KEY="<service_role_key>"; node scripts/seed-mock-workouts.mjs
-// Очистка (снести всё, что насидели):
-//   $env:SUPABASE_SERVICE_ROLE_KEY="<key>"; node scripts/seed-mock-workouts.mjs --clean
+// Сколько тренировок (по умолчанию 100):  ... node scripts/seed-mock-workouts.mjs --count 100
+// Очистка (снести всё, что насидели):     ... node scripts/seed-mock-workouts.mjs --clean
 //
 // Service role key: Supabase Dashboard → Project Settings → API → service_role (secret).
 // Цель — аккаунт с наибольшим числом health_snapshots (= с подключённой OURA), чтобы
 // тренировки сшивались с readiness/сном по датам. Переопределить: --user <uuid>.
 //
+// Тренировки сажаются на РЕАЛЬНЫЕ даты OURA-снимков (равномерно по всему диапазону) → корреляции
+// гарантированно сшиваются. Если снимков мало — добиваем днями назад от сегодня.
+// Вес растёт по ходу серии (прогрессия) с шумом.
+// СТРУКТУРЫ (ротация по дню, чтобы покрыть рендер и агрегацию блоков, а не только простые пары):
+//   обычные дни · суперсеты · EMOM (с интервалом/раундами) · удержания (time-метрика, hold_sec) ·
+//   изредка meta.side='both' (×2 в тоннаже/объёме). См. planGroups().
 // Все тренировки помечаются notes='mock-seed' → --clean удаляет ровно их (каскадом).
+
+import { randomUUID } from 'node:crypto';
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -28,7 +36,8 @@ if (!KEY) {
 
 const args = process.argv.slice(2);
 const CLEAN = args.includes('--clean');
-const userArg = args[args.indexOf('--user') + 1];
+const userArg = args.includes('--user') ? args[args.indexOf('--user') + 1] : undefined;
+const COUNT = args.includes('--count') ? Math.max(1, Number(args[args.indexOf('--count') + 1]) || 0) : 100;
 const db = createClient(URL, KEY, { auth: { persistSession: false } });
 
 const ymd = (d) => d.toISOString().slice(0, 10);
@@ -60,39 +69,114 @@ async function clean(user) {
 async function pickExercises() {
   const { data, error } = await db
     .from('exercises')
-    .select('id, name_uk, name_en, cluster, metric, is_base')
+    .select('id, name_uk, cluster, metric, is_base')
     .eq('is_base', true)
-    .limit(60);
+    .limit(120);
   if (error) throw error;
-  const reps = (data ?? []).filter((e) => (e.metric ?? 'reps') === 'reps' && e.cluster);
-  if (reps.length < 3) throw new Error('Мало базовых упражнений с кластером для мока.');
-  // 4 разных кластера по возможности
-  const seen = new Set();
-  const pick = [];
-  for (const e of reps) {
-    if (pick.length >= 4) break;
-    if (seen.has(e.cluster)) continue;
-    seen.add(e.cluster);
-    pick.push(e);
+  const all = data ?? [];
+  const repsAll = all.filter((e) => (e.metric ?? 'reps') === 'reps' && e.cluster);
+  const time = all.filter((e) => e.metric === 'time'); // удержания (Планка/Хват млинця) → hold_sec
+  if (repsAll.length < 4) throw new Error('Мало базовых reps-упражнений для мока.');
+  // reps: сначала по одному из разных кластеров (разнообразие трендов/PR), потом добор до ~10
+  const byCluster = new Map();
+  for (const e of repsAll) if (!byCluster.has(e.cluster)) byCluster.set(e.cluster, e);
+  const reps = [...byCluster.values()];
+  for (const e of repsAll) {
+    if (reps.length >= 10) break;
+    if (!reps.includes(e)) reps.push(e);
   }
-  while (pick.length < 4 && reps[pick.length]) pick.push(reps[pick.length]);
-  return pick;
+  return { reps, time };
+}
+
+const round25 = (x) => Math.round(x / 2.5) * 2.5;
+
+/**
+ * План тренировки = массив групп. Группа либо одиночное упражнение (block=false → своя карточка),
+ * либо НАСТОЯЩИЙ кластер (суперсет/EMOM) с общим block_key. Ротация по индексу дня k гарантирует,
+ * что в выборке встретятся все структуры (≈20% суперсетов, ≈20% EMOM, ≈20% удержаний/×2).
+ */
+function planGroups(k, pools) {
+  const { reps, time } = pools;
+  const R = (i) => reps[i % reps.length];
+  const t = k % 5;
+
+  if (t === 2) {
+    // суперсет-день: разминочное одиночное + суперсет из 2 упражнений на 3–4 круга
+    return [
+      { exs: [{ ex: R(k) }] },
+      { block: true, type: 'superset', label: 'Суперсет', rounds: rnd(3, 4), exs: [{ ex: R(k + 1) }, { ex: R(k + 2) }] },
+    ];
+  }
+  if (t === 3) {
+    // EMOM-день: 2–3 упражнения, интервал 60с, кругов = длит ÷ (интервал × кол-во упражнений)
+    const nEx = rnd(2, 3);
+    const min = [12, 16, 20][rnd(0, 2)];
+    const interval = 60;
+    const rounds = Math.max(4, Math.floor((min * 60) / (interval * nEx)));
+    const exs = [];
+    for (let j = 0; j < nEx; j++) exs.push({ ex: R(k + j) });
+    return [{ block: true, type: 'emom', label: `EMOM ${min}`, rounds, intervalSec: interval, exs }];
+  }
+  if (t === 4 && time.length) {
+    // кондиционка: силовое одиночное + удержание (time-метрика); периодически «обидві» (×2)
+    return [{ exs: [{ ex: R(k) }] }, { exs: [{ ex: time[k % time.length], both: k % 11 === 0 }] }];
+  }
+  // обычный день: 2–3 самостоятельных упражнения подряд
+  const n = rnd(2, 3);
+  const groups = [];
+  for (let j = 0; j < n; j++) groups.push({ exs: [{ ex: R(k + j) }] });
+  return groups;
+}
+
+/** COUNT дат под тренировки: равномерно по диапазону OURA-снимков (чтобы корреляции сшивались).
+ *  Если снимков меньше нужного — добиваем последовательными днями назад от самой ранней даты. */
+async function pickDates(user) {
+  const { data, error } = await db
+    .from('health_snapshots')
+    .select('date')
+    .eq('user_id', user)
+    .order('date', { ascending: true });
+  if (error) throw error;
+  const snapDates = [...new Set((data ?? []).map((r) => r.date))]; // уникальные YYYY-MM-DD, по возр.
+
+  const dates = [];
+  if (snapDates.length >= COUNT) {
+    // равномерная выборка COUNT штук по всему диапазону
+    const step = (snapDates.length - 1) / (COUNT - 1 || 1);
+    for (let k = 0; k < COUNT; k++) dates.push(snapDates[Math.round(k * step)]);
+  } else {
+    dates.push(...snapDates);
+    // добиваем днями назад от самой ранней даты снимков (или от сегодня, если снимков нет)
+    const anchor = snapDates.length ? new Date(snapDates[0]) : new Date();
+    let gap = 1;
+    while (dates.length < COUNT) {
+      const d = new Date(anchor);
+      d.setDate(d.getDate() - gap);
+      dates.push(ymd(d));
+      gap += 2; // через день
+    }
+    dates.sort();
+  }
+  return dates;
 }
 
 async function seed(user) {
-  const ex = await pickExercises();
-  console.log('Упражнения для мока:', ex.map((e) => e.name_uk).join(', '));
+  const pools = await pickExercises();
+  console.log(`Пул: reps=${pools.reps.length}, time=${pools.time.length}`);
 
-  const offsets = [29, 26, 23, 20, 17, 14, 11, 8, 5, 2];
-  const today = new Date();
+  const dates = await pickDates(user);
+  console.log(`Дат под тренировки: ${dates.length} (${dates[0]} → ${dates[dates.length - 1]})`);
+
+  const tally = { superset: 0, emom: 0, hold: 0, both: 0 };
   let totalSets = 0;
+  let totalWx = 0;
 
-  for (let k = 0; k < offsets.length; k++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - offsets[k]);
-    const started = at(d, 17, 30);
-    const ended = at(d, 18, rnd(15, 35));
-    const prog = 1 + k * 0.03; // лёгкая прогрессия по весу к свежим датам
+  for (let k = 0; k < dates.length; k++) {
+    const d = new Date(dates[k]);
+    const started = at(d, 17, rnd(0, 50));
+    const ended = at(d, 18, rnd(10, 55));
+    const prog = 1 + (k / dates.length) * 0.35; // прогрессия по весу за всю серию (+~35% к концу)
+    const noise = 0.95 + Math.random() * 0.1; // ±5% шум на тренировку
 
     const { data: w, error: we } = await db
       .from('workouts')
@@ -101,34 +185,72 @@ async function seed(user) {
       .single();
     if (we) throw we;
 
-    const useEx = [ex[k % ex.length], ex[(k + 1) % ex.length]]; // 2 упражнения на тренировку
-    for (let i = 0; i < useEx.length; i++) {
-      const e = useEx[i];
-      const { data: wx, error: wxe } = await db
-        .from('workout_exercises')
-        .insert({ workout_id: w.id, exercise_id: e.id, order_index: i, display_name: e.name_uk })
-        .select('id')
-        .single();
-      if (wxe) throw wxe;
+    let order = 0;
+    for (const g of planGroups(k, pools)) {
+      const isBlock = !!g.block;
+      const blockKey = isBlock ? randomUUID() : null;
+      if (isBlock) tally[g.type === 'emom' ? 'emom' : 'superset']++;
 
-      const baseW = Math.round((20 + i * 10) * prog);
-      const rows = [];
-      for (let s = 0; s < 4; s++) {
-        rows.push({
-          workout_exercise_id: wx.id,
-          reps: rnd(6, 10),
-          weight: baseW + s * 2,
-          rpe: rnd(6, 9),
-          logged_at: started, // ВАЖНО: без logged_at подход не попадёт в аналитику
-          completed_at: started,
-        });
+      for (const { ex, both } of g.exs) {
+        const isTime = ex.metric === 'time';
+        if (isTime) tally.hold++;
+        if (both) tally.both++;
+
+        const { data: wx, error: wxe } = await db
+          .from('workout_exercises')
+          .insert({
+            workout_id: w.id,
+            exercise_id: ex.id,
+            order_index: order++, // блок-упражнения идут подряд → группировка на экране работает
+            display_name: ex.name_uk,
+            block_key: blockKey,
+            block_label: isBlock ? g.label : null,
+            block_rounds: isBlock ? g.rounds : null,
+            block_type: isBlock ? g.type : null,
+            block_interval_sec: isBlock ? (g.intervalSec ?? null) : null,
+          })
+          .select('id')
+          .single();
+        if (wxe) throw wxe;
+        totalWx++;
+
+        // в кластере — по 1 подходу на круг (экран бьёт подходы по раундам = max sets); иначе 3–5
+        const setN = isBlock ? g.rounds : isTime ? rnd(3, 4) : rnd(3, 5);
+        const baseW = round25((20 + order * 4) * prog * noise);
+        const rows = [];
+        for (let s = 0; s < setN; s++) {
+          rows.push(
+            isTime
+              ? {
+                  workout_exercise_id: wx.id,
+                  reps: null,
+                  duration_sec: rnd(25, 90), // удержание → наполняет hold_sec
+                  weight: null,
+                  rpe: rnd(6, 9),
+                  meta: both ? { side: 'both' } : null,
+                  logged_at: started,
+                  completed_at: started,
+                }
+              : {
+                  workout_exercise_id: wx.id,
+                  reps: rnd(5, 12),
+                  duration_sec: null,
+                  weight: baseW + s * 2.5,
+                  rpe: rnd(6, 9),
+                  meta: both ? { side: 'both' } : null, // «обидві» → ×2 в тоннаже/объёме
+                  logged_at: started, // ВАЖНО: без logged_at подход не попадёт в аналитику
+                  completed_at: started,
+                },
+          );
+        }
+        const { error: se } = await db.from('sets').insert(rows);
+        if (se) throw se;
+        totalSets += rows.length;
       }
-      const { error: se } = await db.from('sets').insert(rows);
-      if (se) throw se;
-      totalSets += rows.length;
     }
   }
-  console.log(`✓ Засидено ${offsets.length} тренировок, ${totalSets} подходов за период ${ymd(new Date(today.getTime() - 29 * 864e5))} → сьогодні.`);
+  console.log(`✓ Засидено ${dates.length} тренировок, ${totalWx} упражнений, ${totalSets} подходов (${dates[0]} → ${dates[dates.length - 1]}).`);
+  console.log(`  структуры: суперсетов=${tally.superset}, EMOM=${tally.emom}, удержаний=${tally.hold}, ×2(обидві)=${tally.both}`);
 }
 
 (async () => {
