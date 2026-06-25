@@ -12,13 +12,17 @@
 // источником истины при ошибке выступает сервер.
 import type { QueryClient } from '@tanstack/react-query';
 
-import { addSet, deleteSet, setSetLogged, updateSet } from './workouts';
+import { addSet, deleteSet, persistStartedWorkout, setSetLogged, updateSet } from './workouts';
 import type { SetInput, SetRow, WorkoutDetail } from './workouts';
 
 export const SET_ADD = ['workout', 'set', 'add'] as const;
 export const SET_UPDATE = ['workout', 'set', 'update'] as const;
 export const SET_DELETE = ['workout', 'set', 'delete'] as const;
 export const SET_LOG = ['workout', 'set', 'log'] as const;
+// Старт тренировки из программы. Оптимистичный посев дерева делает экран (синхронно, до
+// навигации) — здесь только серверная запись + реконсиляция; персист по mutationKey даёт
+// доживание записи через перезапуск, как у логирования подходов.
+export const WORKOUT_START = ['workout', 'start'] as const;
 
 export type AddSetVars = { workoutId: string; weId: string; input: SetInput; id: string };
 export type UpdateSetVars = { workoutId: string; id: string; input: SetInput };
@@ -96,6 +100,16 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
       }));
     },
     onSettled: (_d, _e, v: DeleteSetVars) => settle(v.workoutId),
+  });
+
+  qc.setMutationDefaults(WORKOUT_START, {
+    mutationFn: (d: WorkoutDetail) => persistStartedWorkout(d),
+    // оптимистику в ['workout', id] и ['workouts'] кладёт экран программы синхронно — здесь не
+    // дублируем (onMutate из восстановленной мутации не вызовется; кэш и так персистится).
+    onSettled: (_data, _err, d: WorkoutDetail) => {
+      qc.invalidateQueries({ queryKey: wkey(d.id) });
+      qc.invalidateQueries({ queryKey: ['workouts'] });
+    },
   });
 
   qc.setMutationDefaults(SET_LOG, {

@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { fromKg, type WeightUnit } from '@/lib/use-unit';
 
+import type { Exercise } from './exercises';
 import { newId } from './ids';
-import { startWorkout } from './workouts';
+import type { SetRow, WorkoutDetail, WorkoutExercise } from './workouts';
 
 export type ProgramSet = {
   id: string;
@@ -227,37 +228,22 @@ export function blockRounds(block: ProgramBlock, exerciseCount: number): number 
 }
 
 /**
- * Старт тренировки из программы: создаёт сессию и префиллит упражнения/подходы
- * плановыми значениями (вес из канонических кг → в активную единицу). Возвращает id тренировки.
+ * Собрать тренировку из программы ЛОКАЛЬНО, без сети: все id генерятся на клиенте, плановые
+ * значения префиллятся (вес из канонических кг → в активную единицу). Возвращает полный
+ * WorkoutDetail для оптимистичного посева в кэш ['workout', id] — старт работает оффлайн и
+ * переживает перезапуск (SPEC §4). Серверная запись — отдельно, через persistStartedWorkout.
+ * exercisesById — каталог упражнений (из кэша ['exercises-all']) для верной метрики/имени;
+ * без него имя берётся из плана (display_name), метрика по умолчанию — повторы.
  */
-export async function startWorkoutFromProgram(
+export function buildWorkoutFromProgram(
   userId: string,
-  programId: string,
+  detail: ProgramDetail,
   unit: WeightUnit,
-): Promise<string> {
-  const detail = await getProgramDetail(programId);
-  const workout = await startWorkout(userId);
-
-  // Собираем всё заранее и вставляем пакетно (без десятков последовательных запросов).
-  type WeRow = {
-    id: string;
-    workout_id: string;
-    exercise_id: string;
-    order_index: number;
-    display_name: string;
-    block_key: string | null;
-    block_label: string | null;
-    block_rounds: number | null;
-    block_type: string | null;
-    block_interval_sec: number | null;
-  };
-  const weRows: WeRow[] = [];
-  const setPlan: {
-    weIndex: number;
-    weight: number | null;
-    reps: number | null;
-    durationSec: number | null;
-  }[] = [];
+  exercisesById?: Map<string, Exercise>,
+): WorkoutDetail {
+  const now = new Date().toISOString();
+  const workoutId = newId();
+  const wes: WorkoutExercise[] = [];
 
   for (const group of groupProgram(detail)) {
     const block = group.block;
@@ -267,52 +253,52 @@ export async function startWorkoutFromProgram(
 
     for (const pe of group.exercises) {
       if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
-      const weIndex = weRows.length;
-      weRows.push({
-        id: newId(),
-        workout_id: workout.id,
+      const weId = newId();
+      const sets: SetRow[] = [];
+      const baseSets = pe.program_sets.length ? pe.program_sets : [null];
+      for (let r = 0; r < repeat; r++) {
+        for (const ps of baseSets) {
+          const w = ps ? fromKg(ps.target_weight, unit) : null;
+          sets.push({
+            id: newId(),
+            workout_exercise_id: weId,
+            reps: ps ? ps.target_reps : null,
+            duration_sec: ps ? ps.target_duration_sec : null,
+            weight: w == null ? null : Math.round(w * 10) / 10,
+            rest_sec: null,
+            rpe: null,
+            note: null,
+            meta: null,
+            completed_at: now,
+            logged_at: null, // префилл-план, ещё не сделан
+          });
+        }
+      }
+      wes.push({
+        id: weId,
+        workout_id: workoutId,
         exercise_id: pe.exercise_id,
-        order_index: weIndex,
-        display_name: pe.name,
+        order_index: wes.length,
+        done_at: null,
         block_key: isCluster ? block!.id : null,
         block_label: isCluster ? (block!.label ?? null) : null,
         block_rounds: isCluster ? repeat : null,
         block_type: isCluster ? (block!.type ?? null) : null,
         block_interval_sec: isCluster ? (block!.interval_sec ?? null) : null,
+        display_name: pe.name,
+        exercise: exercisesById?.get(pe.exercise_id) ?? null,
+        sets,
       });
-      const baseSets = pe.program_sets.length ? pe.program_sets : [null];
-      for (let r = 0; r < repeat; r++) {
-        for (const ps of baseSets) {
-          const w = ps ? fromKg(ps.target_weight, unit) : null;
-          setPlan.push({
-            weIndex,
-            weight: w == null ? null : Math.round(w * 10) / 10,
-            reps: ps ? ps.target_reps : null,
-            durationSec: ps ? ps.target_duration_sec : null,
-          });
-        }
-      }
     }
   }
 
-  if (weRows.length === 0) return workout.id;
-
-  // 1 запрос: вставляем упражнения (id уже сгенерены на клиенте — offline-first, SPEC §4;
-  // больше не зависим от возврата сервера и от уникальности order_index при маппинге)
-  const { error: weErr } = await supabase.from('workout_exercises').upsert(weRows);
-  if (weErr) throw weErr;
-
-  // 1 запрос: вставляем все подходы, ссылаясь напрямую на клиентские id упражнений
-  const setRows = setPlan.map((p) => ({
-    id: newId(),
-    workout_exercise_id: weRows[p.weIndex].id,
-    weight: p.weight,
-    reps: p.reps,
-    duration_sec: p.durationSec,
-  }));
-  if (setRows.length) {
-    const { error: sErr } = await supabase.from('sets').upsert(setRows);
-    if (sErr) throw sErr;
-  }
-  return workout.id;
+  return {
+    id: workoutId,
+    user_id: userId,
+    started_at: now,
+    ended_at: null,
+    title: null,
+    notes: null,
+    workout_exercises: wes,
+  };
 }

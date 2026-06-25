@@ -8,11 +8,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth/auth-context';
+import { WORKOUT_START } from '@/lib/db/workout-mutations';
 import {
+  buildEmptyWorkout,
   deleteWorkout,
   importPastWorkout,
   listWorkouts,
-  startWorkout,
+  type WorkoutDetail,
   workoutStats,
 } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
@@ -49,13 +51,20 @@ export default function WorkoutsScreen() {
     enabled: !!userId,
   });
 
-  const startMut = useMutation({
-    mutationFn: () => startWorkout(userId as string),
-    onSuccess: (w) => {
-      qc.invalidateQueries({ queryKey: ['workouts', userId] });
-      router.push({ pathname: '/workout/[id]', params: { id: w.id } });
-    },
-  });
+  // старт по mutationKey → переживает перезапуск; оптимистику кладём синхронно (как у старта из
+  // программы) → оффлайн пустая тренировка открывается мгновенно и досинкивается на реконнекте
+  const startMut = useMutation<void, Error, WorkoutDetail>({ mutationKey: WORKOUT_START });
+
+  const onStart = () => {
+    if (!userId) return;
+    const workout = buildEmptyWorkout(userId);
+    qc.setQueryData(['workout', workout.id], workout);
+    qc.setQueryData<WorkoutDetail[]>(['workouts', userId], (old) =>
+      old ? [workout, ...old] : [workout],
+    );
+    startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
+    router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
+  };
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const deleteMut = useMutation({
@@ -128,15 +137,10 @@ export default function WorkoutsScreen() {
         )}
 
         <Pressable
-          disabled={startMut.isPending}
-          onPress={() => startMut.mutate()}
+          onPress={onStart}
           className="mt-4 items-center rounded-2xl bg-accent py-4 active:opacity-80"
         >
-          {startMut.isPending ? (
-            <ActivityIndicator color="#0C0E12" />
-          ) : (
-            <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
-          )}
+          <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
         </Pressable>
 
         {!importOpen ? (

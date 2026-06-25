@@ -7,13 +7,32 @@ import { Text, View } from 'react-native';
 // pending = число мутаций в состоянии 'pending' (включая поставленные на паузу в оффлайне) —
 // то есть сколько изменений ещё не подтверждено сервером. online — реальное состояние сети.
 // Когда всё сохранено и есть сеть — ничего не показываем (без визуального шума).
+const SYNCING_DELAY_MS = 700; // онлайн-бейдж показываем, только если запись висит дольше порога
+
 export function SyncStatus() {
   const { t } = useTranslation();
   const pending = useIsMutating();
+  const busy = pending > 0;
   const [online, setOnline] = useState(onlineManager.isOnline());
   useEffect(() => onlineManager.subscribe(() => setOnline(onlineManager.isOnline())), []);
 
-  if (online && pending === 0) return null;
+  // Антимигание: при онлайне быстрые сохранения (sub-second) не должны вспыхивать бейджем и
+  // дёргать раскладку на каждый тап. Показываем «синхронізація» лишь когда запись висит дольше
+  // порога (реальный бэклог/медленная сеть). Зависим от boolean busy, а не от счётчика, иначе
+  // изменение pending 1↔2 сбрасывало бы таймер и бейдж не появлялся бы и при долгой записи.
+  const [syncingLong, setSyncingLong] = useState(false);
+  useEffect(() => {
+    if (!busy) {
+      setSyncingLong(false);
+      return;
+    }
+    const id = setTimeout(() => setSyncingLong(true), SYNCING_DELAY_MS);
+    return () => clearTimeout(id);
+  }, [busy]);
+
+  // Оффлайн — показываем сразу (важный фидбек). Онлайн «синхронізація» — только пока реально
+  // идёт запись И она перевалила порог (busy без syncingLong = быстрое сохранение, не мигаем).
+  if (online && !(busy && syncingLong)) return null;
 
   const offline = !online;
   const label = offline

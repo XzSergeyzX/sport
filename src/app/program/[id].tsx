@@ -2,13 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
+import { listExercises } from '@/lib/db/exercises';
 import {
   addProgramSet,
+  buildWorkoutFromProgram,
   deleteProgram,
   deleteProgramExercise,
   deleteProgramSet,
@@ -18,11 +20,12 @@ import {
   type ProgramBlock,
   type ProgramSet,
   reorderProgramExercises,
-  startWorkoutFromProgram,
   updateProgram,
   updateProgramExercise,
   updateProgramSet,
 } from '@/lib/db/programs';
+import { WORKOUT_START } from '@/lib/db/workout-mutations';
+import type { WorkoutDetail } from '@/lib/db/workouts';
 import { repsLabel } from '@/lib/i18n/plural';
 import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
@@ -166,13 +169,30 @@ export default function ProgramDetailScreen() {
     enabled: !!id && !!session,
   });
 
-  const startMut = useMutation({
-    mutationFn: () => startWorkoutFromProgram(session!.user.id, id, unit),
-    onSuccess: (workoutId) => {
-      qc.invalidateQueries({ queryKey: ['workouts'] });
-      router.replace({ pathname: '/workout/[id]', params: { id: workoutId } });
-    },
+  // каталог упражнений (кэш ['exercises-all']) — для верной метрики/имени в оптимистичном дереве
+  const { data: catalog } = useQuery({
+    queryKey: ['exercises-all'],
+    queryFn: listExercises,
+    enabled: !!session,
   });
+
+  // старт регистрируется через mutationKey → переживает перезапуск (доживёт в оффлайн-очереди)
+  // дженерики явно: при mutationKey без mutationFn TS иначе выводит variables как void
+  const startMut = useMutation<void, Error, WorkoutDetail>({ mutationKey: WORKOUT_START });
+
+  const onStart = () => {
+    if (!program || !session) return;
+    const byId = new Map((catalog ?? []).map((e) => [e.id, e]));
+    const workout = buildWorkoutFromProgram(session.user.id, program, unit, byId);
+    // посев СИНХРОННО до навигации: дерево тренировки + список недавних → экран тренировки
+    // открывается мгновенно и работает оффлайн; серверная запись уходит фоном (см. ниже)
+    qc.setQueryData(['workout', workout.id], workout);
+    qc.setQueryData<WorkoutDetail[]>(['workouts', session.user.id], (old) =>
+      old ? [workout, ...old] : [workout],
+    );
+    startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
+    router.replace({ pathname: '/workout/[id]', params: { id: workout.id } });
+  };
 
   const renameMut = useMutation({
     mutationFn: (title: string) => updateProgram(id, title),
@@ -404,33 +424,16 @@ export default function ProgramDetailScreen() {
           ) : (
             program.program_exercises.length > 0 && (
               <Pressable
-                disabled={startMut.isPending}
-                onPress={() => startMut.mutate()}
+                onPress={onStart}
                 className="items-center rounded-2xl bg-accent py-4 active:opacity-80"
               >
-                {startMut.isPending ? (
-                  <ActivityIndicator color="#0C0E12" />
-                ) : (
-                  <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
-                )}
+                <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
               </Pressable>
             )
           )}
         </View>
       )}
 
-      <Modal visible={startMut.isPending} transparent animationType="fade">
-        <View
-          className="flex-1 items-center justify-center px-10"
-          style={{ backgroundColor: 'rgba(8,10,14,0.92)' }}
-        >
-          <ActivityIndicator size="large" color="#1FB89A" />
-          <Text className="mt-5 text-lg font-extrabold text-graphite-50">
-            {t('programs.loadingTitle')}
-          </Text>
-          <Text className="mt-2 text-center text-sm text-graphite-400">{t('programs.loadingSub')}</Text>
-        </View>
-      </Modal>
 
       <ConfirmDialog
         visible={showDeleteProg}

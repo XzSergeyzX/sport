@@ -64,16 +64,64 @@ export type SetInput = {
 
 const DETAIL_SELECT = '*, workout_exercises(*, exercise:exercises(*), sets(*))';
 
-export async function startWorkout(userId: string): Promise<Workout> {
-  // id генерим на клиенте (offline-first, SPEC §4): сущность получает стабильный id до сети.
-  // upsert по id → доигрывание/повтор оффлайн-мутации безопасны (не плодит дубль).
-  const { data, error } = await supabase
+/**
+ * Собрать пустую тренировку ЛОКАЛЬНО (offline-first, SPEC §4): id генерится на клиенте, на выходе
+ * готовый WorkoutDetail для оптимистичного посева в кэш. Серверная запись — через дефолт
+ * WORKOUT_START (persistStartedWorkout), общий со стартом из программы.
+ */
+export function buildEmptyWorkout(userId: string): WorkoutDetail {
+  return {
+    id: newId(),
+    user_id: userId,
+    started_at: new Date().toISOString(),
+    ended_at: null,
+    title: null,
+    notes: null,
+    workout_exercises: [],
+  };
+}
+
+/**
+ * Записать на сервер уже собранную тренировку (workout + упражнения + плановые подходы), пакетно.
+ * Идемпотентно (upsert по client-id) → безопасно доигрывается из оффлайн-очереди. Общий writer
+ * для пустого старта (buildEmptyWorkout) и старта из программы (buildWorkoutFromProgram); зовётся
+ * из mutationFn дефолта WORKOUT_START (см. workout-mutations.ts).
+ */
+export async function persistStartedWorkout(d: WorkoutDetail): Promise<void> {
+  const { error: wErr } = await supabase
     .from('workouts')
-    .upsert({ id: newId(), user_id: userId })
-    .select('*')
-    .single();
-  if (error) throw error;
-  return data as Workout;
+    .upsert({ id: d.id, user_id: d.user_id, started_at: d.started_at });
+  if (wErr) throw wErr;
+  if (d.workout_exercises.length === 0) return;
+
+  const weRows = d.workout_exercises.map((we) => ({
+    id: we.id,
+    workout_id: we.workout_id,
+    exercise_id: we.exercise_id,
+    order_index: we.order_index,
+    display_name: we.display_name,
+    block_key: we.block_key,
+    block_label: we.block_label,
+    block_rounds: we.block_rounds,
+    block_type: we.block_type,
+    block_interval_sec: we.block_interval_sec,
+  }));
+  const { error: weErr } = await supabase.from('workout_exercises').upsert(weRows);
+  if (weErr) throw weErr;
+
+  const setRows = d.workout_exercises.flatMap((we) =>
+    we.sets.map((s) => ({
+      id: s.id,
+      workout_exercise_id: s.workout_exercise_id,
+      weight: s.weight,
+      reps: s.reps,
+      duration_sec: s.duration_sec,
+    })),
+  );
+  if (setRows.length) {
+    const { error: sErr } = await supabase.from('sets').upsert(setRows);
+    if (sErr) throw sErr;
+  }
 }
 
 export type WorkoutImportResult = {
