@@ -64,10 +64,9 @@ export async function sendCoachMessage(message: string): Promise<string> {
 export async function transcribeAudio(
   audioBase64: string,
   mime: string,
-  durationSec: number,
 ): Promise<string> {
   const { data, error } = await supabase.functions.invoke('transcribe', {
-    body: { audio: audioBase64, mime, durationSec },
+    body: { audio: audioBase64, mime },
   });
   if (error) {
     let code = error.message;

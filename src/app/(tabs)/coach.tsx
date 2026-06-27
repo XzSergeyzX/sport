@@ -144,7 +144,6 @@ export default function CoachScreen() {
     recordingRef.current = false;
     setRecording(false);
     setTranscribing(true);
-    const durationSec = recorder.currentTime || 0;
     setElapsed(0);
     let uri: string | null = null;
     try {
@@ -152,7 +151,7 @@ export default function CoachScreen() {
       uri = recorder.uri;
       if (!uri) throw new Error('no_audio');
       const base64 = await new File(uri).base64();
-      const text = (await transcribeAudio(base64, 'audio/m4a', durationSec)).trim();
+      const text = (await transcribeAudio(base64, 'audio/m4a')).trim();
       if (text) setDraft((d) => (d.trim() ? `${d.trim()} ${text}` : text));
       else setVoiceError(t('coach.micEmpty'));
     } catch {
