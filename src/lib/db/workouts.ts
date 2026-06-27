@@ -247,6 +247,7 @@ export async function addWorkoutExercise(
   workoutId: string,
   exerciseId: string,
   orderIndex: number,
+  id: string = newId(),
   block?: {
     key: string;
     label: string | null;
@@ -255,10 +256,12 @@ export async function addWorkoutExercise(
     intervalSec: number | null;
   },
 ): Promise<string> {
+  // id принимаем извне (как addSet): оптимистичная карточка в кэше и реальная вставка — один id,
+  // upsert → доигрывание из оффлайн-очереди идемпотентно.
   const { data, error } = await supabase
     .from('workout_exercises')
     .upsert({
-      id: newId(),
+      id,
       workout_id: workoutId,
       exercise_id: exerciseId,
       order_index: orderIndex,

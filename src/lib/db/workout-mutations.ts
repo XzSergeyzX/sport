@@ -12,7 +12,19 @@
 // источником истины при ошибке выступает сервер.
 import type { QueryClient } from '@tanstack/react-query';
 
-import { addSet, deleteSet, persistStartedWorkout, setSetLogged, updateSet } from './workouts';
+import type { Exercise } from './exercises';
+import {
+  addSet,
+  addWorkoutExercise,
+  deleteSet,
+  deleteWorkoutExercise,
+  finishWorkout,
+  persistStartedWorkout,
+  reorderWorkoutExercises,
+  setExerciseDone,
+  setSetLogged,
+  updateSet,
+} from './workouts';
 import type { SetInput, SetRow, WorkoutDetail } from './workouts';
 
 export const SET_ADD = ['workout', 'set', 'add'] as const;
@@ -23,11 +35,28 @@ export const SET_LOG = ['workout', 'set', 'log'] as const;
 // навигации) — здесь только серверная запись + реконсиляция; персист по mutationKey даёт
 // доживание записи через перезапуск, как у логирования подходов.
 export const WORKOUT_START = ['workout', 'start'] as const;
+// Структурные мутации дерева тренировки — тоже offline-durable (оптимистика + доживание рестарта).
+export const WE_ADD = ['workout', 'exercise', 'add'] as const;
+export const WE_REMOVE = ['workout', 'exercise', 'remove'] as const;
+export const WE_REORDER = ['workout', 'exercise', 'reorder'] as const;
+export const WE_DONE = ['workout', 'exercise', 'done'] as const;
+export const WORKOUT_FINISH = ['workout', 'finish'] as const;
 
 export type AddSetVars = { workoutId: string; weId: string; input: SetInput; id: string };
 export type UpdateSetVars = { workoutId: string; id: string; input: SetInput };
 export type DeleteSetVars = { workoutId: string; setId: string };
 export type LogSetVars = { workoutId: string; id: string; logged: boolean; restSec: number | null };
+export type AddWeVars = {
+  workoutId: string;
+  id: string;
+  exerciseId: string;
+  orderIndex: number;
+  exercise: Exercise | null;
+};
+export type RemoveWeVars = { workoutId: string; ids: string[] };
+export type ReorderWeVars = { workoutId: string; ids: string[]; orders: number[] };
+export type DoneWeVars = { workoutId: string; weId: string; done: boolean };
+export type FinishVars = { workoutId: string };
 
 const wkey = (workoutId: string) => ['workout', workoutId];
 
@@ -108,6 +137,93 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
     // дублируем (onMutate из восстановленной мутации не вызовется; кэш и так персистится).
     onSettled: (_data, _err, d: WorkoutDetail) => {
       qc.invalidateQueries({ queryKey: wkey(d.id) });
+      qc.invalidateQueries({ queryKey: ['workouts'] });
+    },
+  });
+
+  qc.setMutationDefaults(WE_ADD, {
+    mutationFn: (v: AddWeVars) => addWorkoutExercise(v.workoutId, v.exerciseId, v.orderIndex, v.id),
+    onMutate: async (v: AddWeVars) => {
+      await cancel(v.workoutId);
+      patch(v.workoutId, (w) => ({
+        ...w,
+        workout_exercises: [
+          ...w.workout_exercises,
+          {
+            id: v.id,
+            workout_id: v.workoutId,
+            exercise_id: v.exerciseId,
+            order_index: v.orderIndex,
+            done_at: null,
+            block_key: null,
+            block_label: null,
+            block_rounds: null,
+            block_type: null,
+            block_interval_sec: null,
+            display_name: null,
+            exercise: v.exercise,
+            sets: [],
+          },
+        ],
+      }));
+    },
+    onSettled: (_d, _e, v: AddWeVars) => settle(v.workoutId),
+  });
+
+  qc.setMutationDefaults(WE_REMOVE, {
+    mutationFn: (v: RemoveWeVars) => Promise.all(v.ids.map(deleteWorkoutExercise)).then(() => {}),
+    onMutate: async (v: RemoveWeVars) => {
+      await cancel(v.workoutId);
+      patch(v.workoutId, (w) => ({
+        ...w,
+        workout_exercises: w.workout_exercises.filter((we) => !v.ids.includes(we.id)),
+      }));
+    },
+    onSettled: (_d, _e, v: RemoveWeVars) => settle(v.workoutId),
+  });
+
+  qc.setMutationDefaults(WE_REORDER, {
+    mutationFn: (v: ReorderWeVars) => reorderWorkoutExercises(v.ids, v.orders),
+    onMutate: async (v: ReorderWeVars) => {
+      await cancel(v.workoutId);
+      const orderById = new Map(v.ids.map((id, k) => [id, v.orders[k]]));
+      patch(v.workoutId, (w) => ({
+        ...w,
+        workout_exercises: w.workout_exercises
+          .map((we) => (orderById.has(we.id) ? { ...we, order_index: orderById.get(we.id)! } : we))
+          .sort((a, b) => a.order_index - b.order_index),
+      }));
+    },
+    onSettled: (_d, _e, v: ReorderWeVars) => settle(v.workoutId),
+  });
+
+  qc.setMutationDefaults(WE_DONE, {
+    mutationFn: (v: DoneWeVars) => setExerciseDone(v.weId, v.done),
+    onMutate: async (v: DoneWeVars) => {
+      await cancel(v.workoutId);
+      patch(v.workoutId, (w) => ({
+        ...w,
+        workout_exercises: w.workout_exercises.map((we) =>
+          we.id === v.weId
+            ? { ...we, done_at: v.done ? new Date().toISOString() : null }
+            : we,
+        ),
+      }));
+    },
+    onSettled: (_d, _e, v: DoneWeVars) => settle(v.workoutId),
+  });
+
+  qc.setMutationDefaults(WORKOUT_FINISH, {
+    mutationFn: (v: FinishVars) => finishWorkout(v.workoutId),
+    // ended_at ставим только если ещё не завершена — как finishWorkout (правка завершённой
+    // не должна раздувать длительность). Навигацию на сводку делает экран сразу по тапу
+    // (offline-first): запись уходит фоном/из очереди, экран не ждёт сети.
+    onMutate: async (v: FinishVars) => {
+      await cancel(v.workoutId);
+      patch(v.workoutId, (w) => (w.ended_at ? w : { ...w, ended_at: new Date().toISOString() }));
+    },
+    onSettled: (_d, _e, v: FinishVars) => {
+      settle(v.workoutId);
       qc.invalidateQueries({ queryKey: ['workouts'] });
     },
   });

@@ -39,29 +39,34 @@ import {
 } from '@/lib/db/exercises';
 import { type Gripper, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
-  addWorkoutExercise,
-  deleteWorkoutExercise,
-  finishWorkout,
   getRecentExercises,
   getWorkoutDetail,
   isClusteredWorkoutExercise,
-  reorderWorkoutExercises,
   type SetInput,
   type SetRow as SetRowType,
-  setExerciseDone,
   type WorkoutExercise,
 } from '@/lib/db/workouts';
 import { useAuth } from '@/lib/auth/auth-context';
 import { newId } from '@/lib/db/ids';
 import {
   type AddSetVars,
+  type AddWeVars,
   type DeleteSetVars,
+  type DoneWeVars,
+  type FinishVars,
   type LogSetVars,
+  type RemoveWeVars,
+  type ReorderWeVars,
   SET_ADD,
   SET_DELETE,
   SET_LOG,
   SET_UPDATE,
   type UpdateSetVars,
+  WE_ADD,
+  WE_DONE,
+  WE_REMOVE,
+  WE_REORDER,
+  WORKOUT_FINISH,
 } from '@/lib/db/workout-mutations';
 import i18n from '@/lib/i18n';
 import { setsLabel } from '@/lib/i18n/plural';
@@ -827,23 +832,32 @@ export default function WorkoutScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workout?.id]);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['workout', workoutId] });
+  // Структурные мутации тренировки — все по mutationKey; fn+оптимистика живут в defaults на
+  // QueryClient (registerWorkoutMutationDefaults), чтобы оффлайн-запись (старт/подходы/добавление/
+  // удаление/перестановка/«готово»/завершение) пережила перезапуск и доиграла на реконнекте (SPEC §4).
+  const addExerciseMut = useMutation<string, Error, AddWeVars>({ mutationKey: WE_ADD });
 
-  const addExerciseMut = useMutation({
-    mutationFn: (exerciseId: string) =>
-      addWorkoutExercise(workoutId, exerciseId, workout?.workout_exercises.length ?? 0),
-    onSuccess: () => {
-      invalidate();
-      qc.invalidateQueries({ queryKey: ['exercises-recent'] });
-      setPickerOpen(false);
-    },
-  });
+  // добавить упражнение в тренировку: оптимистика и доживание — в дефолте WE_ADD; здесь только
+  // UI-побочки (закрыть пикер, освежить «недавние») сразу, не дожидаясь сети.
+  const addExerciseToWorkout = (ex: Exercise) => {
+    addExerciseMut.mutate({
+      workoutId,
+      id: newId(),
+      exerciseId: ex.id,
+      orderIndex: workout?.workout_exercises.length ?? 0,
+      exercise: ex,
+    });
+    qc.invalidateQueries({ queryKey: ['exercises-recent'] });
+    setPickerOpen(false);
+  };
 
+  // создание кастомного упражнения — серверная операция (каталог), осознанно online-only;
+  // после создания добавляем его в тренировку уже durable-путём.
   const createExerciseMut = useMutation({
     mutationFn: (name: string) => createCustomExercise(session!.user.id, name),
     onSuccess: (ex) => {
       qc.invalidateQueries({ queryKey: ['exercises-all'] });
-      addExerciseMut.mutate(ex.id);
+      addExerciseToWorkout(ex);
     },
     onError: (e: Error) => {
       Alert.alert(
@@ -863,26 +877,17 @@ export default function WorkoutScreen() {
   const onPickExercise = (ex: Exercise) => {
     const d = disciplineToEnable(ex, disciplines ?? []);
     if (d) enableDisciplineMut.mutate(d);
-    addExerciseMut.mutate(ex.id);
+    addExerciseToWorkout(ex);
   };
 
-  // Мутации логирования — только по mutationKey; fn+оптимистика живут в defaults на QueryClient
-  // (registerWorkoutMutationDefaults), чтобы оффлайн-запись пережила перезапуск (SPEC §4, шаг 2).
   const addSetMut = useMutation<SetRowType, Error, AddSetVars>({ mutationKey: SET_ADD });
   const updateSetMut = useMutation<void, Error, UpdateSetVars>({ mutationKey: SET_UPDATE });
   const deleteSetMut = useMutation<void, Error, DeleteSetVars>({ mutationKey: SET_DELETE });
 
   // убрать упражнение/блок из тренировки целиком (для кластера — все его упражнения)
-  const removeExerciseMut = useMutation({
-    mutationFn: (ids: string[]) => Promise.all(ids.map(deleteWorkoutExercise)).then(() => {}),
-    onSuccess: invalidate,
-  });
+  const removeExerciseMut = useMutation<void, Error, RemoveWeVars>({ mutationKey: WE_REMOVE });
 
-  const moveWorkoutExMut = useMutation({
-    mutationFn: (v: { ids: string[]; orders: number[] }) =>
-      reorderWorkoutExercises(v.ids, v.orders),
-    onSuccess: invalidate,
-  });
+  const moveWorkoutExMut = useMutation<void, Error, ReorderWeVars>({ mutationKey: WE_REORDER });
   // переставить упражнение внутри кластера на dir (-1 вверх / +1 вниз).
   // order_index в тренировке глобальный → переиспользуем существующие слоты группы (не 0..n-1).
   const moveClusterItem = (items: WorkoutExercise[], i: number, dir: number) => {
@@ -891,15 +896,12 @@ export default function WorkoutScreen() {
     const ids = items.map((e) => e.id);
     [ids[i], ids[target]] = [ids[target], ids[i]];
     const orders = items.map((e) => e.order_index).sort((a, b) => a - b);
-    moveWorkoutExMut.mutate({ ids, orders });
+    moveWorkoutExMut.mutate({ workoutId, ids, orders });
   };
 
   const setLoggedMut = useMutation<void, Error, LogSetVars>({ mutationKey: SET_LOG });
 
-  const finishExerciseMut = useMutation({
-    mutationFn: (v: { weId: string; done: boolean }) => setExerciseDone(v.weId, v.done),
-    onSuccess: invalidate,
-  });
+  const finishExerciseMut = useMutation<void, Error, DoneWeVars>({ mutationKey: WE_DONE });
 
   // отметить/снять «подход сделан»; при отметке отдых = разрыв с прошлым сделанным.
   // Авто-отдых по настенным часам осмыслен ТОЛЬКО в живой тренировке. При правке завершённой
@@ -916,13 +918,13 @@ export default function WorkoutScreen() {
     setLoggedMut.mutate({ workoutId, id: set.id, logged: !logged, restSec: rest });
   };
 
-  const finishMut = useMutation({
-    mutationFn: () => finishWorkout(workoutId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['workouts'] });
-      router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
-    },
-  });
+  // Завершить тренировку: запись (ended_at + оптимистика + доживание) — в дефолте WORKOUT_FINISH;
+  // на сводку уходим СРАЗУ, не дожидаясь сети (offline-first), как старт тренировки.
+  const finishMut = useMutation<void, Error, FinishVars>({ mutationKey: WORKOUT_FINISH });
+  const onFinish = () => {
+    finishMut.mutate({ workoutId });
+    router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
+  };
 
   // одно упражнение-карточка (свёрнутая/развёрнутая). nested — внутри кластера (другой фон).
   const exName = (we: WorkoutExercise) =>
@@ -1009,7 +1011,7 @@ export default function WorkoutScreen() {
           )}
           {we.done_at ? (
             <Pressable
-              onPress={() => finishExerciseMut.mutate({ weId: we.id, done: false })}
+              onPress={() => finishExerciseMut.mutate({ workoutId, weId: we.id, done: false })}
               className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
             >
               <Text className="text-sm font-bold text-graphite-100">{t('workout.reopenExercise')}</Text>
@@ -1017,7 +1019,7 @@ export default function WorkoutScreen() {
           ) : (
             <Pressable
               onPress={() => {
-                finishExerciseMut.mutate({ weId: we.id, done: true });
+                finishExerciseMut.mutate({ workoutId, weId: we.id, done: true });
                 setCollapsed((c) => ({ ...c, [key]: true }));
               }}
               className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
@@ -1154,7 +1156,7 @@ export default function WorkoutScreen() {
               <Pressable
                 onPress={() => {
                   const done = !allDone;
-                  g.items.forEach((it) => finishExerciseMut.mutate({ weId: it.id, done }));
+                  g.items.forEach((it) => finishExerciseMut.mutate({ workoutId, weId: it.id, done }));
                   setCollapsed((c) => ({ ...c, [g.key]: done }));
                 }}
                 className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
@@ -1208,7 +1210,7 @@ export default function WorkoutScreen() {
             <Text className="text-2xl text-graphite-300">‹</Text>
           </Pressable>
           <Text className="text-lg font-bold text-graphite-50">{t('workout.title')}</Text>
-          <Pressable disabled={finishMut.isPending} onPress={() => finishMut.mutate()} hitSlop={8}>
+          <Pressable onPress={onFinish} hitSlop={8}>
             <Text className="text-sm font-bold text-accent">{t('workout.finish')}</Text>
           </Pressable>
         </View>
@@ -1264,7 +1266,7 @@ export default function WorkoutScreen() {
         cancelLabel={t('common.cancel')}
         destructive
         onConfirm={() => {
-          if (removeTarget) removeExerciseMut.mutate(removeTarget.ids);
+          if (removeTarget) removeExerciseMut.mutate({ workoutId, ids: removeTarget.ids });
           setRemoveTarget(null);
         }}
         onCancel={() => setRemoveTarget(null)}
