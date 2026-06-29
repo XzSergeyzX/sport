@@ -12,15 +12,26 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const APPLY = process.argv.includes('--apply');
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
 
-const readKey = (f) => (existsSync(join(__dirname, f)) ? readFileSync(join(__dirname, f), 'utf8').trim() : undefined);
-const SR_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || readKey('.service-role-key');
+const readFile = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : undefined);
+// читаем переменную из корневого .env (node сам .env не подхватывает)
+const fromEnvFile = (name) => {
+  const txt = readFile(join(ROOT, '.env'));
+  if (!txt) return undefined;
+  const m = txt.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+)\\s*$`, 'm'));
+  return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined;
+};
+const SR_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  readFile(join(__dirname, '.service-role-key'))?.trim() ||
+  fromEnvFile('SUPABASE_SERVICE_ROLE_KEY');
 if (!SR_KEY) {
-  console.error('✗ Нужен SUPABASE_SERVICE_ROLE_KEY (env) или scripts/.service-role-key');
+  console.error('✗ Нужен SUPABASE_SERVICE_ROLE_KEY: env-переменная, scripts/.service-role-key или строка в .env');
   process.exit(1);
 }
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://sdvegejubjmmlnifvigt.supabase.co';
