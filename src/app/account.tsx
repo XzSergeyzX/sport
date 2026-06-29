@@ -10,13 +10,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
-import {
-  categoryKey,
-  type Discipline,
-  DISCIPLINES,
-  getDisciplines,
-  setDisciplines,
-} from '@/lib/db/exercises';
 import { type Gender, getGender, setGender } from '@/lib/db/profile';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
@@ -102,23 +95,6 @@ export default function AccountScreen() {
   });
 
   const GENDERS: Gender[] = ['male', 'female', 'other', 'na'];
-
-  const { data: disciplines } = useQuery({
-    queryKey: ['disciplines', userId],
-    queryFn: () => getDisciplines(userId as string),
-    enabled: !!userId,
-  });
-  const disciplinesMut = useMutation({
-    mutationFn: (list: string[]) => setDisciplines(userId as string, list),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['disciplines', userId] });
-      qc.invalidateQueries({ queryKey: ['exercises-all'] });
-    },
-  });
-  const toggleDiscipline = (d: Discipline) => {
-    const cur = disciplines ?? [];
-    disciplinesMut.mutate(cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]);
-  };
 
   const [language, setLanguage] = useState<AppLanguage>(
     (i18n.language as AppLanguage) === 'uk' ? 'uk' : 'en',
@@ -241,21 +217,6 @@ export default function AccountScreen() {
         {/* —— Каталог —— */}
         <SectionCaption>{t('account.sectionCatalog')}</SectionCaption>
         <Card>
-          <View className="px-4 pb-4 pt-4">
-            <Text className="text-sm text-graphite-400">{t('account.disciplines')}</Text>
-            <Text className="mb-2 mt-0.5 text-xs text-graphite-500">{t('account.disciplinesHint')}</Text>
-            <View className="flex-row flex-wrap gap-2">
-              {DISCIPLINES.map((d) => (
-                <Chip
-                  key={d}
-                  label={t(categoryKey(d))}
-                  active={(disciplines ?? []).includes(d)}
-                  onPress={() => toggleDiscipline(d)}
-                />
-              ))}
-            </View>
-          </View>
-          <Divider />
           <NavRow
             icon="barbell-outline"
             label={t('account.myExercises')}
