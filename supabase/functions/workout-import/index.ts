@@ -163,12 +163,52 @@ function safeParse(text: string): Parsed {
   return JSON.parse(t) as Parsed;
 }
 
+// Предохранитель от явного бреда поверх смыслового матча модели: терпим к опечаткам/
+// коротким/слитным словам (жемлёжа → Жим лёжа), иначе верный матч отклоняется и
+// плодятся дубль-кастомы; но «млин з гирею» ↔ «турецький підйом» остаётся непохожим.
+function normName(s: string): string {
+  return s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
 function tokens(s: string): string[] {
-  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter((w) => w.length >= 4);
+  return normName(s).split(' ').filter((w) => w.length >= 3);
+}
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = prev[j];
+      prev[j] = a[i - 1] === b[j - 1] ? diag : 1 + Math.min(prev[j], prev[j - 1], diag);
+      diag = tmp;
+    }
+  }
+  return prev[n];
+}
+// два слова «похожи»: равны, длинное содержит короткое (≥4 симв.), либо ~1 опечатка на 4 символа
+function tokenMatch(x: string, y: string): boolean {
+  if (x === y) return true;
+  const short = x.length <= y.length ? x : y;
+  const long = x.length <= y.length ? y : x;
+  if (short.length >= 4 && long.includes(short)) return true;
+  const tol = Math.max(1, Math.floor(Math.max(x.length, y.length) / 4));
+  return editDistance(x, y) <= tol;
 }
 function namesResemble(a: string, b: string): boolean {
+  const ta = tokens(a);
   const tb = tokens(b);
-  for (const x of tokens(a)) for (const y of tb) if (x === y || x.startsWith(y) || y.startsWith(x)) return true;
+  for (const x of ta) for (const y of tb) if (tokenMatch(x, y)) return true;
+  const na = normName(a).replace(/ /g, '');
+  const nb = normName(b).replace(/ /g, '');
+  if (na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na))) return true;
+  if (ta.length === 0 || tb.length === 0) {
+    if (!na || !nb) return false;
+    return editDistance(na, nb) <= Math.max(1, Math.floor(Math.max(na.length, nb.length) / 4));
+  }
   return false;
 }
 
