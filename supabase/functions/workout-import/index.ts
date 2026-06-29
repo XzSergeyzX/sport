@@ -71,7 +71,8 @@ Return ONLY JSON:
           "sets": [
             { "reps": number|null, "duration_sec": number|null, "weight": number|null,
               "rpe": number|null, "side": "left"|"right"|"both"|null, "cheat": boolean|null,
-              "gripper": string|null, "set_type": "tns"|"card"|"block_38"|"block_20"|"deep"|null,
+              "gripper": string|null, "rgc": number|null,
+              "set_type": "tns"|"card"|"block_38"|"block_20"|"deep"|null,
               "notes": string|null }
           ]
         }
@@ -91,6 +92,11 @@ multiplier:
   "права 26, 22 с" → right 26s + right 22s; "ліва 2*22 с" → two left sets of 22s. So "2 подхода,
   правая 26, 22 секунди, левая 2*22 секунди" → right[26s, 22s] + left[22s, 22s] = 4 sets.
 - Anything else (including a "*2"/"x2" multiplier) → side=null.
+- SINGLE-ARM movements — the exercise itself is one-handed ("на одній руці"/"на одной (руке)"/
+  "однією рукою"/"one-arm"/"single-arm"), OR a "на кожну/каждую руку"/"each arm"/"по N на руку"
+  instruction is present → ALWAYS split per hand: emit side="right" AND side="left" sets, NEVER
+  side="both". "N підходів по R раз(ів) на кожну руку" → N right sets of R reps + N left sets of R reps.
+  e.g. "Підтягування на одній, два підходи по 1 разу на кожну руку" → right×1, right×1, left×1, left×1.
 
 SUPERSET LABELS ARE NOT SIDES: short letters/numbers that NAME the exercises of a superset — e.g.
 "Н:" (Натяжка) + "П:" (Пронація), or "1." / "2." — are EXERCISE labels, NOT sides. Keep them as
@@ -120,10 +126,11 @@ OTHER RULES:
   the gripper MODEL, NOT a weight. → name the exercise "Стиснення еспандера" (catalog gripper), ONE set
   per gripper line with weight=null, reps=the closes ("на 3 раза" → reps 3), "gripper"=the model string
   ("Heavy Grips 300"), and "set_type" if a grip setup is named ("дипсет"/"дип-сет"→"deep", "TNS"→"tns",
-  "карта"→"card", "блок 38"→"block_38", "блок 20"→"block_20"). An "RGC"/"ргц" number ("72 rgc") is the
-  gripper's spec — put it in the set "notes", NEVER in weight. KEEP the colour/identifier ("blue",
-  "black", "Gods of Grip") INSIDE the "gripper" model string — it distinguishes same-numbered grippers
-  ("Heavy Grips 300 blue" vs "300 black"); do NOT strip it to notes.
+  "карта"→"card", "блок 38"→"block_38", "блок 20"→"block_20"). An "RGC"/"ргц" number ("72 rgc",
+  "47 RGC") is the gripper's measured load → put it in the set "rgc" field as a NUMBER, NEVER in
+  "weight", NEVER only in "notes". It is how same-model grippers of different strength are told apart
+  (a "Heavy Grips 300" at 72 vs at 74 are two different tools). KEEP the colour/identifier ("blue",
+  "black", "Gods of Grip", "Temu", "filed") INSIDE the "gripper" model string too — do NOT strip it.
 - "name" excludes leading narration verbs ("Поделал"/"Сделал"/"Делал"/"Поробив"/"Did") — keep only the
   movement itself: "Поделал сгибание кисти ручкой на лямках" → "Сгибание кисти ручкой на лямках".
 - catalog_index ONLY when clearly the same movement AND equipment; else null (saved as user's own).
@@ -144,6 +151,7 @@ type PSet = {
   side: 'left' | 'right' | 'both' | null;
   cheat: boolean | null;
   gripper: string | null;   // модель эспандера ("Heavy Grips 300") — для grip-подходов; вес=null
+  rgc: number | null;       // замеренная нагрузка эспандера (кг) — различает одномодельные грипперы
   set_type: string | null;  // установка гриппера: tns|card|block_38|block_20|deep
   notes: string | null;
 };
@@ -256,33 +264,52 @@ Deno.serve(async (req) => {
     // каталог эспандеров (свои + глобальные) для резолва gripper_id по модели из текста
     const { data: gripRows } = await admin
       .from('grippers')
-      .select('id, brand, name, owner_id')
+      .select('id, brand, name, rgc, rgc_unit, owner_id')
       .or(`owner_id.eq.${userId},is_global.eq.true`);
-    type GripRow = { id: string; brand: string | null; name: string; owner_id: string | null };
-    // личные эспандеры — первыми: если у юзера свой "blue", матчим его, а не глобальный из чарта
+    type GripRow = {
+      id: string; brand: string | null; name: string;
+      rgc: number | null; rgc_unit: string | null; owner_id: string | null;
+    };
+    // личные эспандеры — первыми: при равной близости по RGC берём личный, а не глобальный из чарта
     const grippers: GripRow[] = ((gripRows ?? []) as GripRow[]).sort(
       (a, b) => (a.owner_id ? 0 : 1) - (b.owner_id ? 0 : 1),
     );
     const SET_TYPES = ['tns', 'card', 'block_38', 'block_20', 'deep'];
-    const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-    // "Heavy Grips 300 blue" → ищем гриппер (личные первыми). Два прохода:
-    // 1) полное имя содержится в строке; 2) бренд + ключевой токен имени (число «300»),
-    //    чтобы «Heavy Grips 300 (Gods of Grip)» сматчился на «...300 blue».
-    const resolveGripperId = (model: string): string | null => {
-      const m = norm(model);
-      for (const g of grippers) {
-        const b = norm(g.brand ?? '');
-        const n = norm(g.name);
-        if (n && m.includes(n) && (!b || m.includes(b))) return g.id;
-      }
-      // фолбэк по бренд+номер — ТОЛЬКО если однозначно. У юзера бывает несколько «300»
-      // (blue / Gods of Grip), различимых лишь цветом → при неоднозначности не угадываем.
-      const byKey = grippers.filter((g) => {
-        const b = norm(g.brand ?? '');
-        const key = norm(g.name).split(' ')[0]; // «300 (blue)» → «300»
-        return key && b && m.includes(b) && m.includes(key);
+    // кириллические гомоглифы → латиница: юзер пишет «СоС 3», каталог — «CoC #3»
+    const HOMO: Record<string, string> = {
+      а: 'a', в: 'b', е: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
+    };
+    const norm = (s: string) =>
+      s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/[а-я]/g, (c) => HOMO[c] ?? c);
+    const gripTokens = (s: string) => norm(s).split(' ').filter(Boolean);
+    const subset = (a: string[], b: string[]) => a.length > 0 && a.every((t) => b.includes(t));
+    const rgcKg = (g: GripRow) =>
+      g.rgc == null ? null : g.rgc_unit === 'lb' ? g.rgc * 0.453592 : g.rgc;
+    // Резолв модели из текста на гриппер каталога (личные в приоритете). Имя матчится, если набор
+    // токенов одного ⊆ другого В ЛЮБУЮ сторону: «heavy grips 200» ⊆ «heavy grips 200 temu» И наоборот;
+    // «coc 3» = «coc 3» после фолда «#»/кириллицы. Среди совпадений по имени РАЗЛИЧАЕМ по RGC — берём
+    // ближайший к указанному (две CoC #2.5 56/59; три Heavy Grips 300 74/72/72). Без RGC — первый личный.
+    const resolveGripperId = (model: string, rgc: number | null): string | null => {
+      const mt = gripTokens(model);
+      if (!mt.length) return null;
+      const matches = grippers.filter((g) => {
+        const gt = gripTokens(`${g.brand ?? ''} ${g.name}`);
+        return subset(mt, gt) || subset(gt, mt);
       });
-      return byKey.length === 1 ? byKey[0].id : null;
+      if (!matches.length) return null;
+      if (rgc == null) return matches[0].id; // grippers отсортирован: личные первыми
+      let best = matches[0];
+      let bestDiff = Infinity;
+      for (const g of matches) {
+        const gk = rgcKg(g);
+        const diff = gk == null ? Infinity : Math.abs(gk - rgc);
+        // строго ближе ИЛИ так же близко, но личный важнее глобального (best стартует с личного)
+        if (diff < bestDiff || (diff === bestDiff && !!g.owner_id && !best.owner_id)) {
+          best = g;
+          bestDiff = diff;
+        }
+      }
+      return best.id;
     };
     const catalogBlock = catalog.map((c, i) => `${i + 1}. ${c.name_en} / ${c.name_uk}`).join('\n');
 
@@ -395,17 +422,24 @@ Deno.serve(async (req) => {
           const rows = sets.map((s) => {
             const side = s.side === 'left' || s.side === 'right' || s.side === 'both' ? s.side : null;
             const cheat = s.cheat === true;
-            const gripperId = str(s.gripper) ? resolveGripperId(s.gripper!) : null;
+            const isGripSet = !!str(s.gripper);
+            const gripRgc = num(s.rgc);
+            const gripperId = isGripSet ? resolveGripperId(s.gripper!, gripRgc) : null;
             const setType = SET_TYPES.includes(s.set_type ?? '') ? s.set_type : null;
             const meta: Record<string, unknown> = {};
             if (side) meta.side = side;
             if (cheat) meta.cheat = true;
             if (gripperId) meta.gripper_id = gripperId;
+            else if (isGripSet) {
+              // модель не сматчилась на каталог — НЕ теряем её: сохраняем сырьё в мете
+              meta.gripper_model = str(s.gripper);
+              if (gripRgc != null) meta.gripper_rgc = gripRgc;
+            }
             if (setType) meta.set_type = setType;
             return {
               workout_exercise_id: we.id,
               // у гриппера нагрузка = модель (gripper_id), не вес → weight всегда null
-              weight: gripperId ? null : toKg(num(s.weight)),
+              weight: isGripSet ? null : toKg(num(s.weight)),
               reps: num(s.reps),
               duration_sec: num(s.duration_sec),
               rpe: num(s.rpe),
