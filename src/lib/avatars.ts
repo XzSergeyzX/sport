@@ -11,7 +11,14 @@ import type { ImageSourcePropType } from 'react-native';
 export type AvatarPreset = { key: string; source: ImageSourcePropType };
 
 export const AVATARS: AvatarPreset[] = [
-  // сюда — строки пресетов, как только появятся файлы в assets/avatars/
+  { key: 'boy', source: require('../../assets/avatars/boy.png') },
+  { key: 'girl', source: require('../../assets/avatars/girl.png') },
+  { key: 'foxM', source: require('../../assets/avatars/foxM.png') },
+  { key: 'foxF', source: require('../../assets/avatars/foxF.png') },
+  { key: 'cat', source: require('../../assets/avatars/cat.png') },
+  { key: 'dog', source: require('../../assets/avatars/dog.png') },
+  { key: 'panda', source: require('../../assets/avatars/panda.png') },
+  { key: 'gorilla', source: require('../../assets/avatars/gorilla.png') },
 ];
 
 /** Источник картинки по ключу; null — если ключ пуст или пресет не найден (→ инициалы). */
