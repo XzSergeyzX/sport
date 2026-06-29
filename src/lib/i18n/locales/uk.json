@@ -79,6 +79,9 @@
   },
   "account": {
     "title": "Акаунт",
+    "sectionPrefs": "Налаштування",
+    "sectionProfile": "Профіль",
+    "sectionCatalog": "Каталог",
     "trackCycle": "Відстежувати цикл",
     "trackCycleHint": "Показувати день і фазу циклу у Здоров'ї.",
     "myExercises": "Мої вправи",

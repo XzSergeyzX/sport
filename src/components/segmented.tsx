@@ -20,7 +20,7 @@ export function Segmented<T extends string>({
           <Pressable
             key={option.value}
             onPress={() => onChange(option.value)}
-            className={`flex-1 items-center rounded-xl py-3 ${selected ? 'bg-graphite-100' : ''}`}
+            className={`flex-1 items-center rounded-xl py-3 ${selected ? 'bg-accent' : ''}`}
           >
             <Text
               className={`text-base font-semibold ${selected ? 'text-graphite-950' : 'text-graphite-300'}`}

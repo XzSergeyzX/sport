@@ -79,6 +79,9 @@
   },
   "account": {
     "title": "Account",
+    "sectionPrefs": "Preferences",
+    "sectionProfile": "Profile",
+    "sectionCatalog": "Catalog",
     "trackCycle": "Track cycle",
     "trackCycleHint": "Show menstrual cycle day & phase in Health.",
     "myExercises": "My exercises",
