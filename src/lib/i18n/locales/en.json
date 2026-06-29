@@ -82,6 +82,8 @@
     "sectionPrefs": "Preferences",
     "sectionProfile": "Profile",
     "sectionCatalog": "Catalog",
+    "avatarTitle": "Avatar",
+    "avatarDefault": "Initials",
     "trackCycle": "Track cycle",
     "trackCycleHint": "Show menstrual cycle day & phase in Health.",
     "myExercises": "My exercises",

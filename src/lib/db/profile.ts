@@ -18,3 +18,18 @@ export async function setGender(userId: string, gender: Gender, self?: string | 
     .eq('user_id', userId);
   if (error) throw error;
 }
+
+/** Ключ выбранного пресета-аватарки (см. src/lib/avatars.ts). NULL = инициалы. */
+export async function getAvatar(userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('profile')
+    .select('avatar')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data?.avatar ?? null;
+}
+
+export async function setAvatar(userId: string, key: string | null): Promise<void> {
+  const { error } = await supabase.from('profile').update({ avatar: key }).eq('user_id', userId);
+  if (error) throw error;
+}

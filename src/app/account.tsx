@@ -3,28 +3,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
+import { AVATARS } from '@/lib/avatars';
 import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
-import { type Gender, getGender, setGender } from '@/lib/db/profile';
+import { getAvatar, type Gender, getGender, setAvatar, setGender } from '@/lib/db/profile';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
-
-// инициалы из email для кружка-аватара
-function initials(email?: string | null): string {
-  const local = (email ?? '').trim().split('@')[0];
-  if (!local) return '?';
-  const parts = local.split(/[._-]+/).filter(Boolean);
-  const chars = parts.length >= 2 ? parts[0][0] + parts[1][0] : local.slice(0, 2);
-  return chars.toUpperCase();
-}
 
 // заголовок группы (iOS-style) над карточкой
 function SectionCaption({ children }: { children: React.ReactNode }) {
@@ -94,6 +87,22 @@ export default function AccountScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['track-cycle', userId] }),
   });
 
+  const { data: avatar } = useQuery({
+    queryKey: ['avatar', userId],
+    queryFn: () => getAvatar(userId as string),
+    enabled: !!userId,
+  });
+  const avatarMut = useMutation({
+    mutationFn: (key: string | null) => setAvatar(userId as string, key),
+    onError: () => qc.invalidateQueries({ queryKey: ['avatar', userId] }), // откат оптимистики
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const chooseAvatar = (key: string | null) => {
+    qc.setQueryData(['avatar', userId], key); // оптимистично — кружок меняется сразу
+    avatarMut.mutate(key);
+    setPickerOpen(false);
+  };
+
   const GENDERS: Gender[] = ['male', 'female', 'other', 'na'];
 
   const [language, setLanguage] = useState<AppLanguage>(
@@ -130,11 +139,14 @@ export default function AccountScreen() {
           <Text className="flex-1 text-2xl font-extrabold text-graphite-50">{t('account.title')}</Text>
         </View>
 
-        {/* блок идентичности: аватар-инициалы + email */}
+        {/* блок идентичности: аватар (тап → выбор) + email */}
         <View className="mt-5 flex-row items-center rounded-2xl bg-graphite-900 p-4">
-          <View className="h-12 w-12 items-center justify-center rounded-full bg-graphite-800">
-            <Text className="text-lg font-bold text-accent">{initials(session?.user.email)}</Text>
-          </View>
+          <Pressable onPress={() => setPickerOpen(true)} hitSlop={6} className="active:opacity-70">
+            <Avatar email={session?.user.email} avatarKey={avatar} size={48} />
+            <View className="absolute -bottom-1 -right-1 h-5 w-5 items-center justify-center rounded-full border-2 border-graphite-900 bg-accent">
+              <Ionicons name="pencil" size={10} color="#0B0F14" />
+            </View>
+          </Pressable>
           <Text className="ml-3 flex-1 text-base font-semibold text-graphite-100" numberOfLines={1}>
             {session?.user.email ?? '—'}
           </Text>
@@ -251,6 +263,53 @@ export default function AccountScreen() {
         }}
         onCancel={() => setPendingSignOut(false)}
       />
+
+      <Modal
+        visible={pickerOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Pressable
+          className="flex-1 justify-end"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onPress={() => setPickerOpen(false)}
+        >
+          {/* стоп-проп: тап по самому листу не закрывает */}
+          <Pressable onPress={() => {}} className="rounded-t-3xl bg-graphite-900 px-5 pb-10 pt-5">
+            <Text className="text-lg font-bold text-graphite-50">{t('account.avatarTitle')}</Text>
+            <View className="mt-4 flex-row flex-wrap gap-4">
+              <Pressable onPress={() => chooseAvatar(null)} className="items-center active:opacity-70">
+                <View
+                  style={{
+                    borderWidth: 2,
+                    borderColor: avatar ? 'transparent' : '#1FB89A',
+                    borderRadius: 999,
+                    padding: 2,
+                  }}
+                >
+                  <Avatar email={session?.user.email} avatarKey={null} size={56} />
+                </View>
+                <Text className="mt-1 text-xs text-graphite-500">{t('account.avatarDefault')}</Text>
+              </Pressable>
+              {AVATARS.map((a) => (
+                <Pressable key={a.key} onPress={() => chooseAvatar(a.key)} className="active:opacity-70">
+                  <View
+                    style={{
+                      borderWidth: 2,
+                      borderColor: avatar === a.key ? '#1FB89A' : 'transparent',
+                      borderRadius: 999,
+                      padding: 2,
+                    }}
+                  >
+                    <Avatar avatarKey={a.key} size={56} />
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
