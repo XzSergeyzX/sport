@@ -306,7 +306,7 @@ export default function ExercisesScreen() {
   if (!initializing && !session) return <Redirect href="/auth" />;
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} className="flex-1 bg-graphite-950">
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-row items-center px-6 pt-4">
         <Pressable onPress={() => router.back()} className="pr-4 active:opacity-60">

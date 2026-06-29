@@ -90,7 +90,7 @@ export default function AccountScreen() {
   if (!initializing && !session) return <Redirect href="/auth" />;
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} className="flex-1 bg-graphite-950">
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 }}

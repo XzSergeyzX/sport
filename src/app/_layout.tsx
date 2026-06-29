@@ -57,6 +57,13 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
             <Stack.Screen name="auth" options={{ gestureEnabled: false }} />
             <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+            {/* Настройки/аккаунт: поднимаются над таб-UI снизу, а не горизонтальный слайд
+                всего таб-навигатора (тогда нижний бар уезжал вбок — выглядело сломано).
+                gesture off: убираем «недосвайп» вбок, назад — кнопкой «‹» / системной. */}
+            <Stack.Screen
+              name="account"
+              options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
+            />
           </Stack>
           <StatusBar style={colorScheme === 'light' ? 'dark' : 'light'} />
         </AuthProvider>
