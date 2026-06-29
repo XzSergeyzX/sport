@@ -84,7 +84,9 @@
     "myExercises": "My exercises",
     "disciplines": "Exercises in the catalog",
     "disciplinesHint": "Pick what shows in the exercise list. Anything off is still found by search.",
-    "myGrippers": "My grippers"
+    "myGrippers": "My grippers",
+    "signOutConfirmTitle": "Sign out?",
+    "signOutConfirmMsg": "You'll need to sign in again to sync your training."
   },
   "gender": {
     "title": "Sex",

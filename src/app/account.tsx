@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
@@ -37,6 +38,7 @@ export default function AccountScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['gender', userId] }),
   });
   const [genderSelf, setGenderSelf] = useState('');
+  const [pendingSignOut, setPendingSignOut] = useState(false);
 
   const { data: trackCycle } = useQuery({
     queryKey: ['track-cycle', userId],
@@ -219,12 +221,26 @@ export default function AccountScreen() {
         </Pressable>
 
         <Pressable
-          onPress={onSignOut}
-          className="mt-10 items-center rounded-2xl border border-graphite-700 py-4 active:opacity-70"
+          onPress={() => setPendingSignOut(true)}
+          className="mt-10 items-center rounded-2xl border border-red-900 py-4 active:opacity-70"
         >
-          <Text className="text-base font-semibold text-graphite-300">{t('home.signOut')}</Text>
+          <Text className="text-base font-semibold text-red-400">{t('home.signOut')}</Text>
         </Pressable>
       </ScrollView>
+
+      <ConfirmDialog
+        visible={pendingSignOut}
+        title={t('account.signOutConfirmTitle')}
+        message={t('account.signOutConfirmMsg')}
+        confirmLabel={t('home.signOut')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          setPendingSignOut(false);
+          void onSignOut();
+        }}
+        onCancel={() => setPendingSignOut(false)}
+      />
     </SafeAreaView>
   );
 }
