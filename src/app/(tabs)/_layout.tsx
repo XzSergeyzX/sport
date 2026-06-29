@@ -1,15 +1,19 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '@/lib/auth/auth-context';
 
 const ACTIVE = '#1FB89A';
 const INACTIVE = '#5C6675';
 
-function icon(glyph: string) {
-  return ({ color }: { color: string }) => (
-    <Text style={{ fontSize: 20, color, lineHeight: 24 }}>{glyph}</Text>
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+// Единый набор Ionicons (outline) вместо эмодзи: красятся active/inactive-цветом
+// (эмодзи tint игнорировали) и согласованы между собой.
+function icon(name: IoniconName) {
+  return ({ color, size }: { color: string; size: number }) => (
+    <Ionicons name={name} size={size ?? 22} color={color} />
   );
 }
 
@@ -43,22 +47,28 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="workouts"
-        options={{ title: t('tabs.workouts'), tabBarIcon: icon('🏋️') }}
+        options={{ title: t('tabs.workouts'), tabBarIcon: icon('barbell-outline') }}
       />
       <Tabs.Screen
         name="programs"
-        options={{ title: t('tabs.programs'), tabBarIcon: icon('📋') }}
+        options={{ title: t('tabs.programs'), tabBarIcon: icon('clipboard-outline') }}
       />
       <Tabs.Screen
         name="coach"
-        options={{ title: t('tabs.coach'), tabBarIcon: icon('🧠'), tabBarHideOnKeyboard: true }}
+        options={{
+          title: t('tabs.coach'),
+          tabBarIcon: icon('chatbubble-ellipses-outline'),
+          tabBarHideOnKeyboard: true,
+        }}
       />
       <Tabs.Screen
         name="analytics"
-        options={{ title: t('tabs.analytics'), tabBarIcon: icon('📈') }}
+        options={{ title: t('tabs.analytics'), tabBarIcon: icon('stats-chart-outline') }}
       />
-      <Tabs.Screen name="health" options={{ title: t('tabs.health'), tabBarIcon: icon('❤️') }} />
-      <Tabs.Screen name="account" options={{ title: t('tabs.account'), tabBarIcon: icon('👤') }} />
+      <Tabs.Screen
+        name="health"
+        options={{ title: t('tabs.health'), tabBarIcon: icon('heart-outline') }}
+      />
     </Tabs>
   );
 }

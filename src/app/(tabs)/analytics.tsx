@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getLoggedSets, type LoggedSet } from '@/lib/db/analytics';
 import {
@@ -795,7 +796,10 @@ export default function AnalyticsScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: 32 }}>
-        <Text className="text-2xl font-extrabold text-graphite-50">{t('analytics.title')}</Text>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-2xl font-extrabold text-graphite-50">{t('analytics.title')}</Text>
+          <SettingsButton />
+        </View>
 
         {isLoading ? (
           <View className="mt-10 items-center">

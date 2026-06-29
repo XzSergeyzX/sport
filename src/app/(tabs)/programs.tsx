@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { deleteProgram, importProgram, listPrograms } from '@/lib/db/programs';
 
@@ -61,7 +62,10 @@ export default function ProgramsScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <ScrollView className="flex-1 px-6 pt-4" keyboardShouldPersistTaps="handled">
-        <Text className="text-2xl font-extrabold text-graphite-50">{t('programs.title')}</Text>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-2xl font-extrabold text-graphite-50">{t('programs.title')}</Text>
+          <SettingsButton />
+        </View>
 
         {!open ? (
           <Pressable

@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { SettingsButton } from '@/components/settings-button';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth/auth-context';
 import { WORKOUT_START } from '@/lib/db/workout-mutations';
@@ -111,7 +112,10 @@ export default function WorkoutsScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <View className="flex-1 px-6 pt-4">
-        <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
+          <SettingsButton />
+        </View>
 
         <SyncStatus />
 

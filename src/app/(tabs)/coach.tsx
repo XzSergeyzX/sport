@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   type CoachMessage,
@@ -231,9 +232,12 @@ export default function CoachScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <View className="border-b border-graphite-800 px-6 pb-3 pt-4">
-        <Text className="text-xl font-extrabold text-graphite-50">{t('coach.title')}</Text>
-        <Text className="mt-0.5 text-xs text-graphite-500">{t('coach.subtitle')}</Text>
+      <View className="flex-row items-start justify-between border-b border-graphite-800 px-6 pb-3 pt-4">
+        <View className="flex-1 pr-3">
+          <Text className="text-xl font-extrabold text-graphite-50">{t('coach.title')}</Text>
+          <Text className="mt-0.5 text-xs text-graphite-500">{t('coach.subtitle')}</Text>
+        </View>
+        <SettingsButton />
       </View>
 
       <KeyboardAvoidingView

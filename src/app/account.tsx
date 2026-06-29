@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
@@ -24,7 +24,7 @@ export default function AccountScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
-  const { session, signOut } = useAuth();
+  const { session, initializing, signOut } = useAuth();
   const userId = session?.user.id;
 
   const { data: gender } = useQuery({
@@ -86,6 +86,9 @@ export default function AccountScreen() {
     router.replace('/');
   };
 
+  // self-guard: экран теперь вне (tabs), своего гейта сессии у него нет (как в exercises/grippers)
+  if (!initializing && !session) return <Redirect href="/auth" />;
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <ScrollView
@@ -93,7 +96,12 @@ export default function AccountScreen() {
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <Text className="text-2xl font-extrabold text-graphite-50">{t('account.title')}</Text>
+        <View className="flex-row items-center">
+          <Pressable onPress={() => router.back()} hitSlop={10} className="pr-4 active:opacity-60">
+            <Text className="text-2xl text-graphite-300">‹</Text>
+          </Pressable>
+          <Text className="flex-1 text-xl font-extrabold text-graphite-50">{t('account.title')}</Text>
+        </View>
         {session?.user.email && (
           <Text className="mt-1 text-sm text-graphite-400">{session.user.email}</Text>
         )}
