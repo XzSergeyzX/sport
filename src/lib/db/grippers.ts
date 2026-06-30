@@ -29,6 +29,13 @@ export function rgcInKg(g: Gripper): number | null {
   return g.rgc_unit === 'lb' ? g.rgc / LB_PER_KG : g.rgc;
 }
 
+/** RGC в выбранной единице (для предзаполнения формы из каталога метрически). */
+export function rgcInUnit(g: Gripper, unit: 'kg' | 'lb'): number | null {
+  const kg = rgcInKg(g);
+  if (kg == null) return null;
+  return unit === 'lb' ? kg * LB_PER_KG : kg;
+}
+
 /** Каталог для выбора: личные + глобальные (личные первыми, дальше по бренду и RGC). */
 export async function listGripperCatalog(userId: string): Promise<Gripper[]> {
   const { data, error } = await supabase
@@ -45,15 +52,20 @@ export async function listGripperCatalog(userId: string): Promise<Gripper[]> {
   });
 }
 
-/** Только свои эспандеры (для экрана управления). */
+/** Только свои эспандеры (для экрана управления). Сортировка: по RGC в кг ↑, затем по имени
+ *  (чтобы список читался по силе, а не по хронологии добавления). Без RGC — в конец. */
 export async function listMyGrippers(userId: string): Promise<Gripper[]> {
   const { data, error } = await supabase
     .from('grippers')
     .select('*')
-    .eq('owner_id', userId)
-    .order('created_at');
+    .eq('owner_id', userId);
   if (error) throw error;
-  return (data ?? []) as Gripper[];
+  return ((data ?? []) as Gripper[]).sort((a, b) => {
+    const ka = rgcInKg(a) ?? Infinity;
+    const kb = rgcInKg(b) ?? Infinity;
+    if (ka !== kb) return ka - kb;
+    return gripperName(a).localeCompare(gripperName(b));
+  });
 }
 
 export async function addGripper(userId: string, input: GripperInput): Promise<Gripper> {
@@ -93,9 +105,15 @@ export function gripperName(g: Gripper): string {
   return g.brand ? `${g.brand} ${g.name}` : g.name;
 }
 
-/** Подпись для списков/выбора: «CoC #2 · 103 lb». */
-export function gripperLabel(g: Gripper): string {
+/** Подпись для списков/выбора. Первичная единица — выбранная в приложении (по умолч. кг),
+ *  вторая в скобках: «CoC #3 · 67 kg (148 lb)». RGC хранится как замерили (kg или lb) —
+ *  показываем нормализованно, чтобы метрический юзер видел кг даже у lb-замеренных. */
+export function gripperLabel(g: Gripper, unit: 'kg' | 'lb' = 'kg'): string {
   const base = gripperName(g);
   if (g.rgc == null) return base;
-  return `${base} · ${g.rgc} ${g.rgc_unit}`;
+  const kg = rgcInKg(g) as number;
+  const lb = kg * LB_PER_KG;
+  const primary = unit === 'kg' ? `${Math.round(kg)} kg` : `${Math.round(lb)} lb`;
+  const secondary = unit === 'kg' ? `${Math.round(lb)} lb` : `${Math.round(kg)} kg`;
+  return `${base} · ${primary} (${secondary})`;
 }

@@ -6,14 +6,12 @@ import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SettingsButton } from '@/components/settings-button';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth/auth-context';
 import { WORKOUT_START } from '@/lib/db/workout-mutations';
 import {
   buildEmptyWorkout,
-  deleteWorkout,
   importPastWorkout,
   listWorkoutSummaries,
   summarizeWorkout,
@@ -69,12 +67,6 @@ export default function WorkoutsScreen() {
     router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
   };
 
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const deleteMut = useMutation({
-    mutationFn: (workoutId: string) => deleteWorkout(workoutId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workouts', userId] }),
-  });
-
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
@@ -112,7 +104,14 @@ export default function WorkoutsScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <View className="flex-1 px-6 pt-4">
+      {/* единый ScrollView: шапка скроллится вместе со списком — нет «обрезанной» карточки под
+          статичным заголовком (раньше заголовок был зафиксирован, а список — вложенный ScrollView) */}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-row items-center justify-between">
           <Text className="text-2xl font-extrabold text-graphite-50">{t('home.title')}</Text>
           <SettingsButton />
@@ -209,7 +208,7 @@ export default function WorkoutsScreen() {
         ) : !workouts?.length ? (
           <Text className="text-base text-graphite-400">{t('home.empty')}</Text>
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
+          <View className="gap-3">
             {list.map((w, idx) => {
               const done = !!w.ended_at;
               const num = total - idx; // абсолютний номер тренування (свіжа = найбільший) від ПОВНОГО списку
@@ -235,13 +234,11 @@ export default function WorkoutsScreen() {
                       <Text className="text-xs font-bold text-graphite-600">№{num}  </Text>
                       {humanDate(w.started_at, locale)}
                     </Text>
-                    <View className="flex-row items-center gap-3">
+                    <View className="flex-row items-center gap-2">
                       {!done && (
                         <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
                       )}
-                      <Pressable onPress={() => setPendingDelete(w.id)} hitSlop={10}>
-                        <Ionicons name="trash-outline" size={18} color="#5C6675" />
-                      </Pressable>
+                      <Ionicons name="chevron-forward" size={16} color="#3A3F49" />
                     </View>
                   </View>
                   <Text className="mt-1 text-sm text-graphite-400">{counts}</Text>
@@ -253,23 +250,9 @@ export default function WorkoutsScreen() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
         )}
-      </View>
-
-      <ConfirmDialog
-        visible={!!pendingDelete}
-        title={t('home.deleteTitle')}
-        message={t('home.deleteWarn')}
-        confirmLabel={t('home.delete')}
-        cancelLabel={t('common.cancel')}
-        destructive
-        onConfirm={() => {
-          if (pendingDelete) deleteMut.mutate(pendingDelete);
-          setPendingDelete(null);
-        }}
-        onCancel={() => setPendingDelete(null)}
-      />
+      </ScrollView>
     </SafeAreaView>
   );
 }

@@ -76,7 +76,7 @@ function buildMetrics(s: HealthSnapshot | null | undefined): Metric[] {
 
 function MetricCard({ m, onPress }: { m: Metric; onPress: () => void }) {
   const { t } = useTranslation();
-  const hasRef = i18n.exists(`health.ref.${m.key}.what`);
+  const hasRef = i18n.exists(`health.ref.${m.key}.range`);
   return (
     <Pressable
       onPress={hasRef ? onPress : undefined}
@@ -86,9 +86,13 @@ function MetricCard({ m, onPress }: { m: Metric; onPress: () => void }) {
         <Text className="text-2xl font-extrabold text-graphite-50">{m.value}</Text>
         {m.unit ? <Text className="ml-1 text-xs text-graphite-500">{t(`health.units.${m.unit}`)}</Text> : null}
       </View>
-      <Text className="mt-1 text-xs text-graphite-400">{t(`health.metrics.${m.key}`)}</Text>
+      <Text className="mt-1 text-xs font-medium text-graphite-300">{t(`health.metrics.${m.key}`)}</Text>
+      {/* короткое описание/норма прямо на карточке (раньше было «тапни, щоб прочитати» ×10).
+          тап по карточке всё ещё открывает полное пояснення (что это + диапазон). */}
       {hasRef ? (
-        <Text className="mt-2 text-[10px] uppercase tracking-wide text-graphite-600">{t('health.tapInfo')}</Text>
+        <Text className="mt-1.5 text-[11px] leading-4 text-graphite-500" numberOfLines={3}>
+          {t(`health.ref.${m.key}.range`)}
+        </Text>
       ) : null}
     </Pressable>
   );

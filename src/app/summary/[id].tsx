@@ -1,14 +1,17 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
 import { gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getBodyweight } from '@/lib/db/profile';
 import {
+  deleteWorkout,
   getWorkoutDetail,
   isClusteredWorkoutExercise,
   type WorkoutExercise,
@@ -58,6 +61,16 @@ export default function SummaryScreen() {
     queryKey: ['bodyweight', session?.user.id],
     queryFn: () => getBodyweight(session!.user.id),
     enabled: !!session,
+  });
+
+  const qc = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const deleteMut = useMutation({
+    mutationFn: () => deleteWorkout(workoutId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workouts', session?.user.id] });
+      router.replace('/workouts');
+    },
   });
 
   if (!initializing && !session) return <Redirect href="/auth" />;
@@ -243,6 +256,14 @@ export default function SummaryScreen() {
             );
           })}
         </View>
+
+        {/* удаление спрятано внизу сводки (а не корзиной на каждой карточке списка) */}
+        <Pressable
+          onPress={() => setPendingDelete(true)}
+          className="items-center py-1 active:opacity-70"
+        >
+          <Text className="text-sm font-semibold text-red-400">{t('home.delete')}</Text>
+        </Pressable>
       </ScrollView>
 
       <View className="flex-row gap-3 px-6 pb-6 pt-2">
@@ -259,6 +280,20 @@ export default function SummaryScreen() {
           <Text className="text-base font-bold text-graphite-950">{t('summary.done')}</Text>
         </Pressable>
       </View>
+
+      <ConfirmDialog
+        visible={pendingDelete}
+        title={t('home.deleteTitle')}
+        message={t('home.deleteWarn')}
+        confirmLabel={t('home.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          setPendingDelete(false);
+          deleteMut.mutate();
+        }}
+        onCancel={() => setPendingDelete(false)}
+      />
     </SafeAreaView>
   );
 }

@@ -15,8 +15,10 @@ import {
   gripperName,
   listGripperCatalog,
   listMyGrippers,
+  rgcInUnit,
   updateGripper,
 } from '@/lib/db/grippers';
+import { useWeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
 
@@ -37,9 +39,10 @@ function EditGripper({
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const appUnit = useWeightUnit();
   const [name, setName] = useState(gripper?.name ?? '');
   const [rgc, setRgc] = useState(gripper?.rgc?.toString() ?? '');
-  const [unit, setUnit] = useState<'kg' | 'lb'>(gripper?.rgc_unit ?? 'kg');
+  const [unit, setUnit] = useState<'kg' | 'lb'>(gripper?.rgc_unit ?? appUnit);
   const [search, setSearch] = useState('');
 
   // каталог брендов — только при добавлении (для выбора из спарсенного списка)
@@ -55,10 +58,12 @@ function EditGripper({
       return q.length > 0 && gripperName(g).toLowerCase().includes(q);
     })
     .slice(0, 40);
+  // из каталога подставляем среднее в ЕДИНИЦЕ ПРИЛОЖЕНИЯ (метрический юзер видит кг, а не чартовые фунты)
   const pickFromCatalog = (g: Gripper) => {
     setName(gripperName(g));
-    setRgc(g.rgc?.toString() ?? '');
-    setUnit(g.rgc_unit);
+    const v = rgcInUnit(g, appUnit);
+    setRgc(v != null ? String(Math.round(v)) : '');
+    setUnit(appUnit);
     setSearch('');
   };
 
@@ -108,7 +113,7 @@ function EditGripper({
                       onPress={() => pickFromCatalog(g)}
                       className="border-b border-graphite-800 py-2.5 active:opacity-70"
                     >
-                      <Text className="text-base text-graphite-100">{gripperLabel(g)}</Text>
+                      <Text className="text-base text-graphite-100">{gripperLabel(g, appUnit)}</Text>
                     </Pressable>
                   ))}
                   {matches.length === 0 && (
@@ -180,6 +185,7 @@ export default function GrippersScreen() {
   const router = useRouter();
   const { session, initializing } = useAuth();
   const userId = session?.user.id;
+  const unit = useWeightUnit();
   const [editing, setEditing] = useState<Gripper | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -214,7 +220,7 @@ export default function GrippersScreen() {
                 onPress={() => setEditing(g)}
                 className="mb-2 flex-row items-center justify-between rounded-2xl bg-graphite-900 p-4 active:opacity-80"
               >
-                <Text className="flex-1 text-base font-semibold text-graphite-100">{gripperLabel(g)}</Text>
+                <Text className="flex-1 text-base font-semibold text-graphite-100">{gripperLabel(g, unit)}</Text>
                 <Text className="ml-2 text-graphite-600">✎</Text>
               </Pressable>
             ))
