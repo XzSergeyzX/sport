@@ -82,6 +82,8 @@
     "sectionPrefs": "Налаштування",
     "sectionProfile": "Профіль",
     "sectionCatalog": "Каталог",
+    "bodyweight": "Вага тіла",
+    "bodyweightHint": "Береться як навантаження для підтягувань, брусів та інших вправ з власною вагою.",
     "avatarTitle": "Аватар",
     "avatarDefault": "Ініціали",
     "trackCycle": "Відстежувати цикл",

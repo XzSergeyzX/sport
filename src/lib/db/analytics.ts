@@ -13,13 +13,13 @@ export type LoggedSet = {
   workout_exercises: {
     exercise_id: string;
     display_name: string | null;
-    exercises: { name_en: string; name_uk: string; cluster: Cluster | null } | null;
+    exercises: { name_en: string; name_uk: string; cluster: Cluster | null; bodyweight_load: boolean } | null;
     workouts: { id: string; started_at: string; ended_at: string | null } | null;
   } | null;
 };
 
 const SELECT =
-  'weight, reps, duration_sec, rpe, meta, workout_exercises!inner(exercise_id, display_name, exercises(name_en, name_uk, cluster), workouts!inner(id, started_at, ended_at))';
+  'weight, reps, duration_sec, rpe, meta, workout_exercises!inner(exercise_id, display_name, exercises(name_en, name_uk, cluster, bodyweight_load), workouts!inner(id, started_at, ended_at))';
 
 /** Все залогированные подходы пользователя (с пагинацией — не упираемся в лимит строк). */
 export async function getLoggedSets(): Promise<LoggedSet[]> {

@@ -17,12 +17,17 @@ import {
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
 import { listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
+import { getBodyweight } from '@/lib/db/profile';
 import i18n from '@/lib/i18n';
 import { formatWeight, fromKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 // оценка 1ПМ по О'Коннору: вес × (1 + 0.025 × повторы) — честнее (ниже Эпли).
 // для сингла (1 повтор) оценка = сам вес: один раз и есть твой максимум, накручивать нечего.
 const oneRmEst = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + 0.025 * reps));
+
+// «весо-телесное» упражнение (подтягивания/брусья/пистолет): в тоннаж идёт вес тела + доп.вес
+const bwLoad = (r: LoggedSet) => !!r.workout_exercises?.exercises?.bodyweight_load;
+const effWeight = (r: LoggedSet, bwKg: number) => (r.weight ?? 0) + (bwLoad(r) ? bwKg : 0);
 
 type TonnagePoint = { date: string; tonnage: number };
 type RepRec = { kind: 'reps'; weight: number; reps: number; oneRm: number; date: string; cheat?: boolean };
@@ -59,7 +64,7 @@ type Acc = {
   time: Map<string, TimeRec>;
 };
 
-function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>) {
+function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>, bwKg: number) {
   const exMap = new Map<string, Acc>();
   const wkTonnage = new Map<string, TonnagePoint>();
   const wkDur = new Map<string, number>(); // минуты на тренировку
@@ -139,10 +144,11 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
         if (!prev || date < prev.date)
           ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date, cheat });
       }
-      // тоннаж — только с «чистых» силовых подходов (без статики), поведение прежнее
-      if (r.duration_sec == null && r.weight != null && r.reps != null) {
+      // тоннаж — с «чистых» силовых подходов (без статики): вес×повторы ИЛИ вес тела×повторы
+      // для весо-телесных (подтягивания и т.п., где weight=null, но нагрузка = собственный вес)
+      if (r.duration_sec == null && r.reps != null && (r.weight != null || bwLoad(r))) {
         const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
-        tn.tonnage += r.weight * r.reps * volMult;
+        tn.tonnage += effWeight(r, bwKg) * r.reps * volMult;
         wkTonnage.set(wk.id, tn);
       }
     }
@@ -395,6 +401,7 @@ function analyzeCorrelation(
   snaps: HealthSnapshot[],
   starts: string[],
   rangeDays: number,
+  bwKg: number,
 ): Correlation {
   const fromYmd = ymdDaysAgo(rangeDays - 1);
   const wk = new Map<string, { date: string; tonnage: number; rpeSum: number; rpeN: number }>();
@@ -408,8 +415,8 @@ function analyzeCorrelation(
       e = { date, tonnage: 0, rpeSum: 0, rpeN: 0 };
       wk.set(w.id, e);
     }
-    if (r.weight != null && r.reps != null && r.duration_sec == null)
-      e.tonnage += r.weight * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
+    if (r.reps != null && r.duration_sec == null && (r.weight != null || bwLoad(r)))
+      e.tonnage += effWeight(r, bwKg) * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
     if (r.rpe != null) {
       e.rpeSum += r.rpe;
       e.rpeN += 1;
@@ -703,6 +710,14 @@ export default function AnalyticsScreen() {
     queryFn: () => listGripperCatalog(userId as string),
     enabled: !!userId,
   });
+
+  // вес тела — для тоннажа весо-телесных упражнений (подтягивания/брусья/пистолет)
+  const { data: bodyweight } = useQuery({
+    queryKey: ['bodyweight', userId],
+    queryFn: () => getBodyweight(userId as string),
+    enabled: !!userId,
+  });
+  const bwKg = bodyweight ?? 0;
   const gripMap = useMemo(() => {
     const m = new Map<string, GripInfo>();
     for (const g of grippers ?? []) m.set(g.id, { rgcKg: rgcInKg(g), name: g.name });
@@ -718,11 +733,11 @@ export default function AnalyticsScreen() {
     },
   });
 
-  const a = useMemo(() => analyze(rows ?? [], lang, gripMap), [rows, lang, gripMap]);
+  const a = useMemo(() => analyze(rows ?? [], lang, gripMap, bwKg), [rows, lang, gripMap, bwKg]);
   const recovery = useMemo(() => analyzeRecovery(snaps ?? [], range), [snaps, range]);
   const corr = useMemo(
-    () => analyzeCorrelation(rows ?? [], snaps ?? [], cycleStarts ?? [], range),
-    [rows, snaps, cycleStarts, range],
+    () => analyzeCorrelation(rows ?? [], snaps ?? [], cycleStarts ?? [], range, bwKg),
+    [rows, snaps, cycleStarts, range, bwKg],
   );
 
   const dayInfo = useMemo(() => {
@@ -744,12 +759,12 @@ export default function AnalyticsScreen() {
         m.get(d) ??
         ({ workout: false, tonnage: 0, readiness: null, sleep: null, phase: phaseForDate(d, starts) } as DayInfo);
       e.workout = true;
-      if (r.weight != null && r.reps != null && r.duration_sec == null)
-        e.tonnage += r.weight * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
+      if (r.reps != null && r.duration_sec == null && (r.weight != null || bwLoad(r)))
+        e.tonnage += effWeight(r, bwKg) * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
       m.set(d, e);
     }
     return m;
-  }, [snaps, rows, cycleStarts]);
+  }, [snaps, rows, cycleStarts, bwKg]);
   const startsSet = useMemo(() => new Set(cycleStarts ?? []), [cycleStarts]);
   const unitLabel = t(`common.${unit}`);
   const secShort = t('workout.secShort');

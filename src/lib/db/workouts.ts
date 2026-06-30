@@ -369,14 +369,17 @@ export type WorkoutStats = {
   durationMin: number | null;
 };
 
-/** Метрики тренировки — считаем локально для мгновенной пост-тренировочной сводки. */
-export function workoutStats(w: WorkoutDetail): WorkoutStats {
+/** Метрики тренировки — считаем локально для мгновенной пост-тренировочной сводки.
+ *  bodyweightKg: вес тела (кг) для весо-телесных упражнений; 0 = не учитывать (совпадает со старым). */
+export function workoutStats(w: WorkoutDetail, bodyweightKg = 0): WorkoutStats {
   let tonnage = 0;
   let sets = 0;
   let reps = 0;
   let holdSec = 0;
   let exercises = 0;
   for (const we of w.workout_exercises ?? []) {
+    // нагрузка/повтор для весо-телесных = доп.вес + вес тела (1:1 с SQL-вью workout_summaries)
+    const bw = we.exercise?.bodyweight_load ? bodyweightKg : 0;
     let anyDone = false;
     for (const s of we.sets ?? []) {
       if (!s.logged_at) continue; // невыполненные подходы не считаем
@@ -386,7 +389,7 @@ export function workoutStats(w: WorkoutDetail): WorkoutStats {
       sets += 1;
       reps += (s.reps ?? 0) * mult;
       holdSec += (s.duration_sec ?? 0) * mult;
-      tonnage += (s.weight ?? 0) * (s.reps ?? 0) * mult;
+      tonnage += ((s.weight ?? 0) + bw) * (s.reps ?? 0) * mult;
     }
     if (anyDone) exercises += 1;
   }

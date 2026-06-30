@@ -12,10 +12,18 @@ import { Segmented } from '@/components/segmented';
 import { useAuth } from '@/lib/auth/auth-context';
 import { AVATARS } from '@/lib/avatars';
 import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
-import { getAvatar, type Gender, getGender, setAvatar, setGender } from '@/lib/db/profile';
+import {
+  getAvatar,
+  getBodyweight,
+  type Gender,
+  getGender,
+  setAvatar,
+  setBodyweight,
+  setGender,
+} from '@/lib/db/profile';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
-import { useWeightUnit, type WeightUnit } from '@/lib/use-unit';
+import { formatWeight, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -103,12 +111,31 @@ export default function AccountScreen() {
     setPickerOpen(false);
   };
 
+  const unit = useWeightUnit();
+  // вес тела (храним в кг; вводим/показываем в выбранной единице) — для тоннажа подтягиваний и т.п.
+  const { data: bodyweight } = useQuery({
+    queryKey: ['bodyweight', userId],
+    queryFn: () => getBodyweight(userId as string),
+    enabled: !!userId,
+  });
+  const bwMut = useMutation({
+    mutationFn: (kg: number | null) => setBodyweight(userId as string, kg),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bodyweight', userId] }),
+  });
+  const [bwText, setBwText] = useState<string | null>(null); // null = не редактируется, берём из БД
+  const bwDisplay = bwText ?? (bodyweight != null ? formatWeight(bodyweight, unit) : '');
+  const saveBodyweight = () => {
+    if (bwText == null) return; // не трогали поле
+    const n = parseFloat(bwText.replace(',', '.'));
+    bwMut.mutate(bwText.trim() === '' || Number.isNaN(n) ? null : toKg(n, unit));
+    setBwText(null);
+  };
+
   const GENDERS: Gender[] = ['male', 'female', 'other', 'na'];
 
   const [language, setLanguage] = useState<AppLanguage>(
     (i18n.language as AppLanguage) === 'uk' ? 'uk' : 'en',
   );
-  const unit = useWeightUnit();
 
   const onChangeLanguage = (next: AppLanguage) => {
     setLanguage(next);
@@ -183,6 +210,27 @@ export default function AccountScreen() {
         {/* —— Профіль —— */}
         <SectionCaption>{t('account.sectionProfile')}</SectionCaption>
         <Card>
+          <View className="flex-row items-center px-4 py-4">
+            <View className="flex-1 pr-4">
+              <Text className="text-base font-medium text-graphite-100">{t('account.bodyweight')}</Text>
+              <Text className="mt-0.5 text-xs text-graphite-500">{t('account.bodyweightHint')}</Text>
+            </View>
+            <View className="flex-row items-center">
+              <TextInput
+                value={bwDisplay}
+                onChangeText={setBwText}
+                onEndEditing={saveBodyweight}
+                onBlur={saveBodyweight}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                placeholder="—"
+                placeholderTextColor="#5C6675"
+                className="w-20 rounded-xl bg-graphite-800 px-3 py-2 text-right text-base text-graphite-50"
+              />
+              <Text className="ml-2 w-7 text-sm text-graphite-500">{t(`common.${unit}`)}</Text>
+            </View>
+          </View>
+          <Divider />
           <View className="px-4 pb-4 pt-4">
             <Text className="mb-2 text-sm text-graphite-400">{t('gender.title')}</Text>
             <View className="flex-row flex-wrap gap-2">

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
 import { gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
+import { getBodyweight } from '@/lib/db/profile';
 import {
   getWorkoutDetail,
   isClusteredWorkoutExercise,
@@ -52,6 +53,12 @@ export default function SummaryScreen() {
     enabled: !!session,
   });
   const gripMap = new Map((grippers ?? []).map((g) => [g.id, g]));
+  // вес тела — для тоннажа весо-телесных упражнений (подтягивания/брусья/пистолет)
+  const { data: bodyweight } = useQuery({
+    queryKey: ['bodyweight', session?.user.id],
+    queryFn: () => getBodyweight(session!.user.id),
+    enabled: !!session,
+  });
 
   if (!initializing && !session) return <Redirect href="/auth" />;
 
@@ -63,7 +70,7 @@ export default function SummaryScreen() {
     );
   }
 
-  const s = workoutStats(workout);
+  const s = workoutStats(workout, bodyweight ?? 0);
   const unitLabel = t(`common.${unit}`);
 
   // группируем детали по блокам (кластеры EMOM/E2MOM/суперсети — вместе, как в тренировке)

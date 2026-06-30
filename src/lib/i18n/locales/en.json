@@ -82,6 +82,8 @@
     "sectionPrefs": "Preferences",
     "sectionProfile": "Profile",
     "sectionCatalog": "Catalog",
+    "bodyweight": "Body weight",
+    "bodyweightHint": "Used as the load for pull-ups, dips and other bodyweight moves.",
     "avatarTitle": "Avatar",
     "avatarDefault": "Initials",
     "trackCycle": "Track cycle",

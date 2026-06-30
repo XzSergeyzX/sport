@@ -44,6 +44,7 @@ export type Exercise = {
   log_kind: string | null; // null=обычная форма, 'gripper'=поля эспандера
   is_global: boolean;
   unilateral: boolean; // одностороннее (есть выбор стороны ліва/права/обидві)
+  bodyweight_load: boolean; // «честное» весо-телесное (подтягивания/брусья/пистолет): нагрузка = вес тела + доп.вес
 };
 
 // «есть сторона»: явный флаг unilateral, иначе эвристика (хват / one-arm / wrist / однією рукою…)
