@@ -26,10 +26,7 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
-      ],
-      "runtimeVersion": {
-        "policy": "appVersion"
-      }
+      ]
     },
     "web": {
       "output": "single",
@@ -65,6 +62,9 @@
     },
     "updates": {
       "url": "https://u.expo.dev/eaccb3d3-2a8f-4fb4-9e1e-d78c05cbde80"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
