@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 
@@ -20,6 +21,7 @@ function icon(name: IoniconName) {
 export default function TabsLayout() {
   const { t } = useTranslation();
   const { session, initializing } = useAuth();
+  const insets = useSafeAreaInsets();
 
   // Гард: на табы можно попасть прямым deep-link (скан QR), минуя гейт index.tsx.
   // Без сессии — выкидываем на вход, иначе экраны грузятся «без пользователя».
@@ -38,9 +40,14 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: ACTIVE,
         tabBarInactiveTintColor: INACTIVE,
+        // нижний инсет в отступ (а не впритык к системному бару Android) + сам бар тянется
+        // под навбар тем же цветом → иконки «дышат», не выглядит как схлопнутая панель
         tabBarStyle: {
           backgroundColor: '#16191F',
           borderTopColor: '#23272F',
+          height: 58 + insets.bottom,
+          paddingBottom: insets.bottom + 6,
+          paddingTop: 6,
         },
         tabBarLabelStyle: { fontSize: 11 },
       }}

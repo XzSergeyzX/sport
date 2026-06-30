@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { exerciseName } from '@/lib/db/exercises';
 import { gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getBodyweight } from '@/lib/db/profile';
+import { pluralCount } from '@/lib/plural';
 import {
   deleteWorkout,
   getWorkoutDetail,
@@ -137,7 +138,7 @@ export default function SummaryScreen() {
               .join('  ·  ');
             const meta = [
               m.set_type && i18n.exists(`setTypes.${m.set_type}`) ? t(`setTypes.${m.set_type}`) : null,
-              `× ${set.reps ?? '–'}`,
+              set.reps != null ? pluralCount(t, lang, 'reps', set.reps) : null,
               set.rpe != null ? `RPE ${set.rpe}` : null,
               set.rest_sec != null ? fmtRest(set.rest_sec) : null,
               m.side ? t(`workout.side_${m.side}`) : null,
@@ -160,14 +161,19 @@ export default function SummaryScreen() {
             );
           }
 
-          // Обычный подход: вес × повторы / секунды + теги — одной строкой справа, с переносом.
+          // Обычный подход: эффективная нагрузка (доп.вес + вес тела для весо-телесных) × повторы /
+          // секунды + теги. Подтягивания и т.п.: weight=null, но показываем вес тела (как в тоннаже).
+          const addBw = we.exercise?.bodyweight_load ? (bodyweight ?? 0) : 0;
+          const effKg = (set.weight ?? 0) + addBw;
+          const hasLoad = set.weight != null || addBw > 0;
+          const wStr = formatWeight(effKg, unit);
           const main =
             set.duration_sec != null
-              ? `${set.weight != null ? `${formatWeight(set.weight, unit)} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
+              ? `${hasLoad ? `${wStr} ${unitLabel} · ` : ''}${set.duration_sec}${t('workout.secShort')}`
               : set.reps != null
-                ? `${set.weight != null ? formatWeight(set.weight, unit) : '–'} ${unitLabel} × ${set.reps}`
-                : set.weight != null
-                  ? `${formatWeight(set.weight, unit)} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
+                ? `${hasLoad ? wStr : '–'} ${unitLabel} × ${set.reps}`
+                : hasLoad
+                  ? `${wStr} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
                   : '–';
           const tags =
             (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
