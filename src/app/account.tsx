@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Constants from 'expo-constants';
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
+import * as Updates from 'expo-updates';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -122,13 +124,15 @@ export default function AccountScreen() {
     mutationFn: (kg: number | null) => setBodyweight(userId as string, kg),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bodyweight', userId] }),
   });
-  const [bwText, setBwText] = useState<string | null>(null); // null = не редактируется, берём из БД
-  const bwDisplay = bwText ?? (bodyweight != null ? formatWeight(bodyweight, unit) : '');
+  // поле — обычный controlled-инпут; когда НЕ в фокусе, синкаем из БД (без мигания от null-трюка).
+  const [bwText, setBwText] = useState('');
+  const [bwFocused, setBwFocused] = useState(false);
+  useEffect(() => {
+    if (!bwFocused) setBwText(bodyweight != null ? formatWeight(bodyweight, unit) : '');
+  }, [bodyweight, unit, bwFocused]);
   const saveBodyweight = () => {
-    if (bwText == null) return; // не трогали поле
     const n = parseFloat(bwText.replace(',', '.'));
     bwMut.mutate(bwText.trim() === '' || Number.isNaN(n) ? null : toKg(n, unit));
-    setBwText(null);
   };
 
   const GENDERS: Gender[] = ['male', 'female', 'other', 'na'];
@@ -217,10 +221,13 @@ export default function AccountScreen() {
             </View>
             <View className="flex-row items-center">
               <TextInput
-                value={bwDisplay}
+                value={bwText}
                 onChangeText={setBwText}
-                onEndEditing={saveBodyweight}
-                onBlur={saveBodyweight}
+                onFocus={() => setBwFocused(true)}
+                onBlur={() => {
+                  setBwFocused(false);
+                  saveBodyweight();
+                }}
                 keyboardType="decimal-pad"
                 returnKeyType="done"
                 placeholder="—"
@@ -296,6 +303,11 @@ export default function AccountScreen() {
         >
           <Text className="text-base font-semibold text-red-400">{t('home.signOut')}</Text>
         </Pressable>
+
+        {/* версия/OTA — чтобы видеть, что реально стоит на устройстве (id меняется после eas update) */}
+        <Text className="mt-6 text-center text-[11px] text-graphite-700">
+          v{Constants.expoConfig?.version ?? '?'} · {Updates.updateId ? Updates.updateId.slice(0, 8) : 'embedded'}
+        </Text>
       </ScrollView>
 
       <ConfirmDialog

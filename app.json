@@ -6,7 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sportysm",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
+    "androidNavigationBar": {
+      "barStyle": "light-content",
+      "backgroundColor": "#16191F"
+    },
     "ios": {
       "icon": "./assets/expo.icon"
     },
