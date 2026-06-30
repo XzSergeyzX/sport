@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -122,7 +123,7 @@ export default function WorkoutsScreen() {
         {total > 0 && (
           <Text className="mt-2 text-sm text-graphite-400">
             {t('home.thisWeek')}: {pluralCount(t, lang, 'workouts', weekList.length)}
-            {weekTonnage > 0 ? ` · ${Math.round(weekTonnage)} ${unitLabel}` : ''}
+            {weekTonnage > 0 ? ` · ${Math.round(fromKg(weekTonnage, unit) ?? 0)} ${unitLabel}` : ''}
           </Text>
         )}
 
@@ -137,7 +138,7 @@ export default function WorkoutsScreen() {
                 {humanDate(active.started_at, locale)}
               </Text>
             </View>
-            <Text className="text-xl text-accent">▸</Text>
+            <Ionicons name="chevron-forward" size={20} color="#1FB89A" />
           </Pressable>
         )}
 
@@ -239,7 +240,7 @@ export default function WorkoutsScreen() {
                         <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
                       )}
                       <Pressable onPress={() => setPendingDelete(w.id)} hitSlop={10}>
-                        <Text className="text-base" style={{ opacity: 0.35 }}>🗑</Text>
+                        <Ionicons name="trash-outline" size={18} color="#5C6675" />
                       </Pressable>
                     </View>
                   </View>
