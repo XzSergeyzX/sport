@@ -383,6 +383,7 @@ function SetRow({
   grippers,
   onSave,
   onToggleDone,
+  onAutoLog,
   onDelete,
   headerLabel,
   sided = false,
@@ -396,6 +397,7 @@ function SetRow({
   grippers: Gripper[];
   onSave: (id: string, input: SetInput) => void;
   onToggleDone: (set: SetRowType) => void;
+  onAutoLog: (set: SetRowType) => void;
   onDelete: (id: string) => void;
   headerLabel?: string;
   sided?: boolean; // показывать выбор стороны (односторонние / хват), для двусторонних — нет
@@ -444,6 +446,9 @@ function SetRow({
       return;
     }
     save();
+    // ввёл повторы/сек → подход автоматически «зроблений» (иначе без тапа ✓ он не в зачёте
+    // тоннажа/счётчиков → «завершив, а всё 0»). Явный ✓ по-прежнему считает отдых.
+    if (!done && parseNum(amount) != null) onAutoLog(set);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weight, amount]);
 
@@ -781,6 +786,11 @@ export default function WorkoutScreen() {
   // Авто-отдых по настенным часам осмыслен ТОЛЬКО в живой тренировке. При правке завершённой
   // (есть ended_at) переотметка идёт «сегодня» → разрыв с подходом недельной давности = бред
   // («бешеное время отдыха»). В этом случае не пересчитываем, а сохраняем уже записанный rest_sec.
+  // авто-отметка при вводе значения: помечаем «зроблено» БЕЗ пересчёта отдыха (отдых —
+  // осознанное действие через ✓/RPE). Идемпотентно: если уже logged — не трогаем.
+  const markSetLogged = (set: SetRowType) => {
+    if (!set.logged_at) setLoggedMut.mutate({ workoutId, id: set.id, logged: true, restSec: null });
+  };
   const onToggleDone = (set: SetRowType) => {
     const logged = !!set.logged_at;
     const live = !workout?.ended_at;
@@ -879,6 +889,7 @@ export default function WorkoutScreen() {
             locked={!!we.done_at}
             onSave={(setId, input) => updateSetMut.mutate({ workoutId, id: setId, input })}
             onToggleDone={onToggleDone}
+            onAutoLog={markSetLogged}
             onDelete={(setId) => deleteSetMut.mutate({ workoutId, setId })}
           />
         ))}
@@ -1021,6 +1032,7 @@ export default function WorkoutScreen() {
                         locked={allDone}
                         onSave={(setId, input) => updateSetMut.mutate({ workoutId, id: setId, input })}
                         onToggleDone={onToggleDone}
+                        onAutoLog={markSetLogged}
                         onDelete={(setId) => deleteSetMut.mutate({ workoutId, setId })}
                       />
                     );
