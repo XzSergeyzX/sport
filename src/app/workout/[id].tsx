@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -434,6 +434,18 @@ function SetRow({
       meta: Object.keys(nextMeta).length > 0 ? nextMeta : undefined,
     });
   };
+  // коммитим вес/повторы «на лету» при каждом изменении — НЕ зависим от blur/onEndEditing
+  // (Keyboard.dismiss их не триггерит надёжно). Поэтому «завершити» никогда не теряет
+  // введённое: к моменту тапа значение уже записано. Первый рендер пропускаем.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weight, amount]);
 
   // переключить режим этого подхода reps⟷сек: введённое число переезжает в нужную колонку,
   // вторая обнуляется (save с явным timeMode, т.к. setState асинхронен).
