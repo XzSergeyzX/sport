@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   type KeyboardTypeOptions,
   Modal,
   Pressable,
@@ -19,8 +20,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SyncStatus } from '@/components/sync-status';
 
 import {
-  categoryKey,
-  clusterKey,
   createCustomExercise,
   disciplineToEnable,
   enableDiscipline,
@@ -30,22 +29,18 @@ import {
   getDisciplines,
   GRIP_SET_TYPES,
   type GripMeta,
-  groupByCluster,
-  isVisible,
-  listExercises,
-  matchExercise,
   type Metric,
   type SetSide,
 } from '@/lib/db/exercises';
 import { type Gripper, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
-  getRecentExercises,
   getWorkoutDetail,
   isClusteredWorkoutExercise,
   type SetInput,
   type SetRow as SetRowType,
   type WorkoutExercise,
 } from '@/lib/db/workouts';
+import { ExercisePicker } from '@/components/exercise-picker';
 import { useAuth } from '@/lib/auth/auth-context';
 import { newId } from '@/lib/db/ids';
 import {
@@ -632,139 +627,6 @@ function SetRow({
   );
 }
 
-function ExercisePicker({
-  visible,
-  disciplines,
-  onClose,
-  onSelect,
-  onCreate,
-  creating,
-}: {
-  visible: boolean;
-  disciplines: string[];
-  onClose: () => void;
-  onSelect: (ex: Exercise) => void;
-  onCreate: (name: string) => void;
-  creating: boolean;
-}) {
-  const { t } = useTranslation();
-  const lang = i18n.language;
-  const [term, setTerm] = useState('');
-  const searching = term.trim() !== '';
-  const { data, isFetching } = useQuery({
-    queryKey: ['exercises-all'],
-    queryFn: listExercises,
-    enabled: visible,
-  });
-  const { data: recent } = useQuery({
-    queryKey: ['exercises-recent'],
-    queryFn: () => getRecentExercises(8),
-    enabled: visible,
-  });
-
-  // сбрасываем поиск при каждом открытии — заново то же упражнение почти не выбирают
-  useEffect(() => {
-    if (visible) setTerm('');
-  }, [visible]);
-
-  const groups = useMemo(() => {
-    const all = data ?? [];
-    // поиск пробивает всё; просмотр — только база + включённые дисциплины + свои
-    const filtered = searching
-      ? all.filter((ex) => matchExercise(ex, term))
-      : all.filter((ex) => isVisible(ex, disciplines));
-    return groupByCluster(filtered);
-  }, [data, term, searching, disciplines]);
-
-  const row = (ex: (typeof groups)[number]['items'][number]) => (
-    <Pressable
-      key={ex.id}
-      onPress={() => onSelect(ex)}
-      className="flex-row items-center justify-between border-b border-graphite-800 py-3 active:opacity-70"
-    >
-      <Text className="flex-1 text-base text-graphite-100">{exerciseName(ex, lang)}</Text>
-      <Text className="ml-3 text-xs text-graphite-500">
-        {ex.is_global ? t(categoryKey(ex.category)) : t('workout.userAdded')}
-      </Text>
-    </Pressable>
-  );
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-        <SafeAreaView
-          edges={['bottom']}
-          className="rounded-t-3xl bg-graphite-900 px-5 pt-4"
-          style={{ maxHeight: '80%' }}
-        >
-          <View className="flex-row items-center gap-3">
-            <TextInput
-              value={term}
-              onChangeText={setTerm}
-              placeholder={t('workout.search')}
-              placeholderTextColor={PLACEHOLDER}
-              returnKeyType="search"
-              className="flex-1 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
-            />
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Text className="text-sm text-graphite-400">{t('common.cancel')}</Text>
-            </Pressable>
-          </View>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            className="mt-3"
-            contentContainerStyle={{ paddingBottom: 24 }}
-          >
-            {isFetching && <ActivityIndicator color="#848D9A" />}
-
-            {searching && (
-              <Pressable
-                onPress={() => onCreate(term.trim())}
-                disabled={creating}
-                className="mb-2 flex-row items-center gap-2 rounded-xl bg-graphite-800 px-3 py-3 active:opacity-80"
-              >
-                {creating ? (
-                  <ActivityIndicator color="#848D9A" />
-                ) : (
-                  <>
-                    <Text className="text-base text-accent">＋</Text>
-                    <Text className="flex-1 text-base text-graphite-100">
-                      {t('workout.createCustom', { name: term.trim() })}
-                    </Text>
-                  </>
-                )}
-              </Pressable>
-            )}
-
-            {!isFetching && !searching && groups.length === 0 && (
-              <Text className="text-base text-graphite-400">{t('workout.noResults')}</Text>
-            )}
-
-            {!searching && recent && recent.length > 0 && (
-              <View className="mb-2">
-                <Text className="mb-1 mt-2 text-xs font-bold uppercase tracking-wide text-graphite-500">
-                  {t('workout.frequent')}
-                </Text>
-                {recent.map((ex) => row(ex))}
-              </View>
-            )}
-
-            {groups.map((g) => (
-              <View key={g.cluster ?? 'other'} className="mb-2">
-                <Text className="mb-1 mt-2 text-xs font-bold uppercase tracking-wide text-graphite-500">
-                  {t(clusterKey(g.cluster))}
-                </Text>
-                {g.items.map((ex) => row(ex))}
-              </View>
-            ))}
-          </ScrollView>
-        </SafeAreaView>
-      </View>
-    </Modal>
-  );
-}
-
 type WGroup = {
   key: string;
   label: string | null;
@@ -921,9 +783,18 @@ export default function WorkoutScreen() {
   // Завершить тренировку: запись (ended_at + оптимистика + доживание) — в дефолте WORKOUT_FINISH;
   // на сводку уходим СРАЗУ, не дожидаясь сети (offline-first), как старт тренировки.
   const finishMut = useMutation<void, Error, FinishVars>({ mutationKey: WORKOUT_FINISH });
+  // любое «завершення» (тренування/вправу/кластер) сначала блюрит сфокусированный инпут →
+  // onEndEditing→save (durable) успевает записать последнее введённое, потом уже действие.
+  // Иначе значение в фокусе терялось при коллапсе/навигации (как отмечал Сергей).
+  const flushThen = (fn: () => void) => {
+    Keyboard.dismiss();
+    requestAnimationFrame(fn);
+  };
   const onFinish = () => {
-    finishMut.mutate({ workoutId });
-    router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
+    flushThen(() => {
+      finishMut.mutate({ workoutId });
+      router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
+    });
   };
 
   // одно упражнение-карточка (свёрнутая/развёрнутая). nested — внутри кластера (другой фон).
@@ -1018,10 +889,12 @@ export default function WorkoutScreen() {
             </Pressable>
           ) : (
             <Pressable
-              onPress={() => {
-                finishExerciseMut.mutate({ workoutId, weId: we.id, done: true });
-                setCollapsed((c) => ({ ...c, [key]: true }));
-              }}
+              onPress={() =>
+                flushThen(() => {
+                  finishExerciseMut.mutate({ workoutId, weId: we.id, done: true });
+                  setCollapsed((c) => ({ ...c, [key]: true }));
+                })
+              }
               className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
             >
               <Text className="text-sm font-bold text-graphite-100">{t('workout.finishExercise')}</Text>
@@ -1154,11 +1027,13 @@ export default function WorkoutScreen() {
                 </Pressable>
               )}
               <Pressable
-                onPress={() => {
-                  const done = !allDone;
-                  g.items.forEach((it) => finishExerciseMut.mutate({ workoutId, weId: it.id, done }));
-                  setCollapsed((c) => ({ ...c, [g.key]: done }));
-                }}
+                onPress={() =>
+                  flushThen(() => {
+                    const done = !allDone;
+                    g.items.forEach((it) => finishExerciseMut.mutate({ workoutId, weId: it.id, done }));
+                    setCollapsed((c) => ({ ...c, [g.key]: done }));
+                  })
+                }
                 className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
               >
                 <Text className="text-sm font-bold text-graphite-100">

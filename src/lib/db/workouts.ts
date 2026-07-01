@@ -116,6 +116,7 @@ export async function persistStartedWorkout(d: WorkoutDetail): Promise<void> {
       weight: s.weight,
       reps: s.reps,
       duration_sec: s.duration_sec,
+      meta: s.meta ?? null, // сторона (side) из плана программы должна дожить до сервера
     })),
   );
   if (setRows.length) {

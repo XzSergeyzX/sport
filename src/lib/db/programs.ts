@@ -15,6 +15,7 @@ export type ProgramSet = {
   target_rpe: number | null;
   rest_sec: number | null;
   notes: string | null;
+  meta: Record<string, unknown> | null; // сторона (side) и пр. per-set дескрипторы плана
 };
 
 export type ProgramExercise = {
@@ -107,6 +108,85 @@ export async function listPrograms(userId: string): Promise<Program[]> {
   return (data ?? []) as Program[];
 }
 
+/** Максимум программ на юзера — гигиена хранилища (SPEC §5, 📦-хотспот): без ручного лимита
+ *  юзеры засыпят БД шаблонами. Пресеты-шаблоны (глобальные) под кап не попадают. */
+export const MAX_USER_PROGRAMS = 3;
+
+/**
+ * Создать пустую программу вручную (без ИИ). Enforce кап на число программ юзера —
+ * при достижении бросает 'program_cap' (UI показывает подсказку). Ветка «ручной конструктор»:
+ * упражнения потом добавляются из каталога (addProgramExercise) → exercise_id всегда проставлен,
+ * т.е. эти программы иммунны к null-дропу в buildWorkoutFromProgram (в отличие от ИИ-импорта).
+ */
+export async function createProgram(userId: string, title: string): Promise<string> {
+  const { count, error: cErr } = await supabase
+    .from('programs')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+  if (cErr) throw cErr;
+  if ((count ?? 0) >= MAX_USER_PROGRAMS) throw new Error('program_cap');
+
+  const { data, error } = await supabase
+    .from('programs')
+    .insert({ user_id: userId, title: title.trim().slice(0, 200) || title, source: 'manual' })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+/** Добавить упражнение из каталога в программу (ручной конструктор). blockId=null → standalone,
+ *  иначе — внутрь кластер-блока (суперсет/EMOM/AMRAP). */
+export async function addProgramExercise(
+  programId: string,
+  exerciseId: string,
+  name: string,
+  orderIndex: number,
+  blockId: string | null = null,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('program_exercises')
+    .insert({
+      program_id: programId,
+      block_id: blockId,
+      exercise_id: exerciseId,
+      name: name.trim().slice(0, 200),
+      order_index: orderIndex,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+/** Создать кластер-блок (суперсет/EMOM/E2MOM/AMRAP) в программе — ручной конструктор. */
+export async function createProgramBlock(
+  programId: string,
+  patch: {
+    type: string;
+    label?: string | null;
+    rounds?: number | null;
+    interval_sec?: number | null;
+    duration_sec?: number | null;
+    rest_sec?: number | null;
+  },
+  orderIndex: number,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('program_blocks')
+    .insert({ program_id: programId, order_index: orderIndex, ...patch })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+/** Удалить блок (каскадом — его упражнения через FK on delete cascade). */
+export async function deleteProgramBlock(id: string): Promise<void> {
+  const { error } = await supabase.from('program_blocks').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getProgramDetail(id: string): Promise<ProgramDetail> {
   const { data, error } = await supabase
     .from('programs')
@@ -133,7 +213,9 @@ export function groupProgram(detail: ProgramDetail): ProgramGroup[] {
     const exercises = detail.program_exercises
       .filter((pe) => pe.block_id === block.id)
       .sort(byOrder);
-    if (!exercises.length) continue;
+    // пустой кластер-блок всё равно показываем (шапка) — в ручном конструкторе его только что
+    // создали и заполняют; пустой «single»-блок пропускаем (нечего показывать)
+    if (!exercises.length && !isClusterBlock(block)) continue;
     // настоящий кластер — одной группой; «single»-блок — каждое упражнение само по себе (без шапки)
     if (isClusterBlock(block)) groups.push({ block, exercises });
     else for (const ex of exercises) groups.push({ block: null, exercises: [ex] });
@@ -189,16 +271,26 @@ export async function reorderProgramExercises(
 }
 
 /** Плановый подход: добавить / изменить / удалить (редактирование программы). */
-export async function addProgramSet(programExerciseId: string, orderIndex: number): Promise<void> {
+export async function addProgramSet(
+  programExerciseId: string,
+  orderIndex: number,
+  id: string = newId(),
+): Promise<void> {
+  // id принимаем извне → оптимистичная строка в кэше и реальная вставка совпадают по id
   const { error } = await supabase
     .from('program_sets')
-    .insert({ program_exercise_id: programExerciseId, order_index: orderIndex });
+    .insert({ id, program_exercise_id: programExerciseId, order_index: orderIndex });
   if (error) throw error;
 }
 
 export async function updateProgramSet(
   id: string,
-  patch: { target_reps?: number | null; target_weight?: number | null; target_duration_sec?: number | null },
+  patch: {
+    target_reps?: number | null;
+    target_weight?: number | null;
+    target_duration_sec?: number | null;
+    meta?: Record<string, unknown> | null;
+  },
 ): Promise<void> {
   const { error } = await supabase.from('program_sets').update(patch).eq('id', id);
   if (error) throw error;
@@ -248,8 +340,12 @@ export function buildWorkoutFromProgram(
   for (const group of groupProgram(detail)) {
     const block = group.block;
     const isCluster = isClusterBlock(block);
-    // EMOM/E2MOM: круги = длительность ÷ интервал ÷ кол-во упражнений; иначе rounds или 1
-    const repeat = isCluster ? blockRounds(block!, group.exercises.length) : 1;
+    // суперсет: подходы заданы ЯВНО (каждый = круг, пирамида 12/10/8) → без умножения.
+    // EMOM/E2MOM/rounds: у упражнения один per-round таргет → умножаем на круги.
+    const repeat =
+      isCluster && block!.type !== 'superset'
+        ? blockRounds(block!, group.exercises.length)
+        : 1;
 
     for (const pe of group.exercises) {
       if (!pe.exercise_id) continue; // без привязки к каталогу в тренировку не добавить
@@ -268,7 +364,7 @@ export function buildWorkoutFromProgram(
             rest_sec: null,
             rpe: null,
             note: null,
-            meta: null,
+            meta: ps ? ps.meta : null, // переносим сторону/дескрипторы плана в тренировку
             completed_at: now,
             logged_at: null, // префилл-план, ещё не сделан
           });

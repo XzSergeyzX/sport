@@ -8,7 +8,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
-import { deleteProgram, importProgram, listPrograms } from '@/lib/db/programs';
+import {
+  createProgram,
+  deleteProgram,
+  importProgram,
+  listPrograms,
+  MAX_USER_PROGRAMS,
+} from '@/lib/db/programs';
 
 const PLACEHOLDER = '#848D9A';
 
@@ -59,6 +65,25 @@ export default function ProgramsScreen() {
     },
   });
 
+  // ручной конструктор: создаём пустую программу и сразу открываем её в edit-режиме на добавление
+  const createMut = useMutation({
+    mutationFn: () => createProgram(userId as string, t('programs.newProgramTitle')),
+    onSuccess: (id) => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['programs', userId] });
+      router.push({ pathname: '/program/[id]', params: { id, edit: '1' } });
+    },
+    onError: (e: Error) => {
+      setError(
+        e.message === 'program_cap'
+          ? t('programs.errCap', { max: MAX_USER_PROGRAMS })
+          : `${t('programs.errGeneric')} (${e.message})`,
+      );
+    },
+  });
+
+  const atCap = (programs?.length ?? 0) >= MAX_USER_PROGRAMS;
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <ScrollView className="flex-1 px-6 pt-4" keyboardShouldPersistTaps="handled">
@@ -68,12 +93,39 @@ export default function ProgramsScreen() {
         </View>
 
         {!open ? (
-          <Pressable
-            onPress={() => setOpen(true)}
-            className="mt-5 items-center rounded-2xl bg-accent py-4 active:opacity-80"
-          >
-            <Text className="text-base font-bold text-graphite-950">{t('programs.importCta')}</Text>
-          </Pressable>
+          <View className="mt-5 gap-3">
+            <View className="flex-row gap-3">
+              <Pressable
+                disabled={atCap || createMut.isPending}
+                onPress={() => createMut.mutate()}
+                className="flex-1 items-center rounded-2xl bg-accent py-4 active:opacity-80"
+                style={{ opacity: atCap ? 0.5 : 1 }}
+              >
+                {createMut.isPending ? (
+                  <ActivityIndicator color="#0C0E12" />
+                ) : (
+                  <Text className="text-base font-bold text-graphite-950">{t('programs.createCta')}</Text>
+                )}
+              </Pressable>
+              <Pressable
+                disabled={atCap}
+                onPress={() => {
+                  setError(null);
+                  setOpen(true);
+                }}
+                className="flex-1 items-center rounded-2xl border border-graphite-700 py-4 active:opacity-70"
+                style={{ opacity: atCap ? 0.5 : 1 }}
+              >
+                <Text className="text-base font-bold text-graphite-200">{t('programs.importCta')}</Text>
+              </Pressable>
+            </View>
+            {atCap && (
+              <Text className="text-xs text-graphite-500">
+                {t('programs.capHint', { max: MAX_USER_PROGRAMS })}
+              </Text>
+            )}
+            {error && <Text className="text-sm text-red-400">{error}</Text>}
+          </View>
         ) : (
           <View className="mt-5 rounded-2xl bg-graphite-900 p-5">
             <Text className="text-base font-semibold text-graphite-100">{t('programs.importTitle')}</Text>

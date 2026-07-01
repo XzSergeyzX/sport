@@ -53,7 +53,8 @@ type ExRecords = {
   reps: RepRec[];
   time: TimeRec[];
   headline: number;
-  headlineKind: 'reps' | 'time';
+  // 'timeWeight' = взвешенное удержание (щипковый хват): рекорд = макс ВЕС, не длительность
+  headlineKind: 'reps' | 'time' | 'timeWeight';
 };
 type RecordGroup = { cluster: Cluster | null; exercises: ExRecords[] };
 
@@ -161,11 +162,24 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
   const exList: ExRecords[] = [];
   for (const [id, ex] of exMap) {
     const reps = [...ex.reps.values()].sort((a, b) => b.oneRm - a.oneRm).slice(0, 5);
-    const time = [...ex.time.values()].sort((a, b) => b.sec - a.sec).slice(0, 5);
+    // взвешенное удержание → ранг по ВЕСУ (сколько оторвал), длительность — тайбрейк/показ;
+    // телесное (планка, weight=null → 0) → по секундам (компаратор проваливается на .sec)
+    const time = [...ex.time.values()]
+      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0) || b.sec - a.sec)
+      .slice(0, 5);
     if (reps.length === 0 && time.length === 0) continue;
-    // заголовок секции — приоритет вес×повторы (оценка 1ПМ), иначе лучшее время
-    const headlineKind: 'reps' | 'time' = reps.length ? 'reps' : 'time';
-    const headline = reps.length ? reps[0].oneRm : time[0].sec;
+    // заголовок: приоритет вес×повторы (1ПМ); иначе взвешенное удержание → макс вес; иначе время
+    const timeWeighted = time.length > 0 && time[0].weight != null;
+    const headlineKind: 'reps' | 'time' | 'timeWeight' = reps.length
+      ? 'reps'
+      : timeWeighted
+        ? 'timeWeight'
+        : 'time';
+    const headline = reps.length
+      ? reps[0].oneRm
+      : timeWeighted
+        ? (time[0].weight as number)
+        : time[0].sec;
     exList.push({ id, name: ex.name, cluster: ex.cluster, reps, time, headline, headlineKind });
   }
 
@@ -175,13 +189,12 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
       cluster: c,
       exercises: exList
         .filter((e) => e.cluster === c)
-        .sort((a, b) =>
-          a.headlineKind === b.headlineKind
-            ? b.headline - a.headline
-            : a.headlineKind === 'reps'
-              ? -1
-              : 1,
-        ),
+        // порядок видов: вес×повторы → взвешенное удержание → чистое время; внутри — по заголовку
+        .sort((a, b) => {
+          const rank = (k: ExRecords['headlineKind']) =>
+            k === 'reps' ? 0 : k === 'timeWeight' ? 1 : 2;
+          return rank(a.headlineKind) - rank(b.headlineKind) || b.headline - a.headline;
+        }),
     }))
     .filter((g) => g.exercises.length > 0);
 
@@ -773,7 +786,10 @@ export default function AnalyticsScreen() {
     const left =
       r.kind === 'reps'
         ? `${i + 1}.  ${formatWeight(r.weight, unit)} ${unitLabel} × ${r.reps}`
-        : `${i + 1}.  ${fmtSec(r.sec, secShort)}${r.weight != null ? ` · ${formatWeight(r.weight, unit)} ${unitLabel}` : ''}`;
+        : r.weight != null
+          ? // взвешенное удержание: ведём вес (это и есть рекорд), затем длительность
+            `${i + 1}.  ${formatWeight(r.weight, unit)} ${unitLabel} · ${fmtSec(r.sec, secShort)}`
+          : `${i + 1}.  ${fmtSec(r.sec, secShort)}`;
     const right =
       r.kind === 'reps' ? `≈${formatWeight(r.oneRm, unit)} · ${fmtDate(r.date)}` : fmtDate(r.date);
     return (
@@ -874,7 +890,9 @@ export default function AnalyticsScreen() {
                           const head =
                             ex.headlineKind === 'reps'
                               ? `≈${formatWeight(ex.headline, unit)} ${unitLabel}`
-                              : fmtSec(ex.headline, secShort);
+                              : ex.headlineKind === 'timeWeight'
+                                ? `${formatWeight(ex.headline, unit)} ${unitLabel}`
+                                : fmtSec(ex.headline, secShort);
                           return (
                             <View key={ex.id} className="rounded-xl bg-graphite-800 p-3">
                               <Pressable
