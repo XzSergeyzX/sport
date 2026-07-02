@@ -789,7 +789,14 @@ export default function WorkoutScreen() {
   // авто-отметка при вводе значения: помечаем «зроблено» БЕЗ пересчёта отдыха (отдых —
   // осознанное действие через ✓/RPE). Идемпотентно: если уже logged — не трогаем.
   const markSetLogged = (set: SetRowType) => {
-    if (!set.logged_at) setLoggedMut.mutate({ workoutId, id: set.id, logged: true, restSec: null });
+    if (!set.logged_at)
+      setLoggedMut.mutate({
+        workoutId,
+        id: set.id,
+        logged: true,
+        restSec: null,
+        at: new Date().toISOString(),
+      });
   };
   const onToggleDone = (set: SetRowType) => {
     const logged = !!set.logged_at;
@@ -799,7 +806,13 @@ export default function WorkoutScreen() {
         ? Math.max(0, Math.round((Date.now() - anchor) / 1000))
         : set.rest_sec
       : null;
-    setLoggedMut.mutate({ workoutId, id: set.id, logged: !logged, restSec: rest });
+    setLoggedMut.mutate({
+      workoutId,
+      id: set.id,
+      logged: !logged,
+      restSec: rest,
+      at: new Date().toISOString(),
+    });
   };
 
   // Завершить тренировку: запись (ended_at + оптимистика + доживание) — в дефолте WORKOUT_FINISH;
@@ -814,7 +827,7 @@ export default function WorkoutScreen() {
   };
   const onFinish = () => {
     flushThen(() => {
-      finishMut.mutate({ workoutId });
+      finishMut.mutate({ workoutId, endedAt: new Date().toISOString() });
       router.replace({ pathname: '/summary/[id]', params: { id: workoutId } });
     });
   };
@@ -897,7 +910,15 @@ export default function WorkoutScreen() {
           {!we.done_at && (
             <Pressable
               disabled={addSetMut.isPending}
-              onPress={() => addSetMut.mutate({ workoutId, weId: we.id, input: {}, id: newId() })}
+              onPress={() =>
+                addSetMut.mutate({
+                  workoutId,
+                  weId: we.id,
+                  input: {},
+                  id: newId(),
+                  completedAt: new Date().toISOString(),
+                })
+              }
               className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
             >
               <Text className="text-sm font-semibold text-graphite-200">{t('workout.addSet')}</Text>
@@ -905,7 +926,14 @@ export default function WorkoutScreen() {
           )}
           {we.done_at ? (
             <Pressable
-              onPress={() => finishExerciseMut.mutate({ workoutId, weId: we.id, done: false })}
+              onPress={() =>
+                finishExerciseMut.mutate({
+                  workoutId,
+                  weId: we.id,
+                  done: false,
+                  at: new Date().toISOString(),
+                })
+              }
               className="flex-1 items-center rounded-xl bg-graphite-800 py-3 active:opacity-80"
             >
               <Text className="text-sm font-bold text-graphite-100">{t('workout.reopenExercise')}</Text>
@@ -914,7 +942,12 @@ export default function WorkoutScreen() {
             <Pressable
               onPress={() =>
                 flushThen(() => {
-                  finishExerciseMut.mutate({ workoutId, weId: we.id, done: true });
+                  finishExerciseMut.mutate({
+                    workoutId,
+                    weId: we.id,
+                    done: true,
+                    at: new Date().toISOString(),
+                  });
                   setCollapsed((c) => ({ ...c, [key]: true }));
                 })
               }
@@ -1044,7 +1077,12 @@ export default function WorkoutScreen() {
               {!allDone && (
                 <Pressable
                   disabled={addSetMut.isPending}
-                  onPress={() => g.items.forEach((it) => addSetMut.mutate({ workoutId, weId: it.id, input: {}, id: newId() }))}
+                  onPress={() => {
+                    const completedAt = new Date().toISOString();
+                    g.items.forEach((it) =>
+                      addSetMut.mutate({ workoutId, weId: it.id, input: {}, id: newId(), completedAt }),
+                    );
+                  }}
                   className="flex-1 items-center rounded-xl border border-graphite-700 py-3 active:opacity-70"
                 >
                   <Text className="text-sm font-semibold text-graphite-200">{t('workout.addRound')}</Text>
@@ -1054,7 +1092,8 @@ export default function WorkoutScreen() {
                 onPress={() =>
                   flushThen(() => {
                     const done = !allDone;
-                    g.items.forEach((it) => finishExerciseMut.mutate({ workoutId, weId: it.id, done }));
+                    const at = new Date().toISOString();
+                    g.items.forEach((it) => finishExerciseMut.mutate({ workoutId, weId: it.id, done, at }));
                     setCollapsed((c) => ({ ...c, [g.key]: done }));
                   })
                 }

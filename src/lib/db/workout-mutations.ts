@@ -42,10 +42,25 @@ export const WE_REORDER = ['workout', 'exercise', 'reorder'] as const;
 export const WE_DONE = ['workout', 'exercise', 'done'] as const;
 export const WORKOUT_FINISH = ['workout', 'finish'] as const;
 
-export type AddSetVars = { workoutId: string; weId: string; input: SetInput; id: string };
+// Таймстемпы действий (completedAt/at/endedAt) едут В vars, а не вычисляются в mutationFn:
+// у queued-оффлайн-мутации mutationFn исполняется в момент РЕКОННЕКТА (возможно через сутки),
+// и new Date() там записал бы на сервер время синка вместо времени тапа.
+export type AddSetVars = {
+  workoutId: string;
+  weId: string;
+  input: SetInput;
+  id: string;
+  completedAt: string;
+};
 export type UpdateSetVars = { workoutId: string; id: string; input: SetInput };
 export type DeleteSetVars = { workoutId: string; setId: string };
-export type LogSetVars = { workoutId: string; id: string; logged: boolean; restSec: number | null };
+export type LogSetVars = {
+  workoutId: string;
+  id: string;
+  logged: boolean;
+  restSec: number | null;
+  at: string;
+};
 export type AddWeVars = {
   workoutId: string;
   id: string;
@@ -55,8 +70,8 @@ export type AddWeVars = {
 };
 export type RemoveWeVars = { workoutId: string; ids: string[] };
 export type ReorderWeVars = { workoutId: string; ids: string[]; orders: number[] };
-export type DoneWeVars = { workoutId: string; weId: string; done: boolean };
-export type FinishVars = { workoutId: string };
+export type DoneWeVars = { workoutId: string; weId: string; done: boolean; at: string };
+export type FinishVars = { workoutId: string; endedAt: string };
 
 const wkey = (workoutId: string) => ['workout', workoutId];
 
@@ -74,7 +89,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   const settle = (workoutId: string) => qc.invalidateQueries({ queryKey: wkey(workoutId) });
 
   qc.setMutationDefaults(SET_ADD, {
-    mutationFn: (v: AddSetVars) => addSet(v.weId, v.input, v.id),
+    mutationFn: (v: AddSetVars) => addSet(v.weId, v.input, v.id, v.completedAt),
     onMutate: async (v: AddSetVars) => {
       await cancel(v.workoutId);
       patch(v.workoutId, (w) => ({
@@ -95,7 +110,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
                     rpe: v.input.rpe ?? null,
                     note: null,
                     meta: (v.input.meta as Record<string, unknown> | null) ?? null,
-                    completed_at: new Date().toISOString(),
+                    completed_at: v.completedAt,
                     logged_at: null,
                   },
                 ],
@@ -198,15 +213,13 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WE_DONE, {
-    mutationFn: (v: DoneWeVars) => setExerciseDone(v.weId, v.done),
+    mutationFn: (v: DoneWeVars) => setExerciseDone(v.weId, v.done, v.at),
     onMutate: async (v: DoneWeVars) => {
       await cancel(v.workoutId);
       patch(v.workoutId, (w) => ({
         ...w,
         workout_exercises: w.workout_exercises.map((we) =>
-          we.id === v.weId
-            ? { ...we, done_at: v.done ? new Date().toISOString() : null }
-            : we,
+          we.id === v.weId ? { ...we, done_at: v.done ? v.at : null } : we,
         ),
       }));
     },
@@ -214,13 +227,13 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WORKOUT_FINISH, {
-    mutationFn: (v: FinishVars) => finishWorkout(v.workoutId),
+    mutationFn: (v: FinishVars) => finishWorkout(v.workoutId, v.endedAt),
     // ended_at ставим только если ещё не завершена — как finishWorkout (правка завершённой
     // не должна раздувать длительность). Навигацию на сводку делает экран сразу по тапу
     // (offline-first): запись уходит фоном/из очереди, экран не ждёт сети.
     onMutate: async (v: FinishVars) => {
       await cancel(v.workoutId);
-      patch(v.workoutId, (w) => (w.ended_at ? w : { ...w, ended_at: new Date().toISOString() }));
+      patch(v.workoutId, (w) => (w.ended_at ? w : { ...w, ended_at: v.endedAt }));
     },
     onSettled: (_d, _e, v: FinishVars) => {
       settle(v.workoutId);
@@ -229,13 +242,13 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(SET_LOG, {
-    mutationFn: (v: LogSetVars) => setSetLogged(v.id, v.logged, v.restSec),
+    mutationFn: (v: LogSetVars) => setSetLogged(v.id, v.logged, v.restSec, v.at),
     onMutate: async (v: LogSetVars) => {
       await cancel(v.workoutId);
       patch(v.workoutId, (w) =>
         mapSet(w, v.id, (s) => ({
           ...s,
-          logged_at: v.logged ? new Date().toISOString() : null,
+          logged_at: v.logged ? v.at : null,
           rest_sec: v.logged ? v.restSec : null,
         })),
       );

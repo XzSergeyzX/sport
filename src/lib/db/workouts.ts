@@ -282,12 +282,20 @@ export async function addSet(
   workoutExerciseId: string,
   input: SetInput,
   id: string = newId(),
+  completedAt?: string,
 ): Promise<SetRow> {
   // id принимаем извне, чтобы оптимистичный подход в кэше и реальная вставка были одним id
   // (иначе правка оффлайн-подхода ушла бы в несуществующую строку). upsert → повтор безопасен.
+  // completedAt — время ТАПА, не исполнения: оффлайн-подход, досинканный через сутки, иначе
+  // получил бы серверный now() и перемешал порядок сетов (сортировка по completed_at).
   const { data, error } = await supabase
     .from('sets')
-    .upsert({ id, workout_exercise_id: workoutExerciseId, ...input })
+    .upsert({
+      id,
+      workout_exercise_id: workoutExerciseId,
+      ...input,
+      ...(completedAt ? { completed_at: completedAt } : {}),
+    })
     .select('*')
     .single();
   if (error) throw error;
@@ -310,15 +318,15 @@ export async function deleteWorkoutExercise(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Отметить/снять «подход сделан». При отметке пишем время и отдых (разрыв с прошлым). */
+/** Отметить/снять «подход сделан». При отметке пишем время и отдых (разрыв с прошлым).
+ *  at — время ТАПА (передаёт экран): для оффлайн-очереди момент исполнения ≠ момент действия. */
 export async function setSetLogged(
   id: string,
   logged: boolean,
   restSec: number | null,
+  at: string,
 ): Promise<void> {
-  const patch = logged
-    ? { logged_at: new Date().toISOString(), rest_sec: restSec }
-    : { logged_at: null, rest_sec: null };
+  const patch = logged ? { logged_at: at, rest_sec: restSec } : { logged_at: null, rest_sec: null };
   const { error } = await supabase.from('sets').update(patch).eq('id', id);
   if (error) throw error;
 }
@@ -335,11 +343,16 @@ export async function reorderWorkoutExercises(
   );
 }
 
-/** Завершить/возобновить упражнение (для сворачивания карточки). */
-export async function setExerciseDone(workoutExerciseId: string, done: boolean): Promise<void> {
+/** Завершить/возобновить упражнение (для сворачивания карточки).
+ *  at — время ТАПА (передаёт экран), а не исполнения из оффлайн-очереди. */
+export async function setExerciseDone(
+  workoutExerciseId: string,
+  done: boolean,
+  at: string,
+): Promise<void> {
   const { error } = await supabase
     .from('workout_exercises')
-    .update({ done_at: done ? new Date().toISOString() : null })
+    .update({ done_at: done ? at : null })
     .eq('id', workoutExerciseId);
   if (error) throw error;
 }
@@ -350,12 +363,14 @@ export async function deleteWorkout(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function finishWorkout(id: string): Promise<void> {
+export async function finishWorkout(id: string, endedAt: string): Promise<void> {
   // ставим время окончания только если ещё не завершена — при редактировании уже
   // завершённой тренировки «Завершити» не должно раздувать длительность (старт вчера → кінець сьогодні).
+  // endedAt — время ТАПА: тренировка, завершённая оффлайн и досинканная утром, иначе
+  // получила бы ended_at момента реконнекта → длительность в 14 часов.
   const { error } = await supabase
     .from('workouts')
-    .update({ ended_at: new Date().toISOString() })
+    .update({ ended_at: endedAt })
     .eq('id', id)
     .is('ended_at', null);
   if (error) throw error;
