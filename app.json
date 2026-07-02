@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.sportysm.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -51,6 +52,12 @@
         "expo-audio",
         {
           "microphonePermission": "Allow Sporty to use the microphone for voice messages to the coach."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#1FB89A"
         }
       ]
     ],
