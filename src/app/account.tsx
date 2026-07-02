@@ -17,10 +17,12 @@ import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
 import {
   getAvatar,
   getBodyweight,
+  getDisplayName,
   type Gender,
   getGender,
   setAvatar,
   setBodyweight,
+  setDisplayName,
   setGender,
 } from '@/lib/db/profile';
 import i18n, { type AppLanguage } from '@/lib/i18n';
@@ -113,6 +115,23 @@ export default function AccountScreen() {
     setPickerOpen(false);
   };
 
+  // имя/никнейм — идёт на лидерборд (иначе там «Athlete») и в persona коуча.
+  // Паттерн как у веса: controlled-инпут, вне фокуса синкается из БД.
+  const { data: displayName } = useQuery({
+    queryKey: ['display-name', userId],
+    queryFn: () => getDisplayName(userId as string),
+    enabled: !!userId,
+  });
+  const nameMut = useMutation({
+    mutationFn: (name: string | null) => setDisplayName(userId as string, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['display-name', userId] }),
+  });
+  const [nameText, setNameText] = useState('');
+  const [nameFocused, setNameFocused] = useState(false);
+  useEffect(() => {
+    if (!nameFocused) setNameText(displayName ?? '');
+  }, [displayName, nameFocused]);
+
   const unit = useWeightUnit();
   // вес тела (храним в кг; вводим/показываем в выбранной единице) — для тоннажа подтягиваний и т.п.
   const { data: bodyweight } = useQuery({
@@ -178,9 +197,28 @@ export default function AccountScreen() {
               <Ionicons name="pencil" size={10} color="#0B0F14" />
             </View>
           </Pressable>
-          <Text className="ml-3 flex-1 text-base font-semibold text-graphite-100" numberOfLines={1}>
-            {session?.user.email ?? '—'}
-          </Text>
+          <View className="ml-3 flex-1">
+            <TextInput
+              value={nameText}
+              onChangeText={setNameText}
+              onFocus={() => setNameFocused(true)}
+              onBlur={() => {
+                setNameFocused(false);
+                nameMut.mutate(nameText);
+              }}
+              // ремень к blur: на устройстве onEndEditing срабатывает при «Done»/уходе с поля
+              // (урок дня-45 — не доверять одному события окончания ввода); mutate идемпотентен
+              onEndEditing={() => nameMut.mutate(nameText)}
+              maxLength={40}
+              returnKeyType="done"
+              placeholder={t('account.namePlaceholder')}
+              placeholderTextColor="#5C6675"
+              className="rounded-xl bg-graphite-800 px-3 py-2 text-base font-semibold text-graphite-50"
+            />
+            <Text className="ml-1 mt-1 text-xs text-graphite-500" numberOfLines={1}>
+              {session?.user.email ?? '—'} · {t('account.nameHint')}
+            </Text>
+          </View>
         </View>
 
         {/* —— Налаштування —— */}

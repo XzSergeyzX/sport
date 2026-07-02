@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Pressable,
+  RefreshControl,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   View,
@@ -18,6 +20,7 @@ import { Avatar } from '@/components/avatar';
 import { BottomSheet } from '@/components/bottom-sheet';
 import { Segmented } from '@/components/segmented';
 import { SettingsButton } from '@/components/settings-button';
+import { useConfirmedVideoLink } from '@/components/video-link';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   bestPerUser,
@@ -31,9 +34,9 @@ import {
   listMyEntries,
   listPendingEntries,
   type MyEntry,
-  reviewEntry,
   rowRgcKg,
   submitEntry,
+  VIDEO_HOST_RE,
 } from '@/lib/db/leaderboard';
 import { type Gripper, gripperLabel, listGripperCatalog } from '@/lib/db/grippers';
 import { fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -61,10 +64,6 @@ function rowResult(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string
   return kg != null ? `${name} · ${Math.round(kg)} kg` : name;
 }
 
-function openVideo(url: string) {
-  Linking.openURL(url).catch(() => {});
-}
-
 // ---------- подача заявки ----------
 
 function SubmitForm({
@@ -87,24 +86,29 @@ function SubmitForm({
   const [gripper, setGripper] = useState<Gripper | null>(null);
   const [gripSearch, setGripSearch] = useState('');
   const [setType, setSetType] = useState<GripSetType>('tns');
+  const [certified, setCertified] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [note, setNote] = useState('');
 
-  // каталог эспандеров (личные + глобальные) для выбора железки заявки
+  // каталог эспандеров для выбора железки заявки — ДВУМЯ секциями (фидбек Сергея:
+  // «всё в куче»): личные замеренные отдельно от каталожных средних
   const { data: catalog } = useQuery({
     queryKey: ['gripper-catalog', userId],
     queryFn: () => listGripperCatalog(userId),
     enabled: board === 'gripper',
   });
-  const gripMatches = (catalog ?? [])
-    .filter((g) => {
-      const q = gripSearch.trim().toLowerCase();
-      return q.length > 0 && gripperLabel(g, unit).toLowerCase().includes(q);
-    })
-    .slice(0, 30);
+  // нормализация: «coc 3» находит «CoC #3» (сравниваем только буквы+цифры, без #/·/пробелов)
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const q = norm(gripSearch);
+  const matches = (list: Gripper[]) =>
+    list.filter((g) => q.length === 0 || norm(gripperLabel(g, unit)).includes(q)).slice(0, 25);
+  // без поискового запроса показываем только личные (их мало и это обычно то, что нужно)
+  const myGrippers = matches((catalog ?? []).filter((g) => !g.is_global));
+  const globalGrippers = q.length > 0 ? matches((catalog ?? []).filter((g) => g.is_global)) : [];
 
   const weightKg = toKg(parseNum(weight), unit);
-  const urlOk = /^https:\/\/\S+\.\S+/.test(videoUrl.trim());
+  const urlOk = VIDEO_HOST_RE.test(videoUrl.trim());
+  const urlLooksFilled = videoUrl.trim().length > 8;
   const canSubmit =
     urlOk &&
     (board === 'dynamometer'
@@ -115,8 +119,8 @@ function SubmitForm({
     mutationFn: () =>
       submitEntry(
         board === 'dynamometer'
-          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note }
-          : { userId, board, gripperId: gripper!.id, setType, videoUrl, note },
+          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note, certified }
+          : { userId, board, gripperId: gripper!.id, setType, videoUrl, note, certified },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['leaderboard-my', userId] });
@@ -191,9 +195,12 @@ function SubmitForm({
                 placeholderTextColor={PLACEHOLDER}
                 className="mt-1 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
               />
-              {gripSearch.trim().length > 0 && (
-                <View className="mt-1">
-                  {gripMatches.map((g) => (
+              {myGrippers.length > 0 && (
+                <>
+                  <Text className="mt-2 text-xs font-semibold uppercase tracking-wide text-accent">
+                    {t('leaderboard.myGrippersSection')}
+                  </Text>
+                  {myGrippers.map((g) => (
                     <Pressable
                       key={g.id}
                       onPress={() => {
@@ -205,10 +212,29 @@ function SubmitForm({
                       <Text className="text-base text-graphite-100">{gripperLabel(g, unit)}</Text>
                     </Pressable>
                   ))}
-                  {gripMatches.length === 0 && (
-                    <Text className="py-2 text-sm text-graphite-500">{t('workout.noResults')}</Text>
-                  )}
-                </View>
+                </>
+              )}
+              {globalGrippers.length > 0 && (
+                <>
+                  <Text className="mt-2 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+                    {t('leaderboard.catalogSection')}
+                  </Text>
+                  {globalGrippers.map((g) => (
+                    <Pressable
+                      key={g.id}
+                      onPress={() => {
+                        setGripper(g);
+                        setGripSearch('');
+                      }}
+                      className="border-b border-graphite-800 py-2.5 active:opacity-70"
+                    >
+                      <Text className="text-base text-graphite-100">{gripperLabel(g, unit)}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {q.length > 0 && myGrippers.length === 0 && globalGrippers.length === 0 && (
+                <Text className="py-2 text-sm text-graphite-500">{t('workout.noResults')}</Text>
               )}
             </>
           )}
@@ -234,6 +260,21 @@ function SubmitForm({
         </>
       )}
 
+      {/* официальная сертификация (федерация/IronMind и т.п.) — заявляет атлет, глазами
+          подтверждает админ при апруве; на борде бейдж и приоритет при равном результате */}
+      <View className="mt-4 flex-row items-center justify-between">
+        <View className="flex-1 flex-row items-center pr-3">
+          <Ionicons name="ribbon-outline" size={16} color={certified ? '#1FB89A' : PLACEHOLDER} />
+          <Text className="ml-2 flex-1 text-sm text-graphite-200">{t('leaderboard.certified')}</Text>
+        </View>
+        <Switch
+          value={certified}
+          onValueChange={setCertified}
+          trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
+          thumbColor="#E5E7EB"
+        />
+      </View>
+
       <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
         {t('leaderboard.videoUrl')}
       </Text>
@@ -246,7 +287,11 @@ function SubmitForm({
         keyboardType="url"
         className="mt-1 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
       />
-      <Text className="mt-1 text-xs leading-4 text-graphite-500">{t('leaderboard.videoHint')}</Text>
+      {urlLooksFilled && !urlOk ? (
+        <Text className="mt-1 text-xs leading-4 text-red-400">{t('leaderboard.videoHostError')}</Text>
+      ) : (
+        <Text className="mt-1 text-xs leading-4 text-graphite-500">{t('leaderboard.videoHint')}</Text>
+      )}
 
       <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
         {t('leaderboard.note')}
@@ -277,7 +322,15 @@ function SubmitForm({
 
 // ---------- мои заявки ----------
 
-function MyEntryRow({ entry, onDelete }: { entry: MyEntry; onDelete: () => void }) {
+function MyEntryRow({
+  entry,
+  onOpenVideo,
+  onDelete,
+}: {
+  entry: MyEntry;
+  onOpenVideo: (url: string) => void;
+  onDelete: () => void;
+}) {
   const { t } = useTranslation();
   const unit = useWeightUnit();
   const what =
@@ -289,12 +342,17 @@ function MyEntryRow({ entry, onDelete }: { entry: MyEntry; onDelete: () => void 
   return (
     <View className="mb-2 flex-row items-center rounded-2xl bg-graphite-900 p-3">
       <View className="flex-1">
-        <Text className="text-sm font-semibold text-graphite-100">{what}</Text>
+        <View className="flex-row items-center">
+          <Text className="text-sm font-semibold text-graphite-100">{what}</Text>
+          {entry.certified && (
+            <Ionicons name="ribbon-outline" size={14} color="#1FB89A" style={{ marginLeft: 6 }} />
+          )}
+        </View>
         <Text className="mt-0.5 text-xs" style={{ color: statusColor }}>
           {t(`leaderboard.status.${entry.status}`)}
         </Text>
       </View>
-      <Pressable onPress={() => openVideo(entry.video_url)} hitSlop={8} className="px-2 active:opacity-60">
+      <Pressable onPress={() => onOpenVideo(entry.video_url)} hitSlop={8} className="px-2 active:opacity-60">
         <Ionicons name="logo-youtube" size={18} color={PLACEHOLDER} />
       </Pressable>
       <Pressable onPress={onDelete} hitSlop={8} className="px-2 active:opacity-60">
@@ -304,57 +362,17 @@ function MyEntryRow({ entry, onDelete }: { entry: MyEntry; onDelete: () => void 
   );
 }
 
-// ---------- модерация (admin) ----------
-
-function ModerationRow({ row, onDone }: { row: LeaderboardRow; onDone: () => void }) {
-  const { t } = useTranslation();
-  const unit = useWeightUnit();
-  const reviewMut = useMutation({
-    mutationFn: (action: 'approved' | 'rejected') => reviewEntry(row.entry_id, action),
-    onSuccess: onDone,
-  });
-  return (
-    <View className="mb-2 rounded-2xl bg-graphite-900 p-3">
-      <View className="flex-row items-center">
-        <Avatar email={row.display_name} avatarKey={row.avatar} size={28} />
-        <Text className="ml-2 flex-1 text-sm font-semibold text-graphite-100">{row.display_name}</Text>
-        <Pressable onPress={() => openVideo(row.video_url)} hitSlop={8} className="px-1 active:opacity-60">
-          <Ionicons name="play-circle-outline" size={22} color="#1FB89A" />
-        </Pressable>
-      </View>
-      <Text className="mt-1 text-sm text-graphite-300">
-        {row.set_type ? `${rowResult(row, unit, t)} · ${t(`setTypes.${row.set_type}`)}` : rowResult(row, unit, t)}
-      </Text>
-      {!!row.note && <Text className="mt-0.5 text-xs text-graphite-500">{row.note}</Text>}
-      <View className="mt-2 flex-row gap-2">
-        <Pressable
-          disabled={reviewMut.isPending}
-          onPress={() => reviewMut.mutate('approved')}
-          className="flex-1 items-center rounded-xl bg-accent py-2 active:opacity-80"
-        >
-          <Text className="text-sm font-bold text-graphite-950">{t('leaderboard.approve')}</Text>
-        </Pressable>
-        <Pressable
-          disabled={reviewMut.isPending}
-          onPress={() => reviewMut.mutate('rejected')}
-          className="flex-1 items-center rounded-xl bg-graphite-800 py-2 active:opacity-80"
-        >
-          <Text className="text-sm font-semibold text-red-400">{t('leaderboard.reject')}</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 // ---------- экран ----------
 
 export default function LeaderboardScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { session } = useAuth();
   const userId = session?.user.id;
   const unit = useWeightUnit();
   const role = useRole();
   const qc = useQueryClient();
+  const { openVideo, videoDialog } = useConfirmedVideoLink();
 
   const [board, setBoard] = useState<Board>('dynamometer');
   const [dynFilter, setDynFilter] = useState<string | null>(null); // name; null = все
@@ -366,7 +384,7 @@ export default function LeaderboardScreen() {
     queryFn: listDynamometers,
     staleTime: 1000 * 60 * 60,
   });
-  const { data: rows, isLoading } = useQuery({
+  const { data: rows, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['leaderboard', board],
     queryFn: () => getLeaderboard(board),
   });
@@ -423,7 +441,20 @@ export default function LeaderboardScreen() {
         />
       </View>
 
-      <ScrollView className="flex-1 px-6 pt-3" contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView
+        className="flex-1 px-6 pt-3"
+        contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={() => {
+              void refetch();
+              refresh();
+            }}
+            tintColor="#848D9A"
+          />
+        }
+      >
         {/* фильтры */}
         <View className="flex-row flex-wrap gap-2">
           {board === 'dynamometer' ? (
@@ -485,9 +516,14 @@ export default function LeaderboardScreen() {
                 </Text>
                 <Avatar email={r.display_name} avatarKey={r.avatar} size={36} />
                 <View className="ml-3 flex-1">
-                  <Text className="text-base font-semibold text-graphite-100" numberOfLines={1}>
-                    {r.display_name}
-                  </Text>
+                  <View className="flex-row items-center">
+                    <Text className="text-base font-semibold text-graphite-100" numberOfLines={1}>
+                      {r.display_name}
+                    </Text>
+                    {r.certified && (
+                      <Ionicons name="ribbon" size={14} color="#1FB89A" style={{ marginLeft: 6 }} />
+                    )}
+                  </View>
                   <Text className="mt-0.5 text-sm text-graphite-400">{rowResult(r, unit, t)}</Text>
                 </View>
                 <Pressable onPress={() => openVideo(r.video_url)} hitSlop={8} className="pl-2 active:opacity-60">
@@ -506,6 +542,20 @@ export default function LeaderboardScreen() {
           <Text className="text-base font-bold text-graphite-950">{t('leaderboard.submitCta')}</Text>
         </Pressable>
 
+        {/* админ-панель — отдельным экраном (не мешаем публичный борд с модерацией) */}
+        {role === 'admin' && (
+          <Pressable
+            onPress={() => router.push('/moderation')}
+            className="mt-3 flex-row items-center justify-center rounded-2xl border border-graphite-700 py-3.5 active:opacity-70"
+          >
+            <Ionicons name="shield-checkmark-outline" size={18} color="#848D9A" />
+            <Text className="ml-2 text-sm font-semibold text-graphite-200">
+              {t('leaderboard.moderation')}
+              {pending?.length ? ` (${pending.length})` : ''}
+            </Text>
+          </Pressable>
+        )}
+
         {/* мои заявки */}
         {!!myEntries?.length && (
           <>
@@ -514,26 +564,14 @@ export default function LeaderboardScreen() {
             </Text>
             <View className="mt-2">
               {myEntries.map((e) => (
-                <MyEntryRow key={e.id} entry={e} onDelete={() => confirmDelete(e)} />
-              ))}
-            </View>
-          </>
-        )}
-
-        {/* модерация (admin) */}
-        {role === 'admin' && !!pending?.length && (
-          <>
-            <Text className="mt-6 text-xs font-semibold uppercase tracking-wide text-graphite-500">
-              {t('leaderboard.moderation')} ({pending.length})
-            </Text>
-            <View className="mt-2">
-              {pending.map((row) => (
-                <ModerationRow key={row.entry_id} row={row} onDone={refresh} />
+                <MyEntryRow key={e.id} entry={e} onOpenVideo={openVideo} onDelete={() => confirmDelete(e)} />
               ))}
             </View>
           </>
         )}
       </ScrollView>
+
+      {videoDialog}
 
       <BottomSheet visible={submitting} onClose={() => setSubmitting(false)}>
         {userId && submitting && (

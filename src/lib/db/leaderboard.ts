@@ -31,6 +31,7 @@ export type LeaderboardRow = {
   gripper_rgc: number | null;
   gripper_rgc_unit: 'kg' | 'lb' | null;
   set_type: GripSetType | null;
+  certified: boolean;
   video_url: string;
   note?: string | null;
   performed_at: string | null;
@@ -44,6 +45,7 @@ export type MyEntry = {
   board: Board;
   weight_kg: number | null;
   set_type: GripSetType | null;
+  certified: boolean;
   video_url: string;
   note: string | null;
   performed_at: string | null;
@@ -73,7 +75,7 @@ export async function listMyEntries(userId: string): Promise<MyEntry[]> {
   const { data, error } = await supabase
     .from('leaderboard_entries')
     .select(
-      'id, board, weight_kg, set_type, video_url, note, performed_at, status, created_at, dynamometers(name), grippers(brand, name, rgc, rgc_unit)',
+      'id, board, weight_kg, set_type, certified, video_url, note, performed_at, status, created_at, dynamometers(name), grippers(brand, name, rgc, rgc_unit)',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
@@ -81,10 +83,16 @@ export async function listMyEntries(userId: string): Promise<MyEntry[]> {
   return (data ?? []) as unknown as MyEntry[];
 }
 
+// Разрешённые видеохосты пруфов (зеркало check-констрейнта в БД): произвольный сайт на
+// борд не подсунуть — по ссылкам ходят чужие люди.
+export const VIDEO_HOST_RE =
+  /^https:\/\/(www\.|m\.|vm\.|vt\.)?(youtube\.com|youtu\.be|instagram\.com|tiktok\.com|vimeo\.com|facebook\.com|fb\.watch)\//i;
+
 export type SubmitInput = {
   userId: string;
   videoUrl: string;
   note?: string | null;
+  certified: boolean;
 } & (
   | { board: 'dynamometer'; dynamometerId: string; weightKg: number }
   | { board: 'gripper'; gripperId: string; setType: GripSetType }
@@ -96,6 +104,7 @@ export async function submitEntry(input: SubmitInput): Promise<void> {
     board: input.board,
     video_url: input.videoUrl.trim().slice(0, 300),
     note: input.note?.trim().slice(0, 300) || null,
+    certified: input.certified,
   };
   if (input.board === 'dynamometer') {
     row.dynamometer_id = input.dynamometerId;
@@ -140,12 +149,15 @@ export function rowRgcKg(r: { gripper_rgc: number | null; gripper_rgc_unit: stri
   return r.gripper_rgc_unit === 'lb' ? r.gripper_rgc / LB_PER_KG : r.gripper_rgc;
 }
 
-/** Лучший результат на юзера в пределах текущего фильтра (борд уже отфильтрован). */
+/** Лучший результат на юзера в пределах текущего фильтра (борд уже отфильтрован).
+ *  Тай-брейк — сертификация: официально засчитанное закрытие выше домашнего при равном
+ *  результате (и внутри юзера, и в общем ранжире). */
 export function bestPerUser(rows: LeaderboardRow[], metric: (r: LeaderboardRow) => number | null): LeaderboardRow[] {
+  const score = (r: LeaderboardRow) => (metric(r) ?? -1) + (r.certified ? 0.0001 : 0);
   const best = new Map<string, LeaderboardRow>();
   for (const r of rows) {
     const cur = best.get(r.user_id);
-    if (!cur || (metric(r) ?? -1) > (metric(cur) ?? -1)) best.set(r.user_id, r);
+    if (!cur || score(r) > score(cur)) best.set(r.user_id, r);
   }
-  return [...best.values()].sort((a, b) => (metric(b) ?? -1) - (metric(a) ?? -1));
+  return [...best.values()].sort((a, b) => score(b) - score(a));
 }

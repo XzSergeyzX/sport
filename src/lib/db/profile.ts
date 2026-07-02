@@ -37,6 +37,24 @@ export async function setBodyweight(userId: string, kg: number | null): Promise<
   if (error) throw error;
 }
 
+/** Имя/никнейм: показывается на лидерборде и в persona коуча. NULL = «Athlete» на борде. */
+export async function getDisplayName(userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('profile')
+    .select('display_name')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data?.display_name ?? null;
+}
+
+export async function setDisplayName(userId: string, name: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('profile')
+    .update({ display_name: name?.trim().slice(0, 40) || null })
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
 /** Ключ выбранного пресета-аватарки (см. src/lib/avatars.ts). NULL = инициалы. */
 export async function getAvatar(userId: string): Promise<string | null> {
   const { data } = await supabase

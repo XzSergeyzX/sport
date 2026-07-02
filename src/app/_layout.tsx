@@ -64,6 +64,11 @@ export default function RootLayout() {
               name="account"
               options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
             />
+            {/* Админ-панель лидерборда — тот же паттерн подъёма, что и account */}
+            <Stack.Screen
+              name="moderation"
+              options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
+            />
           </Stack>
           <StatusBar style={colorScheme === 'light' ? 'dark' : 'light'} />
         </AuthProvider>

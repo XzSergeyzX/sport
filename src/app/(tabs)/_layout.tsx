@@ -55,7 +55,8 @@ export default function TabsLayout() {
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 11 },
+        // 10 вместо 11: с шестым табом («Борд») «Тренування» обрезалось в «Тренува…»
+        tabBarLabelStyle: { fontSize: 10 },
       }}
     >
       <Tabs.Screen
