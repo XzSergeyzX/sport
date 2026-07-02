@@ -57,7 +57,40 @@
     "coach": "Coach",
     "analytics": "Analytics",
     "health": "Health",
-    "account": "Account"
+    "account": "Account",
+    "leaderboard": "Board"
+  },
+  "leaderboard": {
+    "title": "Leaderboard",
+    "dyno": "Dynamometer",
+    "grippers": "Grippers",
+    "allDevices": "All",
+    "empty": "No verified results yet.\nBe the first — submit yours!",
+    "submitCta": "Submit a result",
+    "submitDyno": "Dynamometer result",
+    "submitGripper": "Gripper close",
+    "device": "Device",
+    "result": "Result",
+    "gripper": "Gripper",
+    "gripperSearch": "Search: CoC, Heavy Grips…",
+    "setType": "Set",
+    "videoUrl": "Video proof (link)",
+    "videoHint": "YouTube or other public link. The attempt and the device must be clearly visible. Entries go live after review.",
+    "note": "Note",
+    "notePlaceholder": "Optional: bodyweight, conditions…",
+    "submit": "Send for review",
+    "dailyLimit": "Limit: 5 submissions per day",
+    "submitError": "Could not submit. Check the link and try again.",
+    "myEntries": "My submissions",
+    "status": {
+      "pending": "Under review",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "deleteConfirm": "Remove this submission?",
+    "moderation": "Moderation",
+    "approve": "Approve",
+    "reject": "Reject"
   },
   "coach": {
     "title": "Coach",

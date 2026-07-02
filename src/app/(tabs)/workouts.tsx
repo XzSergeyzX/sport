@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SettingsButton } from '@/components/settings-button';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth/auth-context';
+import { useRole } from '@/lib/use-role';
 import { WORKOUT_START } from '@/lib/db/workout-mutations';
 import {
   buildEmptyWorkout,
@@ -45,6 +46,8 @@ export default function WorkoutsScreen() {
   const qc = useQueryClient();
   const { session } = useAuth();
   const userId = session?.user.id;
+  // grip (комьюнити) — без ИИ: кнопку импорта не показываем (сервер и так вернёт 403)
+  const canUseAi = useRole() !== 'grip';
 
   const { data: workouts, isLoading } = useQuery({
     queryKey: ['workouts', userId],
@@ -149,12 +152,14 @@ export default function WorkoutsScreen() {
         </Pressable>
 
         {!importOpen ? (
-          <Pressable
-            onPress={() => setImportOpen(true)}
-            className="mt-3 items-center rounded-2xl border border-graphite-700 py-3.5 active:opacity-70"
-          >
-            <Text className="text-sm font-semibold text-graphite-200">{t('home.importCta')}</Text>
-          </Pressable>
+          canUseAi && (
+            <Pressable
+              onPress={() => setImportOpen(true)}
+              className="mt-3 items-center rounded-2xl border border-graphite-700 py-3.5 active:opacity-70"
+            >
+              <Text className="text-sm font-semibold text-graphite-200">{t('home.importCta')}</Text>
+            </Pressable>
+          )
         ) : (
           <View className="mt-3 rounded-2xl bg-graphite-900 p-5">
             <Text className="text-base font-semibold text-graphite-100">{t('home.importTitle')}</Text>

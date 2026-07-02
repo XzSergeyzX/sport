@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
+import { useRole } from '@/lib/use-role';
 
 const ACTIVE = '#1FB89A';
 const INACTIVE = '#5C6675';
@@ -22,6 +23,11 @@ export default function TabsLayout() {
   const { t } = useTranslation();
   const { session, initializing } = useAuth();
   const insets = useSafeAreaInsets();
+  // grip (комьюнити) видит урезанный набор табов. Пока роль не загружена (undefined —
+  // только самый первый запуск, дальше кэш персистится) показываем полный набор:
+  // реальный гейт ИИ — на сервере, спрятанные табы — только UX.
+  const role = useRole();
+  const grip = role === 'grip';
 
   // Гард: на табы можно попасть прямым deep-link (скан QR), минуя гейт index.tsx.
   // Без сессии — выкидываем на вход, иначе экраны грузятся «без пользователя».
@@ -58,7 +64,11 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="programs"
-        options={{ title: t('tabs.programs'), tabBarIcon: icon('clipboard-outline') }}
+        options={{
+          title: t('tabs.programs'),
+          tabBarIcon: icon('clipboard-outline'),
+          href: grip ? null : undefined, // href:null прячет таб (expo-router), роут остаётся
+        }}
       />
       <Tabs.Screen
         name="coach"
@@ -66,6 +76,7 @@ export default function TabsLayout() {
           title: t('tabs.coach'),
           tabBarIcon: icon('chatbubble-ellipses-outline'),
           tabBarHideOnKeyboard: true,
+          href: grip ? null : undefined,
         }}
       />
       <Tabs.Screen
@@ -74,7 +85,15 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="health"
-        options={{ title: t('tabs.health'), tabBarIcon: icon('heart-outline') }}
+        options={{
+          title: t('tabs.health'),
+          tabBarIcon: icon('heart-outline'),
+          href: grip ? null : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="leaderboard"
+        options={{ title: t('tabs.leaderboard'), tabBarIcon: icon('trophy-outline') }}
       />
     </Tabs>
   );
