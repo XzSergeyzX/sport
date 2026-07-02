@@ -79,7 +79,7 @@
     "videoHostError": "Only YouTube, Instagram, TikTok, Vimeo or Facebook links are accepted.",
     "certified": "Official certification (federation / IronMind etc.)",
     "certifiedShort": "cert",
-    "bwShort": "BW",
+    "bwShort": "Bodyweight",
     "myGrippersSection": "My grippers (measured)",
     "catalogSection": "Catalog (chart average)",
     "openVideoTitle": "Open link on",
@@ -100,7 +100,11 @@
     "deleteConfirm": "Remove this submission?",
     "moderation": "Moderation",
     "approve": "Approve",
-    "reject": "Reject"
+    "reject": "Reject",
+    "notifApprovedTitle": "Entry approved 🎉",
+    "notifApprovedBody": "Your leaderboard entry was approved — you're on the board. Tap to take a look.",
+    "notifRejectedTitle": "Entry rejected",
+    "notifRejectedBody": "The moderator rejected your video proof. Check the requirements and resubmit."
   },
   "coach": {
     "title": "Coach",

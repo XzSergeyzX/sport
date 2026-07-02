@@ -40,7 +40,7 @@ import {
   submitEntry,
   VIDEO_HOST_RE,
 } from '@/lib/db/leaderboard';
-import { type Gripper, gripperLabel, listGripperCatalog } from '@/lib/db/grippers';
+import { type Gripper, gripperLabel, gripperMatches, listGripperCatalog, normSearch } from '@/lib/db/grippers';
 import { fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 import { useRole } from '@/lib/use-role';
 
@@ -63,7 +63,8 @@ function rowResult(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string
   }
   const name = r.gripper_brand ? `${r.gripper_brand} ${r.gripper_name}` : (r.gripper_name ?? '—');
   const kg = rowRgcKg(r);
-  return kg != null ? `${name} · ${Math.round(kg)} kg` : name;
+  // RGC на борде всегда в кг (ранжир по кг), юнит — локализованный, как у власної ваги рядом
+  return kg != null ? `${name} · RGC: ${Math.round(kg)} ${t('common.kg')}` : name;
 }
 
 // ---------- подача заявки ----------
@@ -99,11 +100,10 @@ function SubmitForm({
     queryFn: () => listGripperCatalog(userId),
     enabled: board === 'gripper',
   });
-  // нормализация: «coc 3» находит «CoC #3» (сравниваем только буквы+цифры, без #/·/пробелов)
-  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-  const q = norm(gripSearch);
+  // нормализация «coc 3» → «CoC #3» — общий матчер всех пикеров (см. grippers.ts)
+  const q = normSearch(gripSearch);
   const matches = (list: Gripper[]) =>
-    list.filter((g) => q.length === 0 || norm(gripperLabel(g, unit)).includes(q)).slice(0, 25);
+    list.filter((g) => gripperMatches(g, gripSearch, unit)).slice(0, 25);
   // без поискового запроса показываем только личные (их мало и это обычно то, что нужно)
   const myGrippers = matches((catalog ?? []).filter((g) => !g.is_global));
   const globalGrippers = q.length > 0 ? matches((catalog ?? []).filter((g) => g.is_global)) : [];
@@ -394,6 +394,12 @@ export default function LeaderboardScreen() {
     queryKey: ['leaderboard', board],
     queryFn: () => getLeaderboard(board),
   });
+  // серт-лейблы живут в заявках эспандерного борда, но показываем их и на динамометре
+  // (тот же queryKey, что и основной запрос при board==='gripper' — второго фетча нет)
+  const { data: gripRows } = useQuery({
+    queryKey: ['leaderboard', 'gripper'],
+    queryFn: () => getLeaderboard('gripper'),
+  });
   const { data: myEntries } = useQuery({
     queryKey: ['leaderboard-my', userId],
     queryFn: () => listMyEntries(userId as string),
@@ -406,7 +412,7 @@ export default function LeaderboardScreen() {
   });
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['leaderboard', board] });
+    qc.invalidateQueries({ queryKey: ['leaderboard'] }); // оба борда: серт-лейблы общие
     qc.invalidateQueries({ queryKey: ['leaderboard-pending'] });
     qc.invalidateQueries({ queryKey: ['leaderboard-my', userId] });
   };
@@ -428,8 +434,8 @@ export default function LeaderboardScreen() {
       : r.set_type === setTypeFilter,
   );
   const ranked = bestPerUser(filtered, (r) => (board === 'dynamometer' ? r.weight_kg : rowRgcKg(r)));
-  // «CoC 3, 3.5 Certified» у ника — из всех approved-заявок юзера на этом борде
-  const certByUser = certLabels(rows ?? []);
+  // «CoC 3, 3.5 Certified» у ника — из всех approved-заявок эспандерного борда (видно на обоих)
+  const certByUser = certLabels(gripRows ?? []);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">

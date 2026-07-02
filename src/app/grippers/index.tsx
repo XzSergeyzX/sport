@@ -12,6 +12,7 @@ import {
   deleteGripper,
   type Gripper,
   gripperLabel,
+  gripperMatches,
   gripperName,
   listGripperCatalog,
   listMyGrippers,
@@ -53,10 +54,8 @@ function EditGripper({
   });
   const matches = (catalog ?? [])
     .filter((g) => g.is_global)
-    .filter((g) => {
-      const q = search.trim().toLowerCase();
-      return q.length > 0 && gripperName(g).toLowerCase().includes(q);
-    })
+    // общий нормализованный матчер: «coc 3» находит «CoC #3» и «CoC #3.5»
+    .filter((g) => search.trim().length > 0 && gripperMatches(g, search, appUnit))
     .slice(0, 40);
   // из каталога подставляем среднее в ЕДИНИЦЕ ПРИЛОЖЕНИЯ (метрический юзер видит кг, а не чартовые фунты)
   const pickFromCatalog = (g: Gripper) => {

@@ -32,7 +32,7 @@ import {
   type Metric,
   type SetSide,
 } from '@/lib/db/exercises';
-import { type Gripper, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
+import { type Gripper, gripperMatches, gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import {
   getWorkoutDetail,
   isClusteredWorkoutExercise,
@@ -180,8 +180,8 @@ function GripPicker({
 
   // секции: личные (приоритет, сверху) + глобальные по бренду
   const sections = useMemo(() => {
-    const q = term.trim().toLowerCase();
-    const match = (g: Gripper) => !q || gripperName(g).toLowerCase().includes(q);
+    // общий нормализованный матчер: «coc 3» находит «CoC #3» и «CoC #3.5»
+    const match = (g: Gripper) => gripperMatches(g, term);
     const personal = grippers.filter((g) => !g.is_global && match(g));
     const byBrand = new Map<string, Gripper[]>();
     for (const g of grippers) {
@@ -212,7 +212,7 @@ function GripPicker({
         </Text>
         {g.rgc != null && (
           <Text className="text-xs" style={{ color: active ? '#0B0F14' : '#848D9A' }}>
-            {g.rgc} {g.rgc_unit}
+            RGC: {g.rgc} {g.rgc_unit}
             {kg != null && g.rgc_unit === 'lb' ? ` · ${Math.round(kg)} kg` : ''}
           </Text>
         )}

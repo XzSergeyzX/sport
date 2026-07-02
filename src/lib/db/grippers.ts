@@ -105,8 +105,20 @@ export function gripperName(g: Gripper): string {
   return g.brand ? `${g.brand} ${g.name}` : g.name;
 }
 
+/** Нормализация поисковой строки: только буквы+цифры — «coc 3» находит «CoC #3» и «CoC #3.5». */
+export function normSearch(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** Единый матчер для ВСЕХ пикеров эспандеров (заявка на борд, «Мої еспандери», тренировка):
+ *  ищем по нормализованному лейблу (имя+бренд+RGC), пустой запрос матчит всё. */
+export function gripperMatches(g: Gripper, query: string, unit: 'kg' | 'lb' = 'kg'): boolean {
+  const q = normSearch(query);
+  return q.length === 0 || normSearch(gripperLabel(g, unit)).includes(q);
+}
+
 /** Подпись для списков/выбора. Первичная единица — выбранная в приложении (по умолч. кг),
- *  вторая в скобках: «CoC #3 · 67 kg (148 lb)». RGC хранится как замерили (kg или lb) —
+ *  вторая в скобках: «CoC #3 · RGC: 67 kg (148 lb)». RGC хранится как замерили (kg или lb) —
  *  показываем нормализованно, чтобы метрический юзер видел кг даже у lb-замеренных. */
 export function gripperLabel(g: Gripper, unit: 'kg' | 'lb' = 'kg'): string {
   const base = gripperName(g);
@@ -115,5 +127,5 @@ export function gripperLabel(g: Gripper, unit: 'kg' | 'lb' = 'kg'): string {
   const lb = kg * LB_PER_KG;
   const primary = unit === 'kg' ? `${Math.round(kg)} kg` : `${Math.round(lb)} lb`;
   const secondary = unit === 'kg' ? `${Math.round(lb)} lb` : `${Math.round(kg)} kg`;
-  return `${base} · ${primary} (${secondary})`;
+  return `${base} · RGC: ${primary} (${secondary})`;
 }

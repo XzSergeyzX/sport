@@ -10,6 +10,7 @@ import { useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from '@/lib/auth/auth-context';
+import { EntryStatusNotifications } from '@/lib/entry-notifications';
 import i18n from '@/lib/i18n';
 import { loadStoredLanguage } from '@/lib/prefs';
 import { asyncPersister, queryClient } from '@/lib/query';
@@ -70,6 +71,8 @@ export default function RootLayout() {
               options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
             />
           </Stack>
+          {/* нотификации о решениях по заявкам лидерборда (realtime + догон на старте) */}
+          <EntryStatusNotifications />
           <StatusBar style={colorScheme === 'light' ? 'dark' : 'light'} />
         </AuthProvider>
       </SafeAreaProvider>

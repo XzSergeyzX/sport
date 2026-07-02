@@ -79,7 +79,7 @@
     "videoHostError": "Приймаються лише посилання на YouTube, Instagram, TikTok, Vimeo або Facebook.",
     "certified": "Офіційна сертифікація (федерація / IronMind тощо)",
     "certifiedShort": "серт",
-    "bwShort": "ВВ",
+    "bwShort": "Власна вага",
     "myGrippersSection": "Мої еспандери (заміряні)",
     "catalogSection": "Каталог (середні значення)",
     "openVideoTitle": "Відкрити посилання на",
@@ -100,7 +100,11 @@
     "deleteConfirm": "Прибрати цю заявку?",
     "moderation": "Модерація",
     "approve": "Підтвердити",
-    "reject": "Відхилити"
+    "reject": "Відхилити",
+    "notifApprovedTitle": "Заявку схвалено 🎉",
+    "notifApprovedBody": "Твій запит на участь у лідерборді схвалено — результат уже на борді. Тисни, щоб подивитися.",
+    "notifRejectedTitle": "Заявку відхилено",
+    "notifRejectedBody": "Модератор відхилив відео-пруф. Перевір вимоги й подай ще раз."
   },
   "coach": {
     "title": "Коуч",
