@@ -22,6 +22,7 @@
   },
   "common": {
     "kg": "kg",
+    "thousandSuffix": "k",
     "lb": "lb",
     "english": "English",
     "ukrainian": "Українська",
@@ -104,7 +105,8 @@
     "notifApprovedTitle": "Entry approved 🎉",
     "notifApprovedBody": "Your leaderboard entry was approved — you're on the board. Tap to take a look.",
     "notifRejectedTitle": "Entry rejected",
-    "notifRejectedBody": "The moderator rejected your video proof. Check the requirements and resubmit."
+    "notifRejectedBody": "The moderator rejected your video proof. Check the requirements and resubmit.",
+    "entryDate": "Result date"
   },
   "coach": {
     "title": "Coach",
@@ -246,6 +248,7 @@
     "calendar": "Calendar",
     "workoutYes": "Workout",
     "noDataDay": "No data for this day",
+    "openWorkout": "Open workout",
     "markDay1": "Mark cycle day 1",
     "day1Marked": "Cycle day 1 ✓",
     "soonTitle": "Analytics are coming",

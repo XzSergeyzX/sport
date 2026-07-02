@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
+import i18n from '@/lib/i18n';
 import {
   createProgram,
   deleteProgram,
@@ -183,7 +184,11 @@ export default function ProgramsScreen() {
                   <View className="flex-1">
                     <Text className="text-base font-semibold text-graphite-100">{p.title}</Text>
                     <Text className="mt-1 text-xs text-graphite-500">
-                      {new Date(p.created_at).toLocaleDateString()}
+                      {/* дд.мм.гг — единый формат дат апки (дефолтный toLocaleDateString давал US-форму 7/1/2026) */}
+                      {new Date(p.created_at).toLocaleDateString(
+                        i18n.language === 'uk' ? 'uk-UA' : 'en-US',
+                        { day: '2-digit', month: '2-digit', year: '2-digit' },
+                      )}
                       {p.source === 'ai_import' ? ' · AI' : ''}
                     </Text>
                   </View>

@@ -54,6 +54,15 @@ function parseNum(v: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+/** Дата энтри строки борда: когда выступил (performed_at), фолбэк — когда подал (created_at). */
+function entryDate(r: LeaderboardRow): string | null {
+  const iso = r.performed_at ?? r.created_at;
+  if (!iso) return null;
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)}`;
+}
+
 /** Результат строки борда: динамометр — вес в единице юзера; эспандер — модель + RGC в кг. */
 function rowResult(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string): string {
   if (r.weight_kg != null) {
@@ -384,6 +393,7 @@ export default function LeaderboardScreen() {
   const [dynFilter, setDynFilter] = useState<string | null>(null); // name; null = все
   const [setTypeFilter, setSetTypeFilter] = useState<GripSetType>('tns');
   const [submitting, setSubmitting] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null); // тап по строке → дата энтри
 
   const { data: dynamometers } = useQuery({
     queryKey: ['dynamometers'],
@@ -523,10 +533,13 @@ export default function LeaderboardScreen() {
               const cert = certByUser.get(r.user_id);
               const bw = r.bodyweight != null ? Math.round(fromKg(r.bodyweight, unit) as number) : null;
               const mine = r.user_id === userId;
+              const date = entryDate(r);
+              const expanded = expandedId === r.entry_id;
               return (
-                <View
+                <Pressable
                   key={r.entry_id}
-                  className="mb-2 flex-row items-center rounded-2xl bg-graphite-900 p-3"
+                  onPress={() => setExpandedId(expanded ? null : r.entry_id)}
+                  className="mb-2 flex-row items-center rounded-2xl bg-graphite-900 p-3 active:opacity-90"
                   // подсветка — СВОЯ позиция, а не первая (первую и так видно по медали)
                   style={mine ? { borderWidth: 1, borderColor: '#1FB89A88' } : undefined}
                 >
@@ -557,11 +570,16 @@ export default function LeaderboardScreen() {
                         </Text>
                       )}
                     </Text>
+                    {expanded && date != null && (
+                      <Text className="mt-1 text-xs text-graphite-500">
+                        {t('leaderboard.entryDate')}: {date}
+                      </Text>
+                    )}
                   </View>
                   <Pressable onPress={() => openVideo(r.video_url)} hitSlop={8} className="pl-2 active:opacity-60">
                     <Ionicons name="play-circle-outline" size={26} color="#1FB89A" />
                   </Pressable>
-                </View>
+                </Pressable>
               );
             })}
           </View>

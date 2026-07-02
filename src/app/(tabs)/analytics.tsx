@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
@@ -220,13 +221,16 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
   };
 }
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
 function fmtDuration(min: number, t: (k: string) => string): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
-  return h > 0 ? `${h}${t('analytics.hrShort')} ${m}${t('summary.min')}` : `${m} ${t('summary.min')}`;
+  return h > 0 ? `${h} ${t('analytics.hrShort')} ${m} ${t('summary.min')}` : `${m} ${t('summary.min')}`;
 }
 function fmtTonnage(v: number): string {
-  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
+  // суффикс тысяч локализован: «40.1к» в укр-интерфейсе, «40.1k» в en
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}${i18n.t('common.thousandSuffix')}` : String(Math.round(v));
 }
 function fmtSec(sec: number, secShort: string): string {
   if (sec < 60) return `${sec}${secShort}`;
@@ -234,9 +238,10 @@ function fmtSec(sec: number, secShort: string): string {
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+// дд.мм.гг с ведущими нулями — единый формат дат по всей апке (как в списке тренировок)
 function fmtDate(iso: string): string {
   const d = new Date(iso);
-  return `${d.getDate()}.${d.getMonth() + 1}.${String(d.getFullYear()).slice(2)}`;
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)}`;
 }
 
 // ——— OURA «Відновлення»: середні за 30 днів + спарклайн + дельта до попередніх 30 ———
@@ -546,7 +551,7 @@ function TonnageBars({ series, unit, hint }: { series: TonnagePoint[]; unit: str
           const d = new Date(p.date);
           return (
             <Text key={`${p.date}-${i}`} className="flex-1 text-center text-[9px] text-graphite-600">
-              {d.getDate()}.{d.getMonth() + 1}
+              {pad2(d.getDate())}.{pad2(d.getMonth() + 1)}
             </Text>
           );
         })}
@@ -562,6 +567,7 @@ function TonnageBars({ series, unit, hint }: { series: TonnagePoint[]; unit: str
 
 type DayInfo = {
   workout: boolean;
+  workoutIds: string[]; // тап у модалке дня → открыть summary тренировки
   tonnage: number;
   readiness: number | null;
   sleep: number | null;
@@ -574,7 +580,6 @@ const PHASE_TINT: Record<CyclePhase, string> = {
   ovulation: 'bg-sky-500/25',
   luteal: 'bg-amber-500/25',
 };
-const pad2 = (n: number) => String(n).padStart(2, '0');
 
 function Calendar({
   monthOffset,
@@ -600,7 +605,8 @@ function Calendar({
   base.setMonth(base.getMonth() + monthOffset);
   const year = base.getFullYear();
   const month = base.getMonth();
-  const title = base.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  // месяц + голый год: локализованный year:'numeric' даёт «2026 р.», которое капслочится в «Р.»
+  const title = `${base.toLocaleDateString(locale, { month: 'long' })} ${year}`;
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // понеділок = 0
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const week = [...Array(7)].map((_, i) =>
@@ -709,6 +715,7 @@ export default function AnalyticsScreen() {
   });
 
   const qc = useQueryClient();
+  const router = useRouter();
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
@@ -759,6 +766,7 @@ export default function AnalyticsScreen() {
     for (const s of snaps ?? [])
       m.set(s.date, {
         workout: false,
+        workoutIds: [],
         tonnage: 0,
         readiness: s.readiness,
         sleep: s.sleep_score,
@@ -770,8 +778,9 @@ export default function AnalyticsScreen() {
       const d = ymdLocal(w.started_at);
       const e =
         m.get(d) ??
-        ({ workout: false, tonnage: 0, readiness: null, sleep: null, phase: phaseForDate(d, starts) } as DayInfo);
+        ({ workout: false, workoutIds: [], tonnage: 0, readiness: null, sleep: null, phase: phaseForDate(d, starts) } as DayInfo);
       e.workout = true;
+      if (!e.workoutIds.includes(w.id)) e.workoutIds.push(w.id);
       if (r.reps != null && r.duration_sec == null && (r.weight != null || bwLoad(r)))
         e.tonnage += effWeight(r, bwKg) * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
       m.set(d, e);
@@ -805,22 +814,24 @@ export default function AnalyticsScreen() {
     );
   };
 
-  // рядок рекорду хвата (один з топ-3 у секції): дві лінії, щоб довге ім'я еспандера
-  // не з'їдало RGC·повтори. Рядок 1 — № · ім'я → оцінка · дата; рядок 2 — RGC · ×повтори.
+  // рядок рекорду хвата — той самий шаблон, що recLine у звичайних вправах («залізка × повтори»
+  // зліва, «≈оцінка · дата» справа), щоб секції читались однаково; RGC — дрібним другим рядком
   const gripLine = (r: GripRec, i: number) => (
     <View key={`${r.gripperName}-${r.reps}-${i}`} className="py-1">
-      <View className="flex-row items-baseline justify-between">
+      <View className="flex-row items-center justify-between">
         <Text className="flex-1 text-sm text-graphite-200" numberOfLines={1}>
-          {i + 1}.  {r.gripperName}
+          {i + 1}.  {r.gripperName} × {r.reps}
         </Text>
         <Text className="ml-2 text-xs text-graphite-500">
           {r.estKg != null ? `≈${formatWeight(r.estKg, unit)} ${unitLabel} · ` : ''}
           {fmtDate(r.date)}
         </Text>
       </View>
-      <Text className="ml-5 text-xs text-graphite-500" numberOfLines={1}>
-        {r.rgcKg != null ? `RGC ${formatWeight(r.rgcKg, unit)} ${unitLabel} · ` : ''}×{r.reps}
-      </Text>
+      {r.rgcKg != null && (
+        <Text className="ml-5 text-xs text-graphite-600" numberOfLines={1}>
+          RGC: {formatWeight(r.rgcKg, unit)} {unitLabel}
+        </Text>
+      )}
     </View>
   );
 
@@ -945,7 +956,8 @@ export default function AnalyticsScreen() {
                           </Text>
                         )}
                       </View>
-                      <View className="mt-2 border-t border-graphite-800 pt-1">
+                      {/* внутренняя карточка bg-800 — как карточки упражнений в обычных рекордах */}
+                      <View className="mt-2 rounded-xl bg-graphite-800 p-3">
                         {g.top.map((r, i) => gripLine(r, i))}
                       </View>
                     </View>
@@ -1110,6 +1122,22 @@ export default function AnalyticsScreen() {
                           <Text className="text-sm text-graphite-500">{t('analytics.noDataDay')}</Text>
                         ) : null}
                       </View>
+                      {/* тап из календаря сразу в summary тренировки этого дня */}
+                      {di?.workoutIds.map((wid, i) => (
+                        <Pressable
+                          key={wid}
+                          onPress={() => {
+                            setSelectedDay(null);
+                            router.push({ pathname: '/summary/[id]', params: { id: wid } });
+                          }}
+                          className="mt-3 items-center rounded-xl border border-accent py-3 active:opacity-70"
+                        >
+                          <Text className="text-sm font-bold text-accent">
+                            {t('analytics.openWorkout')}
+                            {di.workoutIds.length > 1 ? ` ${i + 1}` : ''}
+                          </Text>
+                        </Pressable>
+                      ))}
                       {trackCycle ? (
                         <Pressable
                           disabled={markMut.isPending || startsSet.has(selectedDay)}
