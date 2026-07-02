@@ -23,6 +23,7 @@ export type LeaderboardRow = {
   user_id: string;
   display_name: string;
   avatar: string | null;
+  bodyweight?: number | null; // кг, из профиля участника (только в approved-витрине)
   board?: Board; // только в pending-RPC
   dynamometer: string | null;
   weight_kg: number | null;
@@ -147,6 +148,40 @@ const LB_PER_KG = 2.2046226218;
 export function rowRgcKg(r: { gripper_rgc: number | null; gripper_rgc_unit: string | null }): number | null {
   if (r.gripper_rgc == null) return null;
   return r.gripper_rgc_unit === 'lb' ? r.gripper_rgc / LB_PER_KG : r.gripper_rgc;
+}
+
+/** Официальная сертификация существует только у CoC #3 / #3.5 / #4 (IronMind, мужчины) —
+ *  для остальных железок и динамометров свитч в заявке не показываем. */
+export function certEligibleGripper(g: { brand?: string | null; name: string }): boolean {
+  const s = `${g.brand ?? ''} ${g.name}`.toLowerCase();
+  return s.includes('coc') && /(?:^|[^\d.])(3(?:\.5)?|4)(?:$|[^\d.])/.test(s);
+}
+
+/** Номер CoC из названия железки строки борда («CoC #3.5» → «3.5»); null, если не CoC 3/3.5/4. */
+export function cocNumber(r: { gripper_brand: string | null; gripper_name: string | null }): string | null {
+  const s = `${r.gripper_brand ?? ''} ${r.gripper_name ?? ''}`.toLowerCase();
+  if (!s.includes('coc')) return null;
+  const m = s.match(/(?:^|[^\d.])(3\.5|3|4)(?:$|[^\d.])/);
+  return m ? m[1] : null;
+}
+
+/** «CoC 3, 3.5 Certified» на юзера — из ВСЕХ его approved-заявок борда (не только лучшей). */
+export function certLabels(rows: LeaderboardRow[]): Map<string, string> {
+  const byUser = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!r.certified) continue;
+    const n = cocNumber(r);
+    if (!n) continue;
+    const set = byUser.get(r.user_id) ?? new Set<string>();
+    set.add(n);
+    byUser.set(r.user_id, set);
+  }
+  const out = new Map<string, string>();
+  for (const [uid, set] of byUser) {
+    const nums = [...set].sort((a, b) => parseFloat(a) - parseFloat(b));
+    out.set(uid, `CoC ${nums.join(', ')} Certified`);
+  }
+  return out;
 }
 
 /** Лучший результат на юзера в пределах текущего фильтра (борд уже отфильтрован).

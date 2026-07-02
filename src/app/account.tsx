@@ -5,7 +5,7 @@ import { Redirect, useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -198,23 +198,39 @@ export default function AccountScreen() {
             </View>
           </Pressable>
           <View className="ml-3 flex-1">
-            <TextInput
-              value={nameText}
-              onChangeText={setNameText}
-              onFocus={() => setNameFocused(true)}
-              onBlur={() => {
-                setNameFocused(false);
-                nameMut.mutate(nameText);
-              }}
-              // ремень к blur: на устройстве onEndEditing срабатывает при «Done»/уходе с поля
-              // (урок дня-45 — не доверять одному события окончания ввода); mutate идемпотентен
-              onEndEditing={() => nameMut.mutate(nameText)}
-              maxLength={40}
-              returnKeyType="done"
-              placeholder={t('account.namePlaceholder')}
-              placeholderTextColor="#5C6675"
-              className="rounded-xl bg-graphite-800 px-3 py-2 text-base font-semibold text-graphite-50"
-            />
+            <View className="flex-row items-center gap-2">
+              <TextInput
+                value={nameText}
+                onChangeText={setNameText}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => {
+                  setNameFocused(false);
+                  nameMut.mutate(nameText);
+                }}
+                // ремень к blur: на устройстве onEndEditing срабатывает при «Done»/уходе с поля
+                // (урок дня-45 — не доверять одному события окончания ввода); mutate идемпотентен
+                onEndEditing={() => nameMut.mutate(nameText)}
+                maxLength={40}
+                returnKeyType="done"
+                placeholder={t('account.namePlaceholder')}
+                placeholderTextColor="#5C6675"
+                className="flex-1 rounded-xl bg-graphite-800 px-3 py-2 text-base font-semibold text-graphite-50"
+              />
+              {/* явная галочка сохранения: «энтер на клавиатуре» неинтуитивен (фидбек) */}
+              {(nameFocused || nameText !== (displayName ?? '')) && (
+                <Pressable
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setNameFocused(false);
+                    nameMut.mutate(nameText);
+                  }}
+                  hitSlop={8}
+                  className="h-9 w-9 items-center justify-center rounded-xl bg-accent active:opacity-80"
+                >
+                  <Ionicons name="checkmark" size={18} color="#0B0F14" />
+                </Pressable>
+              )}
+            </View>
             <Text className="ml-1 mt-1 text-xs text-graphite-500" numberOfLines={1}>
               {session?.user.email ?? '—'} · {t('account.nameHint')}
             </Text>

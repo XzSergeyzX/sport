@@ -25,6 +25,8 @@ import { useAuth } from '@/lib/auth/auth-context';
 import {
   bestPerUser,
   type Board,
+  certEligibleGripper,
+  certLabels,
   deleteEntry,
   type Dynamometer,
   getLeaderboard,
@@ -107,6 +109,8 @@ function SubmitForm({
   const globalGrippers = q.length > 0 ? matches((catalog ?? []).filter((g) => g.is_global)) : [];
 
   const weightKg = toKg(parseNum(weight), unit);
+  // серт валиден только с подходящей железкой: смена гриппера не должна утащить старый флаг
+  const canCert = board === 'gripper' && !!gripper && certEligibleGripper(gripper);
   const urlOk = VIDEO_HOST_RE.test(videoUrl.trim());
   const urlLooksFilled = videoUrl.trim().length > 8;
   const canSubmit =
@@ -119,8 +123,8 @@ function SubmitForm({
     mutationFn: () =>
       submitEntry(
         board === 'dynamometer'
-          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note, certified }
-          : { userId, board, gripperId: gripper!.id, setType, videoUrl, note, certified },
+          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note, certified: false }
+          : { userId, board, gripperId: gripper!.id, setType, videoUrl, note, certified: canCert && certified },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['leaderboard-my', userId] });
@@ -260,20 +264,22 @@ function SubmitForm({
         </>
       )}
 
-      {/* официальная сертификация (федерация/IronMind и т.п.) — заявляет атлет, глазами
-          подтверждает админ при апруве; на борде бейдж и приоритет при равном результате */}
-      <View className="mt-4 flex-row items-center justify-between">
-        <View className="flex-1 flex-row items-center pr-3">
-          <Ionicons name="ribbon-outline" size={16} color={certified ? '#1FB89A' : PLACEHOLDER} />
-          <Text className="ml-2 flex-1 text-sm text-graphite-200">{t('leaderboard.certified')}</Text>
+      {/* официальная сертификация существует только у CoC #3/#3.5/#4 (IronMind) — свитч
+          показываем строго при выборе такой железки; заявляет атлет, подтверждает админ апрувом */}
+      {canCert && (
+        <View className="mt-4 flex-row items-center justify-between">
+          <View className="flex-1 flex-row items-center pr-3">
+            <Ionicons name="ribbon-outline" size={16} color={certified ? '#1FB89A' : PLACEHOLDER} />
+            <Text className="ml-2 flex-1 text-sm text-graphite-200">{t('leaderboard.certified')}</Text>
+          </View>
+          <Switch
+            value={certified}
+            onValueChange={setCertified}
+            trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
+            thumbColor="#E5E7EB"
+          />
         </View>
-        <Switch
-          value={certified}
-          onValueChange={setCertified}
-          trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
-          thumbColor="#E5E7EB"
-        />
-      </View>
+      )}
 
       <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
         {t('leaderboard.videoUrl')}
@@ -422,6 +428,8 @@ export default function LeaderboardScreen() {
       : r.set_type === setTypeFilter,
   );
   const ranked = bestPerUser(filtered, (r) => (board === 'dynamometer' ? r.weight_kg : rowRgcKg(r)));
+  // «CoC 3, 3.5 Certified» у ника — из всех approved-заявок юзера на этом борде
+  const certByUser = certLabels(rows ?? []);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
@@ -505,32 +513,51 @@ export default function LeaderboardScreen() {
           </Text>
         ) : (
           <View className="mt-3">
-            {ranked.map((r, i) => (
-              <View
-                key={r.entry_id}
-                className="mb-2 flex-row items-center rounded-2xl bg-graphite-900 p-3"
-                style={i === 0 ? { borderWidth: 1, borderColor: '#1FB89A55' } : undefined}
-              >
-                <Text className="w-8 text-center text-base font-bold text-graphite-300">
-                  {MEDALS[i] ?? i + 1}
-                </Text>
-                <Avatar email={r.display_name} avatarKey={r.avatar} size={36} />
-                <View className="ml-3 flex-1">
-                  <View className="flex-row items-center">
-                    <Text className="text-base font-semibold text-graphite-100" numberOfLines={1}>
-                      {r.display_name}
+            {ranked.map((r, i) => {
+              const cert = certByUser.get(r.user_id);
+              const bw = r.bodyweight != null ? Math.round(fromKg(r.bodyweight, unit) as number) : null;
+              const mine = r.user_id === userId;
+              return (
+                <View
+                  key={r.entry_id}
+                  className="mb-2 flex-row items-center rounded-2xl bg-graphite-900 p-3"
+                  // подсветка — СВОЯ позиция, а не первая (первую и так видно по медали)
+                  style={mine ? { borderWidth: 1, borderColor: '#1FB89A88' } : undefined}
+                >
+                  <Text
+                    className="w-9 text-center font-bold text-graphite-300"
+                    style={{ fontSize: i < 3 ? 24 : 15 }}
+                  >
+                    {MEDALS[i] ?? i + 1}
+                  </Text>
+                  <Avatar email={r.display_name} avatarKey={r.avatar} size={36} />
+                  <View className="ml-3 flex-1">
+                    <View className="flex-row items-center">
+                      <Text className="text-base font-semibold text-graphite-100" numberOfLines={1}>
+                        {r.display_name}
+                      </Text>
+                      {!!cert && (
+                        <Text className="ml-2 text-xs italic text-accent" numberOfLines={1}>
+                          {cert}
+                        </Text>
+                      )}
+                    </View>
+                    <Text className="mt-0.5 text-sm text-graphite-400">
+                      {rowResult(r, unit, t)}
+                      {bw != null && (
+                        <Text className="text-graphite-600">
+                          {'  ·  '}
+                          {t('leaderboard.bwShort')} {bw} {t(`common.${unit}`)}
+                        </Text>
+                      )}
                     </Text>
-                    {r.certified && (
-                      <Ionicons name="ribbon" size={14} color="#1FB89A" style={{ marginLeft: 6 }} />
-                    )}
                   </View>
-                  <Text className="mt-0.5 text-sm text-graphite-400">{rowResult(r, unit, t)}</Text>
+                  <Pressable onPress={() => openVideo(r.video_url)} hitSlop={8} className="pl-2 active:opacity-60">
+                    <Ionicons name="play-circle-outline" size={26} color="#1FB89A" />
+                  </Pressable>
                 </View>
-                <Pressable onPress={() => openVideo(r.video_url)} hitSlop={8} className="pl-2 active:opacity-60">
-                  <Ionicons name="play-circle-outline" size={26} color="#1FB89A" />
-                </Pressable>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 

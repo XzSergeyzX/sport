@@ -79,6 +79,7 @@
     "videoHostError": "Only YouTube, Instagram, TikTok, Vimeo or Facebook links are accepted.",
     "certified": "Official certification (federation / IronMind etc.)",
     "certifiedShort": "cert",
+    "bwShort": "BW",
     "myGrippersSection": "My grippers (measured)",
     "catalogSection": "Catalog (chart average)",
     "openVideoTitle": "Open link on",

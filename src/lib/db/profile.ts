@@ -37,6 +37,17 @@ export async function setBodyweight(userId: string, kg: number | null): Promise<
   if (error) throw error;
 }
 
+/** Экран «Здоров'я» осмыслен только при подключённой OURA или трекинге цикла — иначе таб
+ *  прячем (фидбек: у Сергея он пустой, нужен только Маше). */
+export async function getHealthRelevant(userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('profile')
+    .select('oura_connected, track_cycle')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return !!data?.oura_connected || !!data?.track_cycle;
+}
+
 /** Имя/никнейм: показывается на лидерборде и в persona коуча. NULL = «Athlete» на борде. */
 export async function getDisplayName(userId: string): Promise<string | null> {
   const { data } = await supabase

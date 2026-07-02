@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
+import { getHealthRelevant } from '@/lib/db/profile';
 import { useRole } from '@/lib/use-role';
 
 const ACTIVE = '#1FB89A';
@@ -28,6 +30,15 @@ export default function TabsLayout() {
   // реальный гейт ИИ — на сервере, спрятанные табы — только UX.
   const role = useRole();
   const grip = role === 'grip';
+  // «Здоров'я» осмыслен только с OURA/циклом (у Маши) — остальным таб не показываем.
+  // Пока не загружено — прячем (не мигать пустым табом у тех, кому он не нужен).
+  const userId = session?.user.id;
+  const { data: healthRelevant } = useQuery({
+    queryKey: ['health-relevant', userId],
+    queryFn: () => getHealthRelevant(userId as string),
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 30,
+  });
 
   // Гард: на табы можно попасть прямым deep-link (скан QR), минуя гейт index.tsx.
   // Без сессии — выкидываем на вход, иначе экраны грузятся «без пользователя».
@@ -55,8 +66,9 @@ export default function TabsLayout() {
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
         },
-        // 10 вместо 11: с шестым табом («Борд») «Тренування» обрезалось в «Тренува…»
-        tabBarLabelStyle: { fontSize: 10 },
+        // только иконки (решение дня-46): подписи резались («Тренува…»), а 3–6 иконок
+        // читаются сами; title остаётся — его читает screen-reader
+        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen
@@ -89,7 +101,7 @@ export default function TabsLayout() {
         options={{
           title: t('tabs.health'),
           tabBarIcon: icon('heart-outline'),
-          href: grip ? null : undefined,
+          href: grip || !healthRelevant ? null : undefined,
         }}
       />
       <Tabs.Screen

@@ -22,7 +22,7 @@
   },
   "common": {
     "kg": "кг",
-    "lb": "фунти",
+    "lb": "lbs",
     "english": "English",
     "ukrainian": "Українська",
     "cancel": "Скасувати"
@@ -79,6 +79,7 @@
     "videoHostError": "Приймаються лише посилання на YouTube, Instagram, TikTok, Vimeo або Facebook.",
     "certified": "Офіційна сертифікація (федерація / IronMind тощо)",
     "certifiedShort": "серт",
+    "bwShort": "ВВ",
     "myGrippersSection": "Мої еспандери (заміряні)",
     "catalogSection": "Каталог (середні значення)",
     "openVideoTitle": "Відкрити посилання на",
