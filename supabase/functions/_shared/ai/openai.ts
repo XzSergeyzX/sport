@@ -9,6 +9,9 @@ export const openaiAdapter: Adapter = {
   async complete(model: string, input: CompleteInput): Promise<CompleteOutput> {
     const key = Deno.env.get('OPENAI_API_KEY');
     if (!key) throw new AiError('provider_unavailable', 'OPENAI_API_KEY not set');
+    // tool-calling реализован только в anthropic-адаптере; честный отказ вместо тихой
+    // деградации (иначе смена роута coach_chat молча оставит коуча без данных атлета)
+    if (input.tools?.length) throw new AiError('tools_unsupported', 'openai adapter has no tool-calling');
 
     const messages = [
       ...(input.system ? [{ role: 'system', content: input.system }] : []),

@@ -7,6 +7,7 @@ import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { runIntent } from '../_shared/ai/gateway.ts';
 import { AiError, ChatMessage, ContentBlock, ToolSpec } from '../_shared/ai/types.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import { hasAiAccess } from '../_shared/roles.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -203,7 +204,9 @@ function makeTools(admin: SupabaseClient, userId: string, units: 'kg' | 'lb') {
     },
 
     async get_exercise_history(input) {
-      const query = String(input.query ?? '').trim();
+      // чистим синтаксис PostgREST-фильтров: query интерполируется в .or(...ilike...) на
+      // service-role клиенте — запятые/скобки меняли бы сам фильтр (как в workout-import)
+      const query = String(input.query ?? '').replace(/[(),{}*%\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
       if (!query) return { error: 'empty query' };
       const like = `%${query}%`;
       const { data: exs } = await admin
@@ -352,8 +355,14 @@ Deno.serve(async (req) => {
     if (!message || typeof message !== 'string' || !message.trim()) {
       return json({ error: 'empty_input' }, 400);
     }
+    // жёсткий предел длины: без него один вброс на сотни КБ уходит в модель как есть И
+    // навсегда оседает в ai_messages → дорожает каждое следующее сообщение диалога (история 24)
+    const userMessage = message.trim().slice(0, 2000);
 
     const admin = createClient(url, serviceKey);
+
+    // роль-гейт: ИИ-коуч только для full/admin (комьюнити-роль grip — без ИИ)
+    if (!(await hasAiAccess(admin, userId))) return json({ error: 'feature_not_available' }, 403);
 
     // профиль (язык/единицы/пол/имя) — для persona, согласования рода и форматирования
     const { data: prof } = await admin
@@ -397,7 +406,7 @@ Deno.serve(async (req) => {
       .reverse()
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    await admin.from('ai_messages').insert({ thread_id: threadId, role: 'user', content: message.trim() });
+    await admin.from('ai_messages').insert({ thread_id: threadId, role: 'user', content: userMessage });
 
     const who = prof?.display_name ? `name ${prof.display_name}, ` : '';
     const sexLabel = sex === 'other' && prof?.gender_self ? `other (${prof.gender_self})` : sex;
@@ -405,7 +414,7 @@ Deno.serve(async (req) => {
       `${PERSONA}\n\nAthlete: ${who}sex ${sexLabel}, language ${lang}, units ${units}. ` +
       `Match grammatical gender to the sex above. Today: ${new Date().toISOString().slice(0, 10)}.`;
     const tools = makeTools(admin, userId, units);
-    const messages: ChatMessage[] = [...history, { role: 'user', content: message.trim() }];
+    const messages: ChatMessage[] = [...history, { role: 'user', content: userMessage }];
 
     // агент-цикл: модель → (tool_use → исполняем → tool_result → снова) → текст
     let reply = '';

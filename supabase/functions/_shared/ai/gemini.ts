@@ -9,6 +9,9 @@ export const geminiAdapter: Adapter = {
   async complete(model: string, input: CompleteInput): Promise<CompleteOutput> {
     const key = Deno.env.get('GEMINI_API_KEY');
     if (!key) throw new AiError('provider_unavailable', 'GEMINI_API_KEY not set');
+    // tool-calling реализован только в anthropic-адаптере; честный отказ вместо тихой
+    // деградации (иначе смена роута coach_chat молча оставит коуча без данных атлета)
+    if (input.tools?.length) throw new AiError('tools_unsupported', 'gemini adapter has no tool-calling');
 
     const contents = input.messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
