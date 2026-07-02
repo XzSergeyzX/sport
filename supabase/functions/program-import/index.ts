@@ -7,6 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { runIntent } from '../_shared/ai/gateway.ts';
 import { AiError } from '../_shared/ai/types.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import { hasAiAccess } from '../_shared/roles.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -217,6 +218,9 @@ Deno.serve(async (req) => {
     }
 
     const admin = createClient(url, serviceKey);
+
+    // роль-гейт: ИИ-импорт только для full/admin (комьюнити-роль grip — без ИИ)
+    if (!(await hasAiAccess(admin, userId))) return json({ error: 'feature_not_available' }, 403);
 
     // единица пользователя — числа в тексте трактуем в ней, храним канонически в кг
     const { data: prof } = await admin

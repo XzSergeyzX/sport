@@ -9,6 +9,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { corsHeaders } from '../_shared/cors.ts';
+import { hasAiAccess } from '../_shared/roles.ts';
 
 const MODEL = 'gpt-4o-mini-transcribe';
 const USD_PER_MIN = 0.003; // прайс OpenAI на gpt-4o-mini-transcribe (аудио-минуты)
@@ -58,6 +59,9 @@ Deno.serve(async (req) => {
     if (bytes.length > MAX_BYTES) return json({ error: 'audio_too_large' }, 413);
 
     const admin = createClient(url, serviceKey);
+
+    // роль-гейт: STT только для full/admin (комьюнити-роль grip — без ИИ)
+    if (!(await hasAiAccess(admin, userId))) return json({ error: 'feature_not_available' }, 403);
 
     // бюджет / kill-switch (общий для всего ИИ)
     const { data: budget, error: bErr } = await admin.rpc('ai_budget_check', { p_user: userId });
