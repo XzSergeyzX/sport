@@ -138,6 +138,9 @@ export async function reviewEntry(entryId: string, action: 'approved' | 'rejecte
     p_action: action,
   });
   if (error) throw error;
+  // remote push владельцу заявки — fire-and-forget: вердикт уже записан, несработавший
+  // пуш не должен ронять модерацию (владельца догонит sweep при следующем открытии)
+  void supabase.functions.invoke('push-entry-review', { body: { entryId } });
 }
 
 // ---- хелперы отображения ----

@@ -8,6 +8,7 @@ import { AppState, Platform } from 'react-native';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import type { EntryStatus } from '@/lib/db/leaderboard';
+import { registerPushToken } from '@/lib/push-token';
 import { supabase } from '@/lib/supabase';
 
 // Нотификации в шторку о судьбе заявок лидерборда («схвалено/відхилено» + тап → борд).
@@ -44,12 +45,17 @@ export function EntryStatusNotifications() {
       if (cancelled) return;
 
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: false,
-          shouldSetBadge: false,
-        }),
+        handleNotification: async (n) => {
+          // remote push в foreground глушим: то же событие мгновенно покажет realtime-слой
+          // (в фоне/убитой апке пуш постит система и до хендлера не доходит)
+          const isRemote = (n.request.trigger as { type?: string } | null)?.type === 'push';
+          return {
+            shouldShowBanner: !isRemote,
+            shouldShowList: !isRemote,
+            shouldPlaySound: false,
+            shouldSetBadge: false,
+          };
+        },
       });
 
       // тап по нотификации → экран борда
@@ -76,18 +82,21 @@ export function EntryStatusNotifications() {
         return (await Notifications.requestPermissionsAsync()).granted;
       };
 
-      const notify = async (status: 'approved' | 'rejected') => {
+      const notify = async (status: 'approved' | 'rejected', entryId: string) => {
         if (!(await ensurePermission())) return;
         await Notifications.scheduleNotificationAsync({
           content: {
             title: t(status === 'approved' ? 'leaderboard.notifApprovedTitle' : 'leaderboard.notifRejectedTitle'),
             body: t(status === 'approved' ? 'leaderboard.notifApprovedBody' : 'leaderboard.notifRejectedBody'),
-            data: { screen: 'leaderboard' },
+            data: { screen: 'leaderboard', entryId, status },
           },
           // channelId обязателен: trigger: null уводит в фолбэк-канал expo (Miscellaneous)
           trigger: Platform.OS === 'android' ? { channelId: 'leaderboard-v2' } : null,
         });
       };
+
+      // токен для remote push (EAS этап 2); в Expo Go тихо не сработает — и ок
+      void registerPushToken(userId);
 
       // ---- догоняем решения, принятые пока апка спала (старт + возврат в foreground) ----
       let sweepRunning = false;
@@ -106,10 +115,20 @@ export function EntryStatusNotifications() {
           for (const row of entries) next[row.id as string] = row.status as EntryStatus;
           let changed = false;
           if (prev) {
+            // если системный пуш об этом вердикте уже висит в шторке — локальный дубль не нужен
+            const presented = await Notifications.getPresentedNotificationsAsync();
+            const shown = new Set(
+              presented.map((p) => {
+                const d = p.request.content.data as { entryId?: string; status?: string } | null;
+                return d?.entryId ? `${d.entryId}:${d.status ?? ''}` : '';
+              }),
+            );
             for (const [id, status] of Object.entries(next)) {
               // неизвестный id со статусом ≠ pending — заявка подана и рассмотрена, пока апка спала
               if (NOTIFIABLE.includes(status) && prev[id] !== status) {
-                await notify(status as 'approved' | 'rejected');
+                if (!shown.has(`${id}:${status}`)) {
+                  await notify(status as 'approved' | 'rejected', id);
+                }
                 changed = true;
               }
             }
@@ -150,7 +169,7 @@ export function EntryStatusNotifications() {
                 return;
               }
               if (payload.eventType === 'UPDATE' && NOTIFIABLE.includes(row.status) && was !== row.status) {
-                await notify(row.status as 'approved' | 'rejected');
+                await notify(row.status as 'approved' | 'rejected', row.id);
                 qc.invalidateQueries({ queryKey: ['leaderboard'] });
                 qc.invalidateQueries({ queryKey: ['leaderboard-my', userId] });
               }
