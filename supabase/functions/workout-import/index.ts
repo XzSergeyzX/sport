@@ -126,7 +126,7 @@ OTHER RULES:
 - GRIPPERS / hand-closers ("эспандер", "гриппер", "Heavy Grips 300", "CoC #2", "expander"): the load is
   the gripper MODEL, NOT a weight. → name the exercise "Стиснення еспандера" (catalog gripper), ONE set
   per gripper line with weight=null, reps=the closes ("на 3 раза" → reps 3), "gripper"=the model string
-  ("Heavy Grips 300"), and "set_type" if a grip setup is named ("дипсет"/"дип-сет"→"deep", "TNS"→"tns",
+  ("Heavy Grips 300"), and "set_type" if a grip setup is named ("дипсет"/"дип-сет"/"діпсет"/"діп-сет"→"deep", "TNS"→"tns",
   "карта"→"card", "блок 38"→"block_38", "блок 20"→"block_20"). An "RGC"/"ргц" number ("72 rgc",
   "47 RGC") is the gripper's measured load → put it in the set "rgc" field as a NUMBER, NEVER in
   "weight", NEVER only in "notes". It is how same-model grippers of different strength are told apart
