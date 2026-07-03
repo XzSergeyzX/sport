@@ -57,9 +57,13 @@ export function EntryStatusNotifications() {
       });
 
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('leaderboard', {
+        // importance канала фиксируется при первом создании и потом не меняется —
+        // старый 'leaderboard' (DEFAULT, к тому же не использовался из-за trigger: null
+        // без channelId) сносим, живём на '-v2' с HIGH (иначе нет heads-up баннера)
+        void Notifications.deleteNotificationChannelAsync('leaderboard');
+        await Notifications.setNotificationChannelAsync('leaderboard-v2', {
           name: 'Leaderboard',
-          importance: Notifications.AndroidImportance.DEFAULT,
+          importance: Notifications.AndroidImportance.HIGH,
         });
       }
 
@@ -78,7 +82,8 @@ export function EntryStatusNotifications() {
             body: t(status === 'approved' ? 'leaderboard.notifApprovedBody' : 'leaderboard.notifRejectedBody'),
             data: { screen: 'leaderboard' },
           },
-          trigger: null, // немедленно
+          // channelId обязателен: trigger: null уводит в фолбэк-канал expo (Miscellaneous)
+          trigger: Platform.OS === 'android' ? { channelId: 'leaderboard-v2' } : null,
         });
       };
 
