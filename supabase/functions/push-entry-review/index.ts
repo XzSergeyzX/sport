@@ -128,7 +128,11 @@ Deno.serve(async (req) => {
       .map((m) => m.to);
     if (dead.length) await admin.from('push_tokens').delete().in('token', dead);
 
-    return json({ sent: messages.length - dead.length });
+    // sent — только тикеты со status ok: HTTP 200 от Expo не значит, что пуш ушёл
+    // (урок: InvalidCredentials приходит именно в тикете)
+    const failed = tickets.filter((tk) => tk?.status !== 'ok');
+    if (failed.length) console.error('push-entry-review: ticket errors', JSON.stringify(failed));
+    return json({ sent: tickets.length - failed.length, failed: failed.length });
   } catch (e) {
     console.error('push-entry-review:', e);
     return json({ error: 'internal' }, 500);
