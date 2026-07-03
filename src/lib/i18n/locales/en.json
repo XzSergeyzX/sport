@@ -117,9 +117,9 @@
     "intro": "Entries appear on the board only after manual review. For your entry to be approved, the video must follow these rules:",
     "r1": "One continuous take: no cuts, speed-ups or editing.",
     "r2": "The hand and the implement stay fully in frame from the start of the attempt to the end.",
-    "r3": "Gripper: the handles touching (the close) must be clearly visible. The set type has to match what you submit — TNS (no set), card set or deep set.",
+    "r3": "Gripper: the handles touching (the close) must be clearly visible. The set type has to match what you submit — TNS (no set), card set or deep set. To keep results verifiable, any close where the other hand sets the gripper — except a card set — counts as a deep set, regardless of the handle gap when the squeeze starts, be it 5 or 35 mm.",
     "r4": "Dynamometer: after the squeeze, show the dial or display with the result on camera.",
-    "r5": "Mark the entry as Certified only if the close was done under certification conditions (witnessed, official attempt rules) — those are reviewed more strictly.",
+    "r5": "Certified: the official video of your successful IronMind certification attempt is required.",
     "r6": "The link must be public: YouTube, Instagram, TikTok, Vimeo or Facebook.",
     "note": "The moderator may reject an entry when in doubt. Fix the video and resubmit — attempts are not limited (up to 5 entries per day)."
   },
