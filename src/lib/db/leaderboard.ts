@@ -94,6 +94,7 @@ export type SubmitInput = {
   videoUrl: string;
   note?: string | null;
   certified: boolean;
+  performedAt?: string | null; // ISO yyyy-mm-dd, когда выступил (борд показывает вместо created_at)
 } & (
   | { board: 'dynamometer'; dynamometerId: string; weightKg: number }
   | { board: 'gripper'; gripperId: string; setType: GripSetType }
@@ -106,6 +107,7 @@ export async function submitEntry(input: SubmitInput): Promise<void> {
     video_url: input.videoUrl.trim().slice(0, 300),
     note: input.note?.trim().slice(0, 300) || null,
     certified: input.certified,
+    performed_at: input.performedAt ?? null,
   };
   if (input.board === 'dynamometer') {
     row.dynamometer_id = input.dynamometerId;

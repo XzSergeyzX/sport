@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomSheet } from '@/components/bottom-sheet';
+import { useAppDialog } from '@/components/use-app-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   addGripper,
@@ -82,11 +83,16 @@ function EditGripper({
     onSuccess: done,
   });
 
+  const { showDialog, dialog } = useAppDialog();
   const confirmDelete = () =>
-    Alert.alert(t('grippers.deleteConfirm'), gripper?.name, [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('grippers.delete'), style: 'destructive', onPress: () => delMut.mutate() },
-    ]);
+    showDialog({
+      title: t('grippers.deleteConfirm'),
+      message: gripper?.name,
+      confirmLabel: t('grippers.delete'),
+      cancelLabel: t('common.cancel'),
+      destructive: true,
+      onConfirm: () => delMut.mutate(),
+    });
 
   return (
     <>
@@ -175,6 +181,7 @@ function EditGripper({
               <Text className="text-sm font-semibold text-red-400">{t('grippers.delete')}</Text>
             </Pressable>
           )}
+      {dialog}
     </>
   );
 }

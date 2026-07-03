@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { useAppDialog } from '@/components/use-app-dialog';
 import { ExercisePicker } from '@/components/exercise-picker';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
@@ -414,6 +415,7 @@ export default function ProgramDetailScreen() {
     addExerciseToProgram(ex);
   };
   // «+ своё» в пикере — создаём кастомное упражнение (серверный каталог), затем добавляем в прогу
+  const { showDialog, dialog } = useAppDialog();
   const createExMut = useMutation({
     mutationFn: (name: string) => createCustomExercise(session!.user.id, name),
     onSuccess: (ex) => {
@@ -421,10 +423,9 @@ export default function ProgramDetailScreen() {
       addExerciseToProgram(ex);
     },
     onError: (e: Error) =>
-      Alert.alert(
-        '',
-        e.message === 'exercise_daily_cap' ? t('workout.customCapped') : t('programs.errGeneric'),
-      ),
+      showDialog({
+        title: e.message === 'exercise_daily_cap' ? t('workout.customCapped') : t('programs.errGeneric'),
+      }),
   });
   // создать блок → сразу открыть пикер на добавление первого упражнения в него
   const createBlockMut = useMutation({
@@ -843,6 +844,7 @@ export default function ProgramDetailScreen() {
         }}
         onCancel={() => setShowDeleteProg(false)}
       />
+      {dialog}
     </SafeAreaView>
   );
 }

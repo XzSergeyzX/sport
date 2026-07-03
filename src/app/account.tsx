@@ -28,6 +28,7 @@ import {
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { formatWeight, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
+import { useRole } from '@/lib/use-role';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -76,6 +77,7 @@ export default function AccountScreen() {
   const qc = useQueryClient();
   const { session, initializing, signOut } = useAuth();
   const userId = session?.user.id;
+  const role = useRole();
 
   const { data: gender } = useQuery({
     queryKey: ['gender', userId],
@@ -316,7 +318,8 @@ export default function AccountScreen() {
             )}
           </View>
 
-          {gender?.gender === 'female' && (
+          {/* цикл — фича full-профиля (health/коуч); grip-комьюнити это не показываем */}
+          {gender?.gender === 'female' && role !== 'grip' && (
             <>
               <Divider />
               <View className="flex-row items-center justify-between px-4 py-4">

@@ -1,6 +1,7 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-/** Тематический диалог подтверждения (вместо нативного Alert — он не в стиле апки). */
+/** Тематический диалог подтверждения (вместо нативного Alert — он не в стиле апки).
+ *  Без cancelLabel — режим простого алерта с одной кнопкой. */
 export function ConfirmDialog({
   visible,
   title,
@@ -15,7 +16,7 @@ export function ConfirmDialog({
   title: string;
   message?: string;
   confirmLabel: string;
-  cancelLabel: string;
+  cancelLabel?: string;
   destructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -33,9 +34,11 @@ export function ConfirmDialog({
             <Text className="mt-2 text-sm leading-5 text-graphite-400">{message}</Text>
           ) : null}
           <View className="mt-5 flex-row justify-end gap-2">
-            <Pressable onPress={onCancel} className="rounded-xl px-4 py-2.5 active:opacity-70">
-              <Text className="text-sm font-semibold text-graphite-300">{cancelLabel}</Text>
-            </Pressable>
+            {!!cancelLabel && (
+              <Pressable onPress={onCancel} className="rounded-xl px-4 py-2.5 active:opacity-70">
+                <Text className="text-sm font-semibold text-graphite-300">{cancelLabel}</Text>
+              </Pressable>
+            )}
             <Pressable
               onPress={onConfirm}
               className="rounded-xl px-4 py-2.5 active:opacity-80"

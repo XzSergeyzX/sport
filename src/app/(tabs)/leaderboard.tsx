@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,6 +19,7 @@ import { Avatar } from '@/components/avatar';
 import { BottomSheet } from '@/components/bottom-sheet';
 import { Segmented } from '@/components/segmented';
 import { SettingsButton } from '@/components/settings-button';
+import { useAppDialog } from '@/components/use-app-dialog';
 import { useConfirmedVideoLink } from '@/components/video-link';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
@@ -78,6 +78,19 @@ function rowResult(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string
 
 // ---------- подача заявки ----------
 
+/** «дд.мм.рррр» → ISO yyyy-mm-dd; null = невалидно (несуществующая дата или будущее).
+ *  Нативного датапикера нет сознательно: новый native-dep = пересборка APK. */
+function parsePerformedAt(s: string): string | null {
+  const m = s.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!m) return null;
+  const [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  const real =
+    dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+  if (!real || dt.getTime() > Date.now()) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 function SubmitForm({
   userId,
   board,
@@ -91,6 +104,7 @@ function SubmitForm({
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const router = useRouter();
   const unit = useWeightUnit();
 
   const [dynId, setDynId] = useState<string | null>(dynamometers[0]?.id ?? null);
@@ -101,6 +115,7 @@ function SubmitForm({
   const [certified, setCertified] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [note, setNote] = useState('');
+  const [perfDate, setPerfDate] = useState(''); // «дд.мм.рррр», пусто = не указана
 
   // каталог эспандеров для выбора железки заявки — ДВУМЯ секциями (фидбек Сергея:
   // «всё в куче»): личные замеренные отдельно от каталожных средних
@@ -122,18 +137,22 @@ function SubmitForm({
   const canCert = board === 'gripper' && !!gripper && certEligibleGripper(gripper);
   const urlOk = VIDEO_HOST_RE.test(videoUrl.trim());
   const urlLooksFilled = videoUrl.trim().length > 8;
+  const performedAt = parsePerformedAt(perfDate); // null и при пустом поле — это ок
+  const dateOk = perfDate.trim() === '' || performedAt != null;
   const canSubmit =
     urlOk &&
+    dateOk &&
     (board === 'dynamometer'
       ? dynId != null && weightKg != null && weightKg > 0 && weightKg < 400
       : gripper != null);
 
+  const { showDialog, dialog } = useAppDialog();
   const submitMut = useMutation({
     mutationFn: () =>
       submitEntry(
         board === 'dynamometer'
-          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note, certified: false }
-          : { userId, board, gripperId: gripper!.id, setType, videoUrl, note, certified: canCert && certified },
+          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note, certified: false, performedAt }
+          : { userId, board, gripperId: gripper!.id, setType, videoUrl, note, certified: canCert && certified, performedAt },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['leaderboard-my', userId] });
@@ -145,7 +164,7 @@ function SubmitForm({
       const msg = typeof raw === 'string' && raw.includes('daily_entry_limit')
         ? t('leaderboard.dailyLimit')
         : t('leaderboard.submitError');
-      Alert.alert(msg);
+      showDialog({ title: msg });
     },
   });
 
@@ -309,6 +328,24 @@ function SubmitForm({
       ) : (
         <Text className="mt-1 text-xs leading-4 text-graphite-500">{t('leaderboard.videoHint')}</Text>
       )}
+      <Pressable onPress={() => router.push('/proof-rules')} hitSlop={6} className="mt-1 active:opacity-70">
+        <Text className="text-xs font-semibold text-accent">{t('leaderboard.proofRulesLink')} ›</Text>
+      </Pressable>
+
+      <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+        {t('leaderboard.performedAt')}
+      </Text>
+      <TextInput
+        value={perfDate}
+        onChangeText={setPerfDate}
+        placeholder={new Date().toLocaleDateString('uk-UA')}
+        placeholderTextColor={PLACEHOLDER}
+        keyboardType="numbers-and-punctuation"
+        className="mt-1 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
+      />
+      {!dateOk && (
+        <Text className="mt-1 text-xs leading-4 text-red-400">{t('leaderboard.performedAtError')}</Text>
+      )}
 
       <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
         {t('leaderboard.note')}
@@ -333,6 +370,8 @@ function SubmitForm({
           <Text className="text-sm font-bold text-graphite-950">{t('leaderboard.submit')}</Text>
         )}
       </Pressable>
+
+      {dialog}
     </>
   );
 }
@@ -390,6 +429,7 @@ export default function LeaderboardScreen() {
   const role = useRole();
   const qc = useQueryClient();
   const { openVideo, videoDialog } = useConfirmedVideoLink();
+  const { showDialog, dialog } = useAppDialog();
 
   const [board, setBoard] = useState<Board>('dynamometer');
   const [dynFilter, setDynFilter] = useState<string | null>(null); // name; null = все
@@ -434,10 +474,13 @@ export default function LeaderboardScreen() {
     onSuccess: refresh,
   });
   const confirmDelete = (e: MyEntry) =>
-    Alert.alert(t('leaderboard.deleteConfirm'), undefined, [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('grippers.delete'), style: 'destructive', onPress: () => delMut.mutate(e.id) },
-    ]);
+    showDialog({
+      title: t('leaderboard.deleteConfirm'),
+      confirmLabel: t('grippers.delete'),
+      cancelLabel: t('common.cancel'),
+      destructive: true,
+      onConfirm: () => delMut.mutate(e.id),
+    });
 
   // фильтр + лучший результат на юзера
   const filtered = (rows ?? []).filter((r) =>
@@ -625,6 +668,7 @@ export default function LeaderboardScreen() {
       </ScrollView>
 
       {videoDialog}
+      {dialog}
 
       <BottomSheet visible={submitting} onClose={() => setSubmitting(false)}>
         {userId && submitting && (

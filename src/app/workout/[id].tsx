@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   type KeyboardTypeOptions,
   Modal,
@@ -17,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { useAppDialog } from '@/components/use-app-dialog';
 import { SyncStatus } from '@/components/sync-status';
 
 import {
@@ -732,6 +732,7 @@ export default function WorkoutScreen() {
 
   // создание кастомного упражнения — серверная операция (каталог), осознанно online-only;
   // после создания добавляем его в тренировку уже durable-путём.
+  const { showDialog, dialog } = useAppDialog();
   const createExerciseMut = useMutation({
     mutationFn: (name: string) => createCustomExercise(session!.user.id, name),
     onSuccess: (ex) => {
@@ -739,10 +740,9 @@ export default function WorkoutScreen() {
       addExerciseToWorkout(ex);
     },
     onError: (e: Error) => {
-      Alert.alert(
-        '',
-        e.message === 'exercise_daily_cap' ? t('workout.customCapped') : t('programs.errGeneric'),
-      );
+      showDialog({
+        title: e.message === 'exercise_daily_cap' ? t('workout.customCapped') : t('programs.errGeneric'),
+      });
     },
   });
 
@@ -1209,6 +1209,7 @@ export default function WorkoutScreen() {
         }}
         onCancel={() => setRemoveTarget(null)}
       />
+      {dialog}
     </SafeAreaView>
   );
 }

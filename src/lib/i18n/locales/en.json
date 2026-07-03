@@ -26,7 +26,8 @@
     "lb": "lb",
     "english": "English",
     "ukrainian": "Українська",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "ok": "OK"
   },
   "count": {
     "exercises": { "one": "{{n}} exercise", "other": "{{n}} exercises" },
@@ -106,7 +107,21 @@
     "notifApprovedBody": "Your leaderboard entry was approved — you're on the board. Tap to take a look.",
     "notifRejectedTitle": "Entry rejected",
     "notifRejectedBody": "The moderator rejected your video proof. Check the requirements and resubmit.",
-    "entryDate": "Result date"
+    "entryDate": "Result date",
+    "performedAt": "Result date (optional)",
+    "performedAtError": "Format: dd.mm.yyyy, not in the future",
+    "proofRulesLink": "Video proof rules"
+  },
+  "proofRules": {
+    "title": "Video proof rules",
+    "intro": "Entries appear on the board only after manual review. For your entry to be approved, the video must follow these rules:",
+    "r1": "One continuous take: no cuts, speed-ups or editing.",
+    "r2": "The hand and the implement stay fully in frame from the start of the attempt to the end.",
+    "r3": "Gripper: the handles touching (the close) must be clearly visible. The set type has to match what you submit — TNS (no set), card set or deep set.",
+    "r4": "Dynamometer: after the squeeze, show the dial or display with the result on camera.",
+    "r5": "Mark the entry as Certified only if the close was done under certification conditions (witnessed, official attempt rules) — those are reviewed more strictly.",
+    "r6": "The link must be public: YouTube, Instagram, TikTok, Vimeo or Facebook.",
+    "note": "The moderator may reject an entry when in doubt. Fix the video and resubmit — attempts are not limited (up to 5 entries per day)."
   },
   "coach": {
     "title": "Coach",
