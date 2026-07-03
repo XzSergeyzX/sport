@@ -140,7 +140,9 @@ function SubmitForm({
       onClose();
     },
     onError: (e) => {
-      const msg = e instanceof Error && e.message.includes('daily_entry_limit')
+      // ошибка PostgREST — простой объект, не instanceof Error (postgrest-js без throwOnError)
+      const raw = (e as { message?: unknown } | null)?.message;
+      const msg = typeof raw === 'string' && raw.includes('daily_entry_limit')
         ? t('leaderboard.dailyLimit')
         : t('leaderboard.submitError');
       Alert.alert(msg);

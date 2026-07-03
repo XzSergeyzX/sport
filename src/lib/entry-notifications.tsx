@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import type { EntryStatus } from '@/lib/db/leaderboard';
@@ -13,9 +13,10 @@ import { supabase } from '@/lib/supabase';
 // Нотификации в шторку о судьбе заявок лидерборда («схвалено/відхилено» + тап → борд).
 // Remote push в Expo Go недоступен (SDK 53+), поэтому модель двухслойная:
 //  1) пока апка жива (foreground/свёрнута) — realtime приносит UPDATE своей заявки сразу;
-//  2) решение при закрытой апке — догоняется на старте сверкой статусов с последним
-//     увиденным снимком в AsyncStorage (первый запуск только сеет снимок, без спама
-//     историческими апрувами).
+//  2) решение при закрытой/замороженной апке — догоняется сверкой статусов с последним
+//     увиденным снимком в AsyncStorage: на старте И при каждом возврате в foreground
+//     (Android замораживает JS в фоне — realtime-события теряются, сокет не реплеит;
+//     первый запуск только сеет снимок, без спама историческими апрувами).
 // expo-notifications не поддерживает web — импортируем динамически под Platform-гейтом,
 // чтобы дев-смоук в браузере не падал.
 
@@ -36,6 +37,7 @@ export function EntryStatusNotifications() {
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
     let responseSub: { remove: () => void } | null = null;
+    let appStateSub: { remove: () => void } | null = null;
 
     void (async () => {
       const Notifications = await import('expo-notifications');
@@ -87,28 +89,45 @@ export function EntryStatusNotifications() {
         });
       };
 
-      // ---- догоняем решения, принятые при закрытой апке ----
-      const { data: entries } = await supabase
-        .from('leaderboard_entries')
-        .select('id, status')
-        .eq('user_id', userId);
-      if (cancelled) return;
-      if (entries) {
-        const stored = await AsyncStorage.getItem(storageKey(userId));
-        const prev: StatusMap | null = stored ? (JSON.parse(stored) as StatusMap) : null;
-        const next: StatusMap = {};
-        for (const row of entries) next[row.id as string] = row.status as EntryStatus;
-        if (prev) {
-          for (const [id, status] of Object.entries(next)) {
-            // неизвестный id со статусом ≠ pending — заявка подана и рассмотрена, пока апка спала
-            if (NOTIFIABLE.includes(status) && prev[id] !== status) {
-              await notify(status as 'approved' | 'rejected');
+      // ---- догоняем решения, принятые пока апка спала (старт + возврат в foreground) ----
+      let sweepRunning = false;
+      const sweep = async (initial: boolean) => {
+        if (sweepRunning) return; // не гоняться с самим собой при быстрых свернул/развернул
+        sweepRunning = true;
+        try {
+          const { data: entries } = await supabase
+            .from('leaderboard_entries')
+            .select('id, status')
+            .eq('user_id', userId);
+          if (cancelled || !entries) return;
+          const stored = await AsyncStorage.getItem(storageKey(userId));
+          const prev: StatusMap | null = stored ? (JSON.parse(stored) as StatusMap) : null;
+          const next: StatusMap = {};
+          for (const row of entries) next[row.id as string] = row.status as EntryStatus;
+          let changed = false;
+          if (prev) {
+            for (const [id, status] of Object.entries(next)) {
+              // неизвестный id со статусом ≠ pending — заявка подана и рассмотрена, пока апка спала
+              if (NOTIFIABLE.includes(status) && prev[id] !== status) {
+                await notify(status as 'approved' | 'rejected');
+                changed = true;
+              }
             }
           }
+          await AsyncStorage.setItem(storageKey(userId), JSON.stringify(next));
+          if (changed) {
+            qc.invalidateQueries({ queryKey: ['leaderboard'] });
+            qc.invalidateQueries({ queryKey: ['leaderboard-my', userId] });
+          }
+          if (initial && entries.length > 0) void ensurePermission(); // спросить заранее, а не в момент апрува
+        } finally {
+          sweepRunning = false;
         }
-        await AsyncStorage.setItem(storageKey(userId), JSON.stringify(next));
-        if (entries.length > 0) void ensurePermission(); // спросить заранее, а не в момент апрува
-      }
+      };
+      await sweep(true);
+      appStateSub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') void sweep(false);
+      });
 
       // ---- realtime, пока апка жива (RLS: приходят только свои строки) ----
       if (cancelled) return;
@@ -144,6 +163,7 @@ export function EntryStatusNotifications() {
     return () => {
       cancelled = true;
       responseSub?.remove();
+      appStateSub?.remove();
       if (channel) void supabase.removeChannel(channel);
     };
   }, [userId, qc, t, router]);
