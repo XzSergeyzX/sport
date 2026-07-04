@@ -80,6 +80,7 @@ export default function WorkoutsScreen() {
       setImportOpen(false);
       setImportError(null);
       qc.invalidateQueries({ queryKey: ['workouts', userId] });
+      qc.invalidateQueries({ queryKey: ['analytics'] }); // импорт — сразу завершённая тренировка
       router.push({ pathname: '/summary/[id]', params: { id: res.workout_id } });
     },
     onError: (e: Error) => {

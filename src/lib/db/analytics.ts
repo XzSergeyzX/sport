@@ -2,40 +2,70 @@ import { supabase } from '@/lib/supabase';
 
 import type { Cluster } from './exercises';
 
-// Лёгкая плоская выборка всех отмеченных подходов (по всей истории) — только поля для аналитики.
-// RLS ограничивает текущим пользователем. Тяжёлую вложенную detail-выборку не используем.
-export type LoggedSet = {
-  weight: number | null;
-  reps: number | null;
-  duration_sec: number | null;
-  rpe: number | null;
-  meta: Record<string, unknown> | null;
-  workout_exercises: {
-    exercise_id: string;
-    display_name: string | null;
-    exercises: { name_en: string; name_uk: string; cluster: Cluster | null; bodyweight_load: boolean } | null;
-    workouts: { id: string; started_at: string; ended_at: string | null } | null;
-  } | null;
+// Аналитика считается в SQL (RPC get_analytics_summary, миграция 20260704100000) — клиент
+// получает компактную сводку вместо полной истории сетов. Раньше сюда качалась вся история
+// (пагинация по 1000) и оседала в персисте кэша (AsyncStorage, лимит ~6МБ Android).
+// Все веса — канонически в кг; конверсию в единицу пользователя делает UI.
+
+export type AnalyticsWorkout = {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  set_count: number;
+  avg_rpe: number | null;
+  tonnage: number; // кг; «чистые» силовые подходы, с весом тела для bodyweight_load
 };
 
-const SELECT =
-  'weight, reps, duration_sec, rpe, meta, workout_exercises!inner(exercise_id, display_name, exercises(name_en, name_uk, cluster, bodyweight_load), workouts!inner(id, started_at, ended_at))';
+export type RepRecordRow = {
+  exercise_id: string | null;
+  name_en: string | null;
+  name_uk: string | null;
+  display_name: string | null;
+  cluster: Cluster | null;
+  weight: number;
+  reps: number;
+  one_rm: number; // оценка по О'Коннору (reps<=1 → сам вес)
+  date: string;
+  cheat: boolean;
+};
 
-/** Все залогированные подходы пользователя (с пагинацией — не упираемся в лимит строк). */
-export async function getLoggedSets(): Promise<LoggedSet[]> {
-  const page = 1000;
-  const out: LoggedSet[] = [];
-  for (let from = 0; from < 100000; from += page) {
-    const { data, error } = await supabase
-      .from('sets')
-      .select(SELECT)
-      .not('logged_at', 'is', null)
-      .order('logged_at', { ascending: true })
-      .range(from, from + page - 1);
-    if (error) throw error;
-    const rows = (data ?? []) as unknown as LoggedSet[];
-    out.push(...rows);
-    if (rows.length < page) break;
-  }
-  return out;
+export type TimeRecordRow = {
+  exercise_id: string | null;
+  name_en: string | null;
+  name_uk: string | null;
+  display_name: string | null;
+  cluster: Cluster | null;
+  sec: number;
+  weight: number | null;
+  date: string;
+  cheat: boolean;
+};
+
+export type GripRecordRow = {
+  set_type: string;
+  gripper_name: string | null;
+  rgc_kg: number | null;
+  est_kg: number | null;
+  reps: number;
+  date: string;
+};
+
+export type AnalyticsSummary = {
+  workouts: AnalyticsWorkout[];
+  rep_records: RepRecordRow[]; // топ-5 на упражнение, отсортированы по 1ПМ внутри упражнения
+  time_records: TimeRecordRow[]; // топ-5 на упражнение: вес desc, сек desc
+  grip_records: GripRecordRow[]; // топ-3 на вид установки, отсортированы по оценке
+};
+
+/** Сводка аналитики за всю историю (агрегаты по тренировкам + готовые топы рекордов). */
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const { data, error } = await supabase.rpc('get_analytics_summary');
+  if (error) throw error;
+  const d = (data ?? {}) as Partial<AnalyticsSummary>;
+  return {
+    workouts: d.workouts ?? [],
+    rep_records: d.rep_records ?? [],
+    time_records: d.time_records ?? [],
+    grip_records: d.grip_records ?? [],
+  };
 }

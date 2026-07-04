@@ -70,6 +70,7 @@ export default function SummaryScreen() {
     mutationFn: () => deleteWorkout(workoutId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workouts', session?.user.id] });
+      qc.invalidateQueries({ queryKey: ['analytics'] }); // тоннаж/рекорды без этой тренировки
       router.replace('/workouts');
     },
   });

@@ -7,7 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
-import { getLoggedSets, type LoggedSet } from '@/lib/db/analytics';
+import {
+  type AnalyticsSummary,
+  type AnalyticsWorkout,
+  getAnalyticsSummary,
+} from '@/lib/db/analytics';
 import {
   type CyclePhase,
   getPeriodStarts,
@@ -16,19 +20,12 @@ import {
   phaseForDate,
 } from '@/lib/db/cycle';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
-import { listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
-import { getBodyweight } from '@/lib/db/profile';
 import i18n from '@/lib/i18n';
 import { formatWeight, fromKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
-// оценка 1ПМ по О'Коннору: вес × (1 + 0.025 × повторы) — честнее (ниже Эпли).
-// для сингла (1 повтор) оценка = сам вес: один раз и есть твой максимум, накручивать нечего.
-const oneRmEst = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + 0.025 * reps));
-
-// «весо-телесное» упражнение (подтягивания/брусья/пистолет): в тоннаж идёт вес тела + доп.вес
-const bwLoad = (r: LoggedSet) => !!r.workout_exercises?.exercises?.bodyweight_load;
-const effWeight = (r: LoggedSet, bwKg: number) => (r.weight ?? 0) + (bwLoad(r) ? bwKg : 0);
+// стабильная пустышка, чтобы memo не пересчитывался на каждом рендере до прихода данных
+const EMPTY_SUMMARY: AnalyticsSummary = { workouts: [], rep_records: [], time_records: [], grip_records: [] };
 
 type TonnagePoint = { date: string; tonnage: number };
 type RepRec = { kind: 'reps'; weight: number; reps: number; oneRm: number; date: string; cheat?: boolean };
@@ -44,7 +41,6 @@ type GripRec = {
 };
 // секція рекордів хвата: топ-3 на кожен вид установки (дип-сет/блоки/карта/TNS …)
 type GripGroup = { setType: string; top: GripRec[]; headline: number };
-type GripInfo = { rgcKg: number | null; name: string };
 // одно упражнение может нести ОБА вида рекордов: вес×повторы и время-с-весом
 // (натяжка: часть подходов на повторы, часть — статика). Показываем оба, повторы — выше.
 type ExRecords = {
@@ -59,129 +55,73 @@ type ExRecords = {
 };
 type RecordGroup = { cluster: Cluster | null; exercises: ExRecords[] };
 
-type Acc = {
-  name: string;
+// Метрики считаются в SQL (RPC get_analytics_summary) — тут только раскладка готовых
+// агрегатов под структуру UI: серия тоннажа, группы рекордов по кластерам, секции хвата.
+type NamedRow = {
+  exercise_id: string | null;
+  name_en: string | null;
+  name_uk: string | null;
+  display_name: string | null;
   cluster: Cluster | null;
-  reps: Map<string, RepRec>;
-  time: Map<string, TimeRec>;
 };
+const rowKey = (r: NamedRow) => r.exercise_id ?? `dn:${r.display_name ?? '—'}`;
+const rowName = (r: NamedRow, lang: string) =>
+  r.name_en != null && r.name_uk != null
+    ? exerciseName({ name_en: r.name_en, name_uk: r.name_uk }, lang)
+    : (r.display_name ?? '—');
 
-function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>, bwKg: number) {
-  const exMap = new Map<string, Acc>();
-  const wkTonnage = new Map<string, TonnagePoint>();
-  const wkDur = new Map<string, number>(); // минуты на тренировку
-  const wkSet = new Set<string>();
-  const gripBuckets = new Map<string, Map<string, GripRec>>(); // setType → (ключ → запис), для топ-3 на секцію
-  let totalSets = 0;
-
-  for (const r of rows) {
-    const we = r.workout_exercises;
-    const wk = we?.workouts;
-    if (!we || !wk) continue;
-    const date = wk.started_at;
-    wkSet.add(wk.id);
-    if (!wkDur.has(wk.id)) {
-      wkDur.set(
-        wk.id,
-        wk.ended_at ? Math.max(0, Math.round((+new Date(wk.ended_at) - +new Date(date)) / 60000)) : 0,
-      );
-    }
-    const name = we.exercises ? exerciseName(we.exercises, lang) : (we.display_name ?? '—');
-    const cluster = we.exercises?.cluster ?? null;
-    let ex = exMap.get(we.exercise_id);
-    if (!ex) {
-      ex = { name, cluster, reps: new Map(), time: new Map() };
-      exMap.set(we.exercise_id, ex);
-    } else {
-      ex.name = name;
-      if (cluster) ex.cluster = cluster;
-    }
-
-    totalSets += 1;
-    const meta = r.meta as { cheat?: boolean; gripper_id?: string; set_type?: string; side?: string } | null;
-    const cheat = Boolean(meta?.cheat);
-    // «обидві» = сделано на обе стороны на одном весе → объём/тоннаж считается ×2
-    const volMult = meta?.side === 'both' ? 2 : 1;
-    if (meta?.gripper_id && r.reps != null) {
-      // гриппер: оценка 1ПМ по RGC, лучший по каждому виду установки (отдельная ветка)
-      const g = gripMap.get(meta.gripper_id);
-      const st = meta.set_type ?? 'none';
-      const estKg = g?.rgcKg != null ? (r.reps <= 1 ? g.rgcKg : g.rgcKg * (1 + 0.025 * r.reps)) : null;
-      const cand: GripRec = {
-        setType: st,
-        gripperName: g?.name ?? '—',
-        reps: r.reps,
-        estKg,
-        rgcKg: g?.rgcKg ?? null,
-        date,
-      };
-      let bucket = gripBuckets.get(st);
-      if (!bucket) {
-        bucket = new Map();
-        gripBuckets.set(st, bucket);
-      }
-      // дедуп однакових результатів (той самий еспандер × ті самі повтори) — лишаємо найранішу дату
-      const gkey = `${cand.gripperName}@${cand.reps}`;
-      const prev = bucket.get(gkey);
-      if (!prev || date < prev.date) bucket.set(gkey, cand);
-    } else {
-      // не гриппер: подход может дать СРАЗУ оба рекорда — вес×повторы И время-с-весом
-      // (натяжка: чередует силовые повторы и статику; раньше «время» глушило «повторы»).
-      if (r.weight != null && r.reps != null) {
-        const key = `${r.weight}x${r.reps}`;
-        const prev = ex.reps.get(key);
-        if (!prev || date < prev.date)
-          ex.reps.set(key, {
-            kind: 'reps',
-            weight: r.weight,
-            reps: r.reps,
-            oneRm: oneRmEst(r.weight, r.reps),
-            date,
-            cheat,
-          });
-      }
-      if (r.duration_sec != null) {
-        const key = `${r.duration_sec}@${r.weight ?? ''}`;
-        const prev = ex.time.get(key);
-        if (!prev || date < prev.date)
-          ex.time.set(key, { kind: 'time', sec: r.duration_sec, weight: r.weight, date, cheat });
-      }
-      // тоннаж — с «чистых» силовых подходов (без статики): вес×повторы ИЛИ вес тела×повторы
-      // для весо-телесных (подтягивания и т.п., где weight=null, но нагрузка = собственный вес)
-      if (r.duration_sec == null && r.reps != null && (r.weight != null || bwLoad(r))) {
-        const tn = wkTonnage.get(wk.id) ?? { date, tonnage: 0 };
-        tn.tonnage += effWeight(r, bwKg) * r.reps * volMult;
-        wkTonnage.set(wk.id, tn);
-      }
-    }
-  }
-
-  const tonnageSeries = [...wkTonnage.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+function analyze(sum: AnalyticsSummary, lang: string) {
+  // серия тоннажа: только тренировки с силовыми подходами (тоннаж > 0) — как раньше
+  const tonnageSeries: TonnagePoint[] = sum.workouts
+    .filter((w) => w.tonnage > 0)
+    .map((w) => ({ date: w.started_at, tonnage: w.tonnage }));
   const totalTonnage = tonnageSeries.reduce((n, p) => n + p.tonnage, 0);
-  const totalMin = [...wkDur.values()].reduce((n, m) => n + m, 0);
+  const totalSets = sum.workouts.reduce((n, w) => n + w.set_count, 0);
+  const totalMin = sum.workouts.reduce(
+    (n, w) =>
+      n +
+      (w.ended_at
+        ? Math.max(0, Math.round((+new Date(w.ended_at) - +new Date(w.started_at)) / 60000))
+        : 0),
+    0,
+  );
+
+  // рекорды: строки уже топ-5 на упражнение и отсортированы в SQL — только группируем
+  const exMap = new Map<string, ExRecords>();
+  const acc = (r: NamedRow): ExRecords => {
+    const key = rowKey(r);
+    let ex = exMap.get(key);
+    if (!ex) {
+      ex = {
+        id: key,
+        name: rowName(r, lang),
+        cluster: r.cluster,
+        reps: [],
+        time: [],
+        headline: 0,
+        headlineKind: 'reps',
+      };
+      exMap.set(key, ex);
+    }
+    return ex;
+  };
+  for (const r of sum.rep_records)
+    acc(r).reps.push({ kind: 'reps', weight: r.weight, reps: r.reps, oneRm: r.one_rm, date: r.date, cheat: r.cheat });
+  for (const r of sum.time_records)
+    acc(r).time.push({ kind: 'time', sec: r.sec, weight: r.weight, date: r.date, cheat: r.cheat });
 
   const exList: ExRecords[] = [];
-  for (const [id, ex] of exMap) {
-    const reps = [...ex.reps.values()].sort((a, b) => b.oneRm - a.oneRm).slice(0, 5);
-    // взвешенное удержание → ранг по ВЕСУ (сколько оторвал), длительность — тайбрейк/показ;
-    // телесное (планка, weight=null → 0) → по секундам (компаратор проваливается на .sec)
-    const time = [...ex.time.values()]
-      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0) || b.sec - a.sec)
-      .slice(0, 5);
-    if (reps.length === 0 && time.length === 0) continue;
+  for (const ex of exMap.values()) {
+    if (ex.reps.length === 0 && ex.time.length === 0) continue;
     // заголовок: приоритет вес×повторы (1ПМ); иначе взвешенное удержание → макс вес; иначе время
-    const timeWeighted = time.length > 0 && time[0].weight != null;
-    const headlineKind: 'reps' | 'time' | 'timeWeight' = reps.length
-      ? 'reps'
+    const timeWeighted = ex.time.length > 0 && ex.time[0].weight != null;
+    ex.headlineKind = ex.reps.length ? 'reps' : timeWeighted ? 'timeWeight' : 'time';
+    ex.headline = ex.reps.length
+      ? ex.reps[0].oneRm
       : timeWeighted
-        ? 'timeWeight'
-        : 'time';
-    const headline = reps.length
-      ? reps[0].oneRm
-      : timeWeighted
-        ? (time[0].weight as number)
-        : time[0].sec;
-    exList.push({ id, name: ex.name, cluster: ex.cluster, reps, time, headline, headlineKind });
+        ? (ex.time[0].weight as number)
+        : ex.time[0].sec;
+    exList.push(ex);
   }
 
   const order: (Cluster | null)[] = [...CLUSTER_ORDER, null];
@@ -199,14 +139,23 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
     }))
     .filter((g) => g.exercises.length > 0);
 
-  // топ-3 на кожну секцію (вид установки); секції сортуємо за найкращою оцінкою
+  // грип-рекорды: топ-3 на вид установки уже посчитаны и отсортированы в SQL
+  const gripBuckets = new Map<string, GripRec[]>();
+  for (const r of sum.grip_records) {
+    const rec: GripRec = {
+      setType: r.set_type,
+      gripperName: r.gripper_name ?? '—',
+      reps: r.reps,
+      estKg: r.est_kg,
+      rgcKg: r.rgc_kg,
+      date: r.date,
+    };
+    const bucket = gripBuckets.get(r.set_type);
+    if (bucket) bucket.push(rec);
+    else gripBuckets.set(r.set_type, [rec]);
+  }
   const gripGroups: GripGroup[] = [...gripBuckets.entries()]
-    .map(([setType, bucket]) => {
-      const top = [...bucket.values()]
-        .sort((a, b) => (b.estKg ?? -1) - (a.estKg ?? -1) || b.reps - a.reps)
-        .slice(0, 3);
-      return { setType, top, headline: top[0]?.estKg ?? -1 };
-    })
+    .map(([setType, top]) => ({ setType, top, headline: top[0]?.estKg ?? -1 }))
     .filter((g) => g.top.length > 0)
     .sort((a, b) => b.headline - a.headline);
 
@@ -217,7 +166,7 @@ function analyze(rows: LoggedSet[], lang: string, gripMap: Map<string, GripInfo>
     totalTonnage,
     totalSets,
     totalMin,
-    workouts: wkSet.size,
+    workouts: sum.workouts.length,
   };
 }
 
@@ -415,46 +364,28 @@ const mean = (xs: number[]): number | null =>
 const nums = (xs: (number | null)[]): number[] => xs.filter((v): v is number => v != null);
 
 function analyzeCorrelation(
-  rows: LoggedSet[],
+  wks: AnalyticsWorkout[],
   snaps: HealthSnapshot[],
   starts: string[],
   rangeDays: number,
-  bwKg: number,
 ): Correlation {
   const fromYmd = ymdDaysAgo(rangeDays - 1);
-  const wk = new Map<string, { date: string; tonnage: number; rpeSum: number; rpeN: number }>();
-  for (const r of rows) {
-    const w = r.workout_exercises?.workouts;
-    if (!w) continue;
-    const date = ymdLocal(w.started_at);
-    if (date < fromYmd) continue;
-    let e = wk.get(w.id);
-    if (!e) {
-      e = { date, tonnage: 0, rpeSum: 0, rpeN: 0 };
-      wk.set(w.id, e);
-    }
-    if (r.reps != null && r.duration_sec == null && (r.weight != null || bwLoad(r)))
-      e.tonnage += effWeight(r, bwKg) * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
-    if (r.rpe != null) {
-      e.rpeSum += r.rpe;
-      e.rpeN += 1;
-    }
-  }
-
   const snap = new Map<string, HealthSnapshot>();
   for (const s of snaps) snap.set(s.date, s);
 
-  const workouts: CorrWorkout[] = [...wk.entries()]
-    .map(([id, e]) => {
-      const s = snap.get(e.date);
+  const workouts: CorrWorkout[] = wks
+    .map((w) => ({ w, date: ymdLocal(w.started_at) }))
+    .filter(({ date }) => date >= fromYmd)
+    .map(({ w, date }) => {
+      const s = snap.get(date);
       return {
-        id,
-        date: e.date,
-        tonnage: e.tonnage,
-        avgRpe: e.rpeN ? e.rpeSum / e.rpeN : null,
+        id: w.id,
+        date,
+        tonnage: w.tonnage,
+        avgRpe: w.avg_rpe,
         readiness: s?.readiness ?? null,
         sleep: s?.sleep_score ?? null,
-        phase: phaseForDate(e.date, starts),
+        phase: phaseForDate(date, starts),
       };
     })
     .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -696,9 +627,11 @@ export default function AnalyticsScreen() {
   const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
   const [range, setRange] = useState<number>(30);
 
-  const { data: rows, isLoading } = useQuery({
-    queryKey: ['analytics-sets', userId],
-    queryFn: () => getLoggedSets(),
+  // ключ иерархический: ['analytics', ...] — мутации (финиш/удаление/импорт тренировки,
+  // замена упражнения) инвалидируют префиксом ['analytics'] всю сводку разом
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ['analytics', 'summary', userId],
+    queryFn: () => getAnalyticsSummary(),
     enabled: !!userId,
   });
 
@@ -725,25 +658,6 @@ export default function AnalyticsScreen() {
     enabled: !!userId,
   });
 
-  const { data: grippers } = useQuery({
-    queryKey: ['grippers-catalog', userId],
-    queryFn: () => listGripperCatalog(userId as string),
-    enabled: !!userId,
-  });
-
-  // вес тела — для тоннажа весо-телесных упражнений (подтягивания/брусья/пистолет)
-  const { data: bodyweight } = useQuery({
-    queryKey: ['bodyweight', userId],
-    queryFn: () => getBodyweight(userId as string),
-    enabled: !!userId,
-  });
-  const bwKg = bodyweight ?? 0;
-  const gripMap = useMemo(() => {
-    const m = new Map<string, GripInfo>();
-    for (const g of grippers ?? []) m.set(g.id, { rgcKg: rgcInKg(g), name: g.name });
-    return m;
-  }, [grippers]);
-
   const markMut = useMutation({
     mutationFn: (day: string) => logPeriodStart(userId as string, day),
     onSuccess: () => {
@@ -753,11 +667,11 @@ export default function AnalyticsScreen() {
     },
   });
 
-  const a = useMemo(() => analyze(rows ?? [], lang, gripMap, bwKg), [rows, lang, gripMap, bwKg]);
+  const a = useMemo(() => analyze(summary ?? EMPTY_SUMMARY, lang), [summary, lang]);
   const recovery = useMemo(() => analyzeRecovery(snaps ?? [], range), [snaps, range]);
   const corr = useMemo(
-    () => analyzeCorrelation(rows ?? [], snaps ?? [], cycleStarts ?? [], range, bwKg),
-    [rows, snaps, cycleStarts, range, bwKg],
+    () => analyzeCorrelation(summary?.workouts ?? [], snaps ?? [], cycleStarts ?? [], range),
+    [summary, snaps, cycleStarts, range],
   );
 
   const dayInfo = useMemo(() => {
@@ -772,21 +686,18 @@ export default function AnalyticsScreen() {
         sleep: s.sleep_score,
         phase: phaseForDate(s.date, starts),
       });
-    for (const r of rows ?? []) {
-      const w = r.workout_exercises?.workouts;
-      if (!w) continue;
+    for (const w of summary?.workouts ?? []) {
       const d = ymdLocal(w.started_at);
       const e =
         m.get(d) ??
         ({ workout: false, workoutIds: [], tonnage: 0, readiness: null, sleep: null, phase: phaseForDate(d, starts) } as DayInfo);
       e.workout = true;
       if (!e.workoutIds.includes(w.id)) e.workoutIds.push(w.id);
-      if (r.reps != null && r.duration_sec == null && (r.weight != null || bwLoad(r)))
-        e.tonnage += effWeight(r, bwKg) * r.reps * ((r.meta as { side?: string } | null)?.side === 'both' ? 2 : 1);
+      e.tonnage += w.tonnage;
       m.set(d, e);
     }
     return m;
-  }, [snaps, rows, cycleStarts, bwKg]);
+  }, [snaps, summary, cycleStarts]);
   const startsSet = useMemo(() => new Set(cycleStarts ?? []), [cycleStarts]);
   const unitLabel = t(`common.${unit}`);
   const secShort = t('workout.secShort');

@@ -238,6 +238,8 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
     onSettled: (_d, _e, v: FinishVars) => {
       settle(v.workoutId);
       qc.invalidateQueries({ queryKey: ['workouts'] });
+      // завершённая тренировка меняет тоннаж/рекорды → сводка аналитики (RPC) устарела
+      qc.invalidateQueries({ queryKey: ['analytics'] });
     },
   });
 
