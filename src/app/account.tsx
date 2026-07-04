@@ -15,6 +15,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { AVATARS } from '@/lib/avatars';
 import { getTrackCycle, setTrackCycle } from '@/lib/db/cycle';
 import {
+  deleteAccount,
   getAvatar,
   getBodyweight,
   getDisplayName,
@@ -90,6 +91,9 @@ export default function AccountScreen() {
   });
   const [genderSelf, setGenderSelf] = useState('');
   const [pendingSignOut, setPendingSignOut] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
 
   const { data: trackCycle } = useQuery({
     queryKey: ['track-cycle', userId],
@@ -172,6 +176,18 @@ export default function AccountScreen() {
   const onSignOut = async () => {
     await signOut();
     router.replace('/');
+  };
+  const onDeleteAccount = async () => {
+    setDeleting(true);
+    setDeleteError(false);
+    try {
+      await deleteAccount(); // каскадом сносит все данные на сервере
+      await signOut(); // локальная сессия/кэш — signOut чистит SecureStore и сбрасывает кэш
+      router.replace('/');
+    } catch {
+      setDeleting(false);
+      setDeleteError(true);
+    }
   };
 
   // self-guard: экран вне (tabs), своего гейта сессии у него нет (как в exercises/grippers)
@@ -361,6 +377,18 @@ export default function AccountScreen() {
           <Text className="text-base font-semibold text-red-400">{t('home.signOut')}</Text>
         </Pressable>
 
+        {/* удаление аккаунта (требование Play Store): видимый путь + двойное подтверждение */}
+        <Pressable
+          onPress={() => setPendingDelete(true)}
+          disabled={deleting}
+          className="mt-3 items-center py-3 active:opacity-70"
+        >
+          <Text className="text-sm font-medium text-graphite-600">{t('account.deleteAccount')}</Text>
+        </Pressable>
+        {deleteError && (
+          <Text className="mt-1 text-center text-xs text-red-400">{t('account.deleteAccountError')}</Text>
+        )}
+
         {/* версия/OTA — чтобы видеть, что реально стоит на устройстве (id меняется после eas update) */}
         <Text className="mt-6 text-center text-[11px] text-graphite-700">
           v{Constants.expoConfig?.version ?? '?'} · {Updates.updateId ? Updates.updateId.slice(0, 8) : 'embedded'}
@@ -379,6 +407,20 @@ export default function AccountScreen() {
           void onSignOut();
         }}
         onCancel={() => setPendingSignOut(false)}
+      />
+
+      <ConfirmDialog
+        visible={pendingDelete}
+        title={t('account.deleteAccountConfirmTitle')}
+        message={t('account.deleteAccountConfirmMsg')}
+        confirmLabel={t('account.deleteAccountConfirm')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={() => {
+          setPendingDelete(false);
+          void onDeleteAccount();
+        }}
+        onCancel={() => setPendingDelete(false)}
       />
 
       <Modal

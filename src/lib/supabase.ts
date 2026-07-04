@@ -1,7 +1,8 @@
 import 'react-native-url-polyfill/auto';
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+
+import { secureStorage } from './secure-storage';
 
 // Публичные значения проекта (URL + publishable-ключ). Они и так попадают в
 // клиентский бандл, безопасны на клиенте (данные защищает RLS) — поэтому зашиты
@@ -23,7 +24,9 @@ const supabaseAnonKey = pickAnonKey(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    // сессия в SecureStore (Keystore/Keychain) вместо plaintext AsyncStorage; адаптер сам
+    // переносит прежнюю сессию из AsyncStorage при первом запуске (юзер не разлогинивается)
+    storage: secureStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

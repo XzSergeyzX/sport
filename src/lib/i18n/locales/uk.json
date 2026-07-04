@@ -109,7 +109,7 @@
     "notifRejectedBody": "Модератор відхилив відео-пруф. Перевір вимоги й подай ще раз.",
     "entryDate": "Дата результату",
     "performedAt": "Дата результату (необов’язково)",
-    "performedAtError": "Формат: дд.мм.рррр, не в майбутньому",
+    "performedAtPlaceholder": "Обрати дату",
     "proofRulesLink": "Правила відео-пруфу"
   },
   "proofRules": {
@@ -159,7 +159,12 @@
     "disciplinesHint": "Обери, що показувати у списку вправ. Те, що вимкнено, все одно знайдеться пошуком.",
     "myGrippers": "Мої еспандери",
     "signOutConfirmTitle": "Вийти з акаунту?",
-    "signOutConfirmMsg": "Щоб синхронізувати тренування, доведеться зайти знову."
+    "signOutConfirmMsg": "Щоб синхронізувати тренування, доведеться зайти знову.",
+    "deleteAccount": "Видалити акаунт",
+    "deleteAccountConfirmTitle": "Видалити акаунт?",
+    "deleteAccountConfirmMsg": "Це назавжди зітре твій профіль, тренування, рекорди й усе інше. Скасувати не вийде.",
+    "deleteAccountConfirm": "Видалити назавжди",
+    "deleteAccountError": "Не вдалося видалити акаунт. Спробуй ще раз."
   },
   "gender": {
     "title": "Стать",

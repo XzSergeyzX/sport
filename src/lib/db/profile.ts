@@ -2,6 +2,13 @@ import { supabase } from '@/lib/supabase';
 
 export type Gender = 'male' | 'female' | 'other' | 'na';
 
+/** Безвозвратно удалить аккаунт (Play Store §удаление). RPC удаляет строго auth.uid() из
+ *  auth.users → каскад по всем пользовательским данным. После — вызвать signOut. */
+export async function deleteAccount(): Promise<void> {
+  const { error } = await supabase.rpc('delete_account');
+  if (error) throw error;
+}
+
 export async function getGender(userId: string): Promise<{ gender: Gender | null; self: string | null }> {
   const { data } = await supabase
     .from('profile')

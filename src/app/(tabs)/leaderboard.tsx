@@ -1,4 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -41,6 +44,7 @@ import {
   VIDEO_HOST_RE,
 } from '@/lib/db/leaderboard';
 import { type Gripper, gripperLabel, gripperMatches, listGripperCatalog, normSearch } from '@/lib/db/grippers';
+import i18n from '@/lib/i18n';
 import { fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 import { useRole } from '@/lib/use-role';
 
@@ -78,18 +82,10 @@ function rowResult(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string
 
 // ---------- подача заявки ----------
 
-/** «дд.мм.рррр» → ISO yyyy-mm-dd; null = невалидно (несуществующая дата или будущее).
- *  Нативного датапикера нет сознательно: новый native-dep = пересборка APK. */
-function parsePerformedAt(s: string): string | null {
-  const m = s.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!m) return null;
-  const [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  const real =
-    dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
-  if (!real || dt.getTime() > Date.now()) return null;
-  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-}
+// Дата выступления → ISO yyyy-mm-dd в локальном дне (performed_at — date-колонка, без времени).
+// Ввод — нативный датапикер (maximumDate=сегодня), поэтому невалидной/будущей даты не бывает.
+const toYmd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function SubmitForm({
   userId,
@@ -115,7 +111,8 @@ function SubmitForm({
   const [certified, setCertified] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [note, setNote] = useState('');
-  const [perfDate, setPerfDate] = useState(''); // «дд.мм.рррр», пусто = не указана
+  const [perfDate, setPerfDate] = useState<Date | null>(null); // null = не указана (поле опционально)
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // каталог эспандеров для выбора железки заявки — ДВУМЯ секциями (фидбек Сергея:
   // «всё в куче»): личные замеренные отдельно от каталожных средних
@@ -137,11 +134,9 @@ function SubmitForm({
   const canCert = board === 'gripper' && !!gripper && certEligibleGripper(gripper);
   const urlOk = VIDEO_HOST_RE.test(videoUrl.trim());
   const urlLooksFilled = videoUrl.trim().length > 8;
-  const performedAt = parsePerformedAt(perfDate); // null и при пустом поле — это ок
-  const dateOk = perfDate.trim() === '' || performedAt != null;
+  const performedAt = perfDate ? toYmd(perfDate) : null; // null (не указана) — это ок
   const canSubmit =
     urlOk &&
-    dateOk &&
     (board === 'dynamometer'
       ? dynId != null && weightKg != null && weightKg > 0 && weightKg < 400
       : gripper != null);
@@ -335,16 +330,38 @@ function SubmitForm({
       <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
         {t('leaderboard.performedAt')}
       </Text>
-      <TextInput
-        value={perfDate}
-        onChangeText={setPerfDate}
-        placeholder={new Date().toLocaleDateString('uk-UA')}
-        placeholderTextColor={PLACEHOLDER}
-        keyboardType="numbers-and-punctuation"
-        className="mt-1 rounded-xl bg-graphite-800 px-4 py-3 text-base text-graphite-50"
-      />
-      {!dateOk && (
-        <Text className="mt-1 text-xs leading-4 text-red-400">{t('leaderboard.performedAtError')}</Text>
+      <View className="mt-1 flex-row items-center gap-2">
+        <Pressable
+          onPress={() => setShowDatePicker(true)}
+          className="flex-1 flex-row items-center justify-between rounded-xl bg-graphite-800 px-4 py-3 active:opacity-70"
+        >
+          <Text className={`text-base ${perfDate ? 'text-graphite-50' : 'text-graphite-500'}`}>
+            {perfDate
+              ? perfDate.toLocaleDateString(i18n.language === 'uk' ? 'uk-UA' : 'en-GB')
+              : t('leaderboard.performedAtPlaceholder')}
+          </Text>
+          <Ionicons name="calendar-outline" size={18} color={PLACEHOLDER} />
+        </Pressable>
+        {perfDate && (
+          <Pressable
+            onPress={() => setPerfDate(null)}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-xl bg-graphite-800 active:opacity-70"
+          >
+            <Ionicons name="close" size={18} color={PLACEHOLDER} />
+          </Pressable>
+        )}
+      </View>
+      {showDatePicker && (
+        <DateTimePicker
+          value={perfDate ?? new Date()}
+          mode="date"
+          maximumDate={new Date()} // будущую дату выступления выбрать нельзя
+          onChange={(e: DateTimePickerEvent, d?: Date) => {
+            setShowDatePicker(false); // Android: пикер модальный, закрываем в любом исходе
+            if (e.type === 'set' && d) setPerfDate(d);
+          }}
+        />
       )}
 
       <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">

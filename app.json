@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sporty_SM",
     "slug": "Sporty_SM",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sportysm",
@@ -59,7 +59,8 @@
         {
           "color": "#1FB89A"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},

@@ -109,7 +109,7 @@
     "notifRejectedBody": "The moderator rejected your video proof. Check the requirements and resubmit.",
     "entryDate": "Result date",
     "performedAt": "Result date (optional)",
-    "performedAtError": "Format: dd.mm.yyyy, not in the future",
+    "performedAtPlaceholder": "Pick a date",
     "proofRulesLink": "Video proof rules"
   },
   "proofRules": {
@@ -159,7 +159,12 @@
     "disciplinesHint": "Pick what shows in the exercise list. Anything off is still found by search.",
     "myGrippers": "My grippers",
     "signOutConfirmTitle": "Sign out?",
-    "signOutConfirmMsg": "You'll need to sign in again to sync your training."
+    "signOutConfirmMsg": "You'll need to sign in again to sync your training.",
+    "deleteAccount": "Delete account",
+    "deleteAccountConfirmTitle": "Delete account?",
+    "deleteAccountConfirmMsg": "This permanently erases your profile, workouts, records and everything else. This can't be undone.",
+    "deleteAccountConfirm": "Delete forever",
+    "deleteAccountError": "Couldn't delete the account. Try again."
   },
   "gender": {
     "title": "Sex",
