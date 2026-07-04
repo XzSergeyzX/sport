@@ -46,7 +46,9 @@ Return ONLY a JSON object:
           "catalog_index": number|null,   // number from CATALOG if it matches by meaning (any language), else null
           "notes": string|null,
           "sets": [
-            { "reps": number|null, "duration_sec": number|null, "weight": number|null, "rpe": number|null, "rest_sec": number|null, "notes": string|null }
+            { "reps": number|null, "duration_sec": number|null, "weight": number|null, "rpe": number|null,
+              "rest_sec": number|null, "gripper": string|null, "rgc": number|null,
+              "set_type": "tns"|"card"|"block_38"|"block_20"|"deep"|null, "notes": string|null }
           ]
         }
       ]
@@ -66,12 +68,18 @@ Rules:
 - ONE MOVEMENT = ONE EXERCISE WITH MANY SETS. Never emit the same movement as several separate
   exercises. Multiple lines/working sets of the same movement → ONE exercise with that many sets.
   Per-set differences (load, gripper model, band, tempo, side) live ON THE SET — not as a new
-  exercise and not dropped. Put the per-set load into the set's weight; put any non-numeric
-  per-set descriptor (gripper model, band colour, "per side") into that set's notes.
-- GRIPPERS / hand-closers ("еспандер", "Heavy Grips 250", "CoC #2", "expander", "gripper"):
-  the load is the gripper model, NOT a weight. → ONE exercise (e.g. "Стиснення еспандера"),
-  one SET per gripper line, weight=null, reps=the closes, and the gripper model in the set's
-  notes ("Heavy Grips 250"). Three grippers ×5/×2/×4 → one exercise, three sets, three notes.
+  exercise and not dropped. Put the per-set load into the set's weight; the gripper model goes
+  into the set's "gripper" field; other non-numeric descriptors (band colour, "per side") → notes.
+- GRIPPERS / hand-closers ("эспандер", "гриппер", "Heavy Grips 300", "CoC #2", "expander"): the load is
+  the gripper MODEL, NOT a weight. → name the exercise "Стиснення еспандера" (catalog gripper), ONE set
+  per gripper line with weight=null, reps=the closes ("на 3 раза" → reps 3), "gripper"=the model string
+  ("Heavy Grips 300"), and "set_type" if a grip setup is named ("дипсет"/"дип-сет"/"діпсет"/"діп-сет"→"deep", "TNS"→"tns",
+  "карта"→"card", "блок 38"→"block_38", "блок 20"→"block_20"). An "RGC"/"ргц" number ("72 rgc",
+  "47 RGC") is the gripper's measured load → put it in the set "rgc" field as a NUMBER, NEVER in
+  "weight", NEVER only in "notes". It is how same-model grippers of different strength are told apart
+  (a "Heavy Grips 300" at 72 vs at 74 are two different tools). KEEP the colour/identifier ("blue",
+  "black", "Gods of Grip", "Temu", "filed") INSIDE the "gripper" model string too — do NOT strip it.
+  Three grippers ×5/×2/×4 → one exercise, three sets, three "gripper" values.
 - "10 тяг штанги в нахилі (30 кг)" → 1 set, reps 10, weight 30.
 - "3 жима штанги + 2 швунга (22.5-25 кг)" → two DIFFERENT exercises in the same block.
 - "5/5 … на руку", "20/20 сек", "права/ліва рука" mean per-side: keep the per-side number in reps and add "per side" to notes.
@@ -96,6 +104,9 @@ type ParsedSet = {
   weight: number | null;
   rpe: number | null;
   rest_sec: number | null;
+  gripper: string | null;   // модель эспандера ("Heavy Grips 300") — для grip-подходов; вес=null
+  rgc: number | null;       // замеренная нагрузка эспандера (кг) — различает одномодельные грипперы
+  set_type: string | null;  // установка гриппера: tns|card|block_38|block_20|deep
   notes: string | null;
 };
 type ParsedExercise = {
@@ -115,7 +126,7 @@ type ParsedBlock = {
 };
 type Parsed = { title: string; blocks: ParsedBlock[] };
 
-type CatalogItem = { id: string; name_en: string; name_uk: string };
+type CatalogItem = { id: string; name_en: string; name_uk: string; log_kind: string | null };
 
 function safeParse(text: string): Parsed {
   let t = text.trim();
@@ -236,10 +247,64 @@ Deno.serve(async (req) => {
     // каталог для матчинга (общий + личный пользователя)
     const { data: catRows } = await admin
       .from('exercises')
-      .select('id, name_en, name_uk')
+      .select('id, name_en, name_uk, log_kind')
       .or(`owner_id.eq.${userId},is_global.eq.true`)
       .order('name_en');
     const catalog: CatalogItem[] = (catRows ?? []) as CatalogItem[];
+    // каноническое гриппер-упражнение (предпочесть «сжатие», не «удержание»)
+    const gripperEx =
+      catalog.find((c) => c.log_kind === 'gripper' && /close|стиснення/i.test(`${c.name_en} ${c.name_uk}`)) ??
+      catalog.find((c) => c.log_kind === 'gripper') ??
+      null;
+
+    // каталог эспандеров (свои + глобальные) для резолва gripper_id по модели из текста
+    // (резолвер — копия workout-import дня-43: двунаправленный subset токенов + гомоглифы + ближайший RGC)
+    const { data: gripRows } = await admin
+      .from('grippers')
+      .select('id, brand, name, rgc, rgc_unit, owner_id')
+      .or(`owner_id.eq.${userId},is_global.eq.true`);
+    type GripRow = {
+      id: string; brand: string | null; name: string;
+      rgc: number | null; rgc_unit: string | null; owner_id: string | null;
+    };
+    // личные эспандеры — первыми: при равной близости по RGC берём личный, а не глобальный из чарта
+    const grippers: GripRow[] = ((gripRows ?? []) as GripRow[]).sort(
+      (a, b) => (a.owner_id ? 0 : 1) - (b.owner_id ? 0 : 1),
+    );
+    const SET_TYPES = ['tns', 'card', 'block_38', 'block_20', 'deep'];
+    // кириллические гомоглифы → латиница: юзер пишет «СоС 3», каталог — «CoC #3»
+    const HOMO: Record<string, string> = {
+      а: 'a', в: 'b', е: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
+    };
+    const gripNorm = (s: string) =>
+      s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/[а-я]/g, (c) => HOMO[c] ?? c);
+    const gripTokens = (s: string) => gripNorm(s).split(' ').filter(Boolean);
+    const subset = (a: string[], b: string[]) => a.length > 0 && a.every((t) => b.includes(t));
+    const rgcKg = (g: GripRow) =>
+      g.rgc == null ? null : g.rgc_unit === 'lb' ? g.rgc * 0.453592 : g.rgc;
+    const resolveGripperId = (model: string, rgc: number | null): string | null => {
+      const mt = gripTokens(model);
+      if (!mt.length) return null;
+      const matches = grippers.filter((g) => {
+        const gt = gripTokens(`${g.brand ?? ''} ${g.name}`);
+        return subset(mt, gt) || subset(gt, mt);
+      });
+      if (!matches.length) return null;
+      if (rgc == null) return matches[0].id; // grippers отсортирован: личные первыми
+      let best = matches[0];
+      let bestDiff = Infinity;
+      for (const g of matches) {
+        const gk = rgcKg(g);
+        const diff = gk == null ? Infinity : Math.abs(gk - rgc);
+        // строго ближе ИЛИ так же близко, но личный важнее глобального (best стартует с личного)
+        if (diff < bestDiff || (diff === bestDiff && !!g.owner_id && !best.owner_id)) {
+          best = g;
+          bestDiff = diff;
+        }
+      }
+      return best.id;
+    };
+
     const catalogBlock = catalog
       .map((c, i) => `${i + 1}. ${c.name_en} / ${c.name_uk}`)
       .join('\n');
@@ -327,14 +392,31 @@ Deno.serve(async (req) => {
 
       // fallbackNote: при слиянии повтора-упражнения переносим его описание (гриппер/снаряд)
       // на подход, чтобы инфо не терялась, даже если модель положила её в notes упражнения.
-      const setFields = (s: ParsedSet, fallbackNote: string | null = null) => ({
-        target_reps: num(s.reps),
-        target_duration_sec: num(s.duration_sec),
-        target_weight: weightToKg(num(s.weight)),
-        target_rpe: num(s.rpe),
-        rest_sec: num(s.rest_sec),
-        notes: s.notes ?? fallbackNote ?? null,
-      });
+      const setFields = (s: ParsedSet, fallbackNote: string | null = null) => {
+        const isGripSet = !!str(s.gripper);
+        const gripRgc = num(s.rgc);
+        const gripperId = isGripSet ? resolveGripperId(s.gripper!, gripRgc) : null;
+        const setType = SET_TYPES.includes(s.set_type ?? '') ? s.set_type : null;
+        // meta доживает до тренировки: buildWorkoutFromProgram копирует ps.meta в сет как есть
+        const meta: Record<string, unknown> = {};
+        if (gripperId) meta.gripper_id = gripperId;
+        else if (isGripSet) {
+          // модель не сматчилась на каталог — НЕ теряем её: сохраняем сырьё в мете
+          meta.gripper_model = str(s.gripper);
+          if (gripRgc != null) meta.gripper_rgc = gripRgc;
+        }
+        if (setType) meta.set_type = setType;
+        return {
+          target_reps: num(s.reps),
+          target_duration_sec: num(s.duration_sec),
+          // у гриппера нагрузка = модель (gripper_id), не вес → weight всегда null
+          target_weight: isGripSet ? null : weightToKg(num(s.weight)),
+          target_rpe: num(s.rpe),
+          rest_sec: num(s.rest_sec),
+          notes: s.notes ?? fallbackNote ?? null,
+          meta: Object.keys(meta).length ? meta : null,
+        };
+      };
 
       // один и тот же снаряд подряд (эспандер на разных грипперах, повтор строки) — это ДОП.
       // ПОДХОДЫ, а не новые упражнения. Дописываем их в предыдущее упражнение блока.
@@ -344,10 +426,13 @@ Deno.serve(async (req) => {
 
       for (let ei = 0; ei < exs.length; ei++) {
         const ex = exs[ei];
-        const name = (ex.name ?? '').trim().slice(0, 200);
+        // гриппер-упражнение (подходы несут модель эспандера) → каноническое «Стиснення еспандера»
+        // с log_kind='gripper', а не кастомное упр. по тексту юзера (иначе грип-UI/рекорды не подхватят)
+        const isGripperEx = !!gripperEx && (ex.sets ?? []).some((s) => str(s.gripper));
+        const name = (isGripperEx ? gripperEx!.name_uk : ex.name ?? '').trim().slice(0, 200);
         if (!name) continue;
 
-        const exerciseId = await resolveExerciseId(ex);
+        const exerciseId = isGripperEx ? gripperEx!.id : await resolveExerciseId(ex);
         const sets = expandSetMultipliers(Array.isArray(ex.sets) ? ex.sets : []);
 
         if (exerciseId && exerciseId === lastExId && lastPeId) {

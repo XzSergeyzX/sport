@@ -67,13 +67,19 @@ export async function runIntent(
   const out = await adapter.complete(route.model, input);
 
   // 4) учёт расхода (оценка стоимости по ценам роута)
-  const cost =
-    (out.tokensIn / 1_000_000) * route.price_in + (out.tokensOut / 1_000_000) * route.price_out;
+  // prompt caching: запись в кэш ×1.25 к цене инпута, чтение ×0.1 (anthropic; у остальных нули).
+  // В tokens_in пишем ПОЛНЫЙ размер промпта (uncached+write+read) — токен-капы считают реальную
+  // нагрузку, а скидка кэша отражается только в cost_estimate.
+  const cacheWrite = out.tokensCacheWrite ?? 0;
+  const cacheRead = out.tokensCacheRead ?? 0;
+  const inCost = (out.tokensIn + 1.25 * cacheWrite + 0.1 * cacheRead) / 1_000_000;
+  const cost = inCost * route.price_in + (out.tokensOut / 1_000_000) * route.price_out;
   await admin.rpc('ai_record_usage', {
     p_user: userId,
-    p_tokens_in: out.tokensIn,
+    p_tokens_in: out.tokensIn + cacheWrite + cacheRead,
     p_tokens_out: out.tokensOut,
     p_cost: cost,
+    p_intent: intent,
   });
 
   return { ...out, cost, provider: route.provider, model: route.model };

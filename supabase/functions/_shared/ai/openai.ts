@@ -1,6 +1,9 @@
 import { Adapter, AiError, CompleteInput, CompleteOutput } from './types.ts';
 
 // OpenAI Chat Completions. Ключ: OPENAI_API_KEY (секрет функции).
+
+const TIMEOUT_MS = 120_000;
+
 export const openaiAdapter: Adapter = {
   available() {
     return !!Deno.env.get('OPENAI_API_KEY');
@@ -18,16 +21,25 @@ export const openaiAdapter: Adapter = {
       ...input.messages,
     ];
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_completion_tokens: input.maxTokens ?? 4096,
-        ...(input.json ? { response_format: { type: 'json_object' } } : {}),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_completion_tokens: input.maxTokens ?? 4096,
+          ...(input.json ? { response_format: { type: 'json_object' } } : {}),
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'TimeoutError') {
+        throw new AiError('provider_timeout', `openai: no response in ${TIMEOUT_MS / 1000}s`);
+      }
+      throw e;
+    }
 
     if (!res.ok) {
       const body = await res.text();

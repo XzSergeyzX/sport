@@ -1,6 +1,9 @@
 import { Adapter, AiError, CompleteInput, CompleteOutput } from './types.ts';
 
 // Google Gemini generateContent. Ключ: GEMINI_API_KEY (секрет функции, опционально).
+
+const TIMEOUT_MS = 120_000;
+
 export const geminiAdapter: Adapter = {
   available() {
     return !!Deno.env.get('GEMINI_API_KEY');
@@ -24,15 +27,24 @@ export const geminiAdapter: Adapter = {
 
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        ...(systemBits ? { systemInstruction: { parts: [{ text: systemBits }] } } : {}),
-        ...(input.json ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          ...(systemBits ? { systemInstruction: { parts: [{ text: systemBits }] } } : {}),
+          ...(input.json ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'TimeoutError') {
+        throw new AiError('provider_timeout', `gemini: no response in ${TIMEOUT_MS / 1000}s`);
+      }
+      throw e;
+    }
 
     if (!res.ok) {
       const body = await res.text();

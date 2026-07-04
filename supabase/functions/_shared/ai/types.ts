@@ -28,8 +28,11 @@ export type CompleteInput = {
 
 export type CompleteOutput = {
   text: string;
-  tokensIn: number;
+  tokensIn: number; // некэшированные входные токены (у anthropic input_tokens БЕЗ кэша)
   tokensOut: number;
+  // prompt caching (пока только anthropic): запись в кэш ×1.25 к цене инпута, чтение ×0.1
+  tokensCacheWrite?: number;
+  tokensCacheRead?: number;
   stopReason?: string; // 'tool_use' → модель просит вызвать инструмент(ы)
   toolUses?: { id: string; name: string; input: unknown }[];
 };

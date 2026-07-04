@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
       p_tokens_in: 0,
       p_tokens_out: 0,
       p_cost: cost,
+      p_intent: 'transcribe',
     });
 
     return json({ text });
