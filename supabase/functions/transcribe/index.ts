@@ -79,7 +79,8 @@ Deno.serve(async (req) => {
     // multipart → OpenAI transcriptions
     const ext = mime.includes('wav') ? 'wav' : mime.includes('mp4') ? 'mp4' : 'm4a';
     const form = new FormData();
-    form.append('file', new Blob([bytes], { type: mime }), `audio.${ext}`);
+    // bytes: Uint8Array — приводим к BlobPart явно (Deno-lib строже к SharedArrayBuffer в типе)
+    form.append('file', new Blob([bytes as BlobPart], { type: mime }), `audio.${ext}`);
     form.append('model', MODEL);
     form.append('language', lang);
     form.append('response_format', 'json');

@@ -66,11 +66,11 @@ async function main() {
     console.log(`\nНайдено: ${ex.id}`);
     console.log(`  name_en=${JSON.stringify(ex.name_en)}  name_uk=${JSON.stringify(ex.name_uk)}  is_global=${ex.is_global}  owner_id=${ex.owner_id}`);
 
+    // personal_records выкинута миграцией 20260704110000 — считаем только живые FK
     const we = await countRefs('workout_exercises', ex.id);
     const pe = await countRefs('program_exercises', ex.id);
-    const pr = await countRefs('personal_records', ex.id);
-    const total = we + pe + pr;
-    console.log(`  ссылки: workout_exercises=${we}  program_exercises=${pe}  personal_records=${pr}  (всего ${total})`);
+    const total = we + pe;
+    console.log(`  ссылки: workout_exercises=${we}  program_exercises=${pe}  (всего ${total})`);
 
     if (total > 0) {
       console.log('  ⏭️  ПРОПУСК: есть FK-ссылки. Сначала удалить ссылающиеся программы/тренировки, потом перезапустить.');

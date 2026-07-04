@@ -25,6 +25,8 @@ const min = (sec: unknown): number | null => {
 };
 
 type Row = Record<string, unknown>;
+// документ OURA v2: у всех есть day; у sleep-периодов ещё type (long_sleep). Прочие поля — по эндпоинту.
+type OuraDoc = { day?: string; type?: string; [k: string]: unknown };
 
 /** Индекс «день → документ». Последний выигрывает; опц. предпочтение по предикату (long_sleep). */
 function byDay<T extends { day?: string }>(arr: T[], prefer?: (t: T) => boolean): Map<string, T> {
@@ -73,8 +75,8 @@ Deno.serve(async (req) => {
 
     // тянем всё, что отдаёт OURA v2; недоступные эндпоинты игнорируем.
     // Пагинация по next_token — иначе OURA обрежет выдачу ~250 строками (важно для глубокой истории).
-    const ep = async (path: string): Promise<{ data: unknown[]; status: number }> => {
-      const out: unknown[] = [];
+    const ep = async (path: string): Promise<{ data: OuraDoc[]; status: number }> => {
+      const out: OuraDoc[] = [];
       let next: string | null = null;
       let status = 0;
       for (let page = 0; page < 40; page++) {
@@ -86,7 +88,9 @@ Deno.serve(async (req) => {
         }
         status = r.status;
         if (!r.ok) break;
-        const j = await r.json().catch(() => ({ data: [], next_token: null }));
+        const j: { data?: OuraDoc[]; next_token?: string | null } = await r
+          .json()
+          .catch(() => ({ data: [], next_token: null }));
         if (Array.isArray(j.data)) out.push(...j.data);
         next = j.next_token ?? null;
         if (!next) break;

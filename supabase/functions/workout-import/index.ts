@@ -158,7 +158,7 @@ type PSet = {
 };
 type PEx = { name: string; catalog_index: number | null; notes: string | null; sets: PSet[] };
 type PBlock = { type: string | null; label: string | null; exercises: PEx[] };
-type Parsed = { date: string | null; title: string; blocks: PBlock[] };
+type Parsed = { date: string | null; title: string; session_note: string | null; blocks: PBlock[] };
 type CatalogItem = { id: string; name_en: string; name_uk: string; log_kind: string | null };
 
 const num = (v: unknown): number | null =>

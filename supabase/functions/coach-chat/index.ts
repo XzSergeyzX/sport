@@ -20,6 +20,11 @@ const LB_PER_KG = 2.2046226218;
 const MAX_TOOL_TURNS = 5;
 const HISTORY_LIMIT = 24;
 
+// supabase-js типизирует вложенную to-one связь как массив, хотя PostgREST возвращает объект.
+// Приводим к объекту (обрабатывая оба варианта, чтобы не падать в рантайме).
+const one = <T>(rel: T | T[] | null | undefined): T | null =>
+  Array.isArray(rel) ? (rel[0] ?? null) : (rel ?? null);
+
 // Фаза цикла по дню (1-based). Согласовано с клиентом (cycle.ts).
 function cyclePhase(day: number): string | null {
   if (day < 1 || day > 40) return null;
@@ -98,7 +103,8 @@ const TOOLS: ToolSpec[] = [
   },
   {
     name: 'get_records',
-    description: "The athlete's personal records (best per exercise).",
+    description:
+      "The athlete's personal records, computed from their full logged history: best weight×reps (with estimated 1RM) and best timed hold per exercise, plus gripper records per grip setup.",
     input_schema: { type: 'object', properties: {} },
   },
   {
@@ -188,7 +194,7 @@ function makeTools(admin: SupabaseClient, userId: string, units: 'kg' | 'lb') {
           .map((we) => {
             const done = (we.sets ?? []).filter((s) => s.logged_at);
             if (!done.length) return null;
-            const name = we.exercises?.name_en ?? we.display_name ?? '—';
+            const name = one(we.exercises)?.name_en ?? we.display_name ?? '—';
             const best = done.reduce(
               (b, s) => ((s.weight ?? 0) > (b?.weight ?? -1) ? s : b),
               null as null | { weight: number | null; reps: number | null },
@@ -223,7 +229,7 @@ function makeTools(admin: SupabaseClient, userId: string, units: 'kg' | 'lb') {
         .in('exercise_id', ids)
         .eq('workouts.user_id', userId);
       const weByDate = new Map<string, string>(); // weId → date
-      for (const we of wes ?? []) weByDate.set(we.id, we.workouts?.started_at?.slice(0, 10));
+      for (const we of wes ?? []) weByDate.set(we.id, one(we.workouts)?.started_at?.slice(0, 10) ?? '');
       const weIds = [...weByDate.keys()];
       if (!weIds.length) return { exercise: exs[0].name_en, sets: [] };
       const { data: sets } = await admin
@@ -246,21 +252,46 @@ function makeTools(admin: SupabaseClient, userId: string, units: 'kg' | 'lb') {
     },
 
     async get_records() {
-      const { data: prs } = await admin
-        .from('personal_records')
-        .select('type, value, achieved_at, exercises(name_en, name_uk)')
-        .eq('user_id', userId)
-        .order('achieved_at', { ascending: false })
-        .limit(40);
-      if (!prs?.length) return { records: [], note: 'no records stored yet — derive from history if needed' };
-      return {
-        records: prs.map((r) => ({
-          exercise: r.exercises?.name_en ?? '—',
-          type: r.type,
-          value: r.type.includes('weight') || r.type.includes('1rm') ? `${w(r.value)}${units}` : r.value,
-          date: r.achieved_at?.slice(0, 10),
-        })),
+      // рекорды считаются в SQL той же логикой, что экран аналитики (analytics_summary_for);
+      // тул отдаёт модели топ-1 на упражнение/установку — детали она добирает get_exercise_history
+      const { data: sum, error } = await admin.rpc('analytics_summary_for', { p_user: userId });
+      if (error) return { error: error.message };
+      type RepRow = { exercise_id: string | null; name_en: string | null; display_name: string | null; weight: number; reps: number; one_rm: number; date: string };
+      type TimeRow = { exercise_id: string | null; name_en: string | null; display_name: string | null; sec: number; weight: number | null; date: string };
+      type GripRow = { set_type: string; gripper_name: string | null; est_kg: number | null; reps: number; date: string };
+      // строки отсортированы (упражнение, ранг) — первая на упражнение и есть топ-1
+      const firstBy = <T,>(rows: T[], key: (r: T) => string | null): T[] => {
+        const seen = new Set<string>();
+        const out: T[] = [];
+        for (const r of rows) {
+          const k = key(r) ?? '';
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push(r);
+        }
+        return out;
       };
+      const reps = firstBy((sum?.rep_records ?? []) as RepRow[], (r) => r.exercise_id).map((r) => ({
+        exercise: r.name_en ?? r.display_name ?? '—',
+        best: `${w(r.weight)}${units} × ${r.reps}`,
+        est_1rm: `${w(r.one_rm)}${units}`,
+        date: r.date?.slice(0, 10),
+      }));
+      const holds = firstBy((sum?.time_records ?? []) as TimeRow[], (r) => r.exercise_id).map((r) => ({
+        exercise: r.name_en ?? r.display_name ?? '—',
+        best: r.weight != null ? `${w(r.weight)}${units} held ${r.sec}s` : `${r.sec}s`,
+        date: r.date?.slice(0, 10),
+      }));
+      const grip = firstBy((sum?.grip_records ?? []) as GripRow[], (r) => r.set_type).map((r) => ({
+        setup: r.set_type,
+        gripper: r.gripper_name ?? '—',
+        reps: r.reps,
+        est_1rm: r.est_kg != null ? `${w(r.est_kg)}${units}` : null,
+        date: r.date?.slice(0, 10),
+      }));
+      if (!reps.length && !holds.length && !grip.length)
+        return { records: [], note: 'no logged history yet' };
+      return { weight_reps_records: reps, timed_hold_records: holds, gripper_records: grip };
     },
 
     async get_recovery(input) {

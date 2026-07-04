@@ -14,6 +14,9 @@ const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 // зеркало строк src/lib/i18n/locales/{en,uk}.json (leaderboard.notif*) — сервер не может
 // импортировать клиентские json; меняешь там — поменяй и тут
+// тикет Expo Push API: ok или error с деталями (DeviceNotRegistered и т.п.)
+type PushTicket = { status?: string; details?: { error?: string } };
+
 const TEXTS = {
   en: {
     approved: {
@@ -84,6 +87,7 @@ Deno.serve(async (req) => {
     if (!entry || (entry.status !== 'approved' && entry.status !== 'rejected')) {
       return json({ error: 'entry_not_reviewed' }, 400);
     }
+    const status = entry.status as 'approved' | 'rejected';
 
     const { data: tokens } = await admin
       .from('push_tokens')
@@ -97,14 +101,14 @@ Deno.serve(async (req) => {
       .eq('user_id', entry.user_id)
       .maybeSingle();
     const lang = prof?.language === 'uk' ? 'uk' : 'en';
-    const text = TEXTS[lang][entry.status];
+    const text = TEXTS[lang][status];
 
     // data.entryId+status — ключ дедупа с локальным слоем (см. sweep в entry-notifications)
     const messages = tokens.map((row) => ({
       to: row.token,
       title: text.title,
       body: text.body,
-      data: { screen: 'leaderboard', entryId, status: entry.status },
+      data: { screen: 'leaderboard', entryId, status },
       channelId: 'leaderboard-v2',
       priority: 'high',
     }));
@@ -115,14 +119,14 @@ Deno.serve(async (req) => {
       body: JSON.stringify(messages),
       signal: AbortSignal.timeout(10_000),
     });
-    const receipt = await res.json().catch(() => null);
+    const receipt: { data?: PushTicket[] } | null = await res.json().catch(() => null);
     if (!res.ok) {
       console.error('push-entry-review: expo push failed', res.status, JSON.stringify(receipt));
       return json({ error: 'expo_push_failed' }, 502);
     }
 
     // мёртвые токены (переустановка апки и т.п.) выкидываем сразу
-    const tickets = Array.isArray(receipt?.data) ? receipt.data : [];
+    const tickets: PushTicket[] = Array.isArray(receipt?.data) ? receipt.data : [];
     const dead = messages
       .filter((_, i) => tickets[i]?.details?.error === 'DeviceNotRegistered')
       .map((m) => m.to);
