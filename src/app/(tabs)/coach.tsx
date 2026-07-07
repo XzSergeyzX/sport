@@ -13,7 +13,6 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Animated,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -27,7 +26,7 @@ import { BottomSheet } from '@/components/bottom-sheet';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { useTabBarHeight } from '@/lib/tab-bar';
-import { useKeyboardVisible } from '@/lib/use-keyboard-visible';
+import { useKeyboardHeight } from '@/lib/use-keyboard-visible';
 import {
   type CoachMessage,
   type CoachThread,
@@ -99,7 +98,7 @@ export default function CoachScreen() {
   const [pending, setPending] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const tabBarHeight = useTabBarHeight();
-  const keyboardVisible = useKeyboardVisible();
+  const keyboardHeight = useKeyboardHeight();
 
   // выбранный разговор. undefined = «ещё не выбирали» → показываем самый свежий тред;
   // null = «Нова розмова» (пустой экран, первое сообщение заведёт тред на сервере);
@@ -318,14 +317,17 @@ export default function CoachScreen() {
           <Text className="text-2xl font-extrabold text-graphite-50">{t('coach.title')}</Text>
           <Text className="mt-0.5 text-xs text-graphite-500">{t('coach.subtitle')}</Text>
         </View>
-        <View className="flex-row items-center gap-1">
+        {/* шестерёнка — голая 22px-иконка (общий SettingsButton), поэтому её тоже сажаем в
+            такой же 36px-бокс: центры и промежутки всех трёх иконок совпадают. Отрицательный
+            маргин возвращает глиф шестерёнки на общий правый край экранов (px-6). */}
+        <View className="-mr-2 flex-row items-center">
           <Pressable
             onPress={newConversation}
             hitSlop={8}
             accessibilityLabel={t('coach.newChat')}
             className="h-9 w-9 items-center justify-center rounded-full active:opacity-70"
           >
-            <Feather name="edit" size={19} color="#848D9A" />
+            <Feather name="edit" size={20} color="#848D9A" />
           </Pressable>
           <Pressable
             onPress={() => setThreadSheetOpen(true)}
@@ -333,20 +335,18 @@ export default function CoachScreen() {
             accessibilityLabel={t('coach.history')}
             className="h-9 w-9 items-center justify-center rounded-full active:opacity-70"
           >
-            <Feather name="clock" size={19} color="#848D9A" />
+            <Feather name="clock" size={20} color="#848D9A" />
           </Pressable>
-          <SettingsButton />
+          <View className="h-9 w-9 items-center justify-center">
+            <SettingsButton />
+          </View>
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        // padding и на Android: при edge-to-edge (SDK 54) окно не ресайзится под клавиатуру,
-        // поэтому undefined-behavior оставлял поле ввода под клавиатурой. Таб-бар прячется
-        // через tabBarHideOnKeyboard, так что лишнего отступа снизу нет.
-        behavior="padding"
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
+      {/* Без KeyboardAvoidingView: его анимированный паддинг на Android оставался после
+          закрытия клавиатуры — постоянный геп между инпутом и таббаром. Вместо этого низ
+          прижимаем вручную: paddingBottom инпут-бара = высота клавиатуры (см. ниже). */}
+      <View className="flex-1">
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator color="#848D9A" />
@@ -410,10 +410,11 @@ export default function CoachScreen() {
         )}
 
         {/* инпут сидит над absolute-таббаром; при открытой клаве бар прячется
-            (tabBarHideOnKeyboard) — отступ убираем, KAV сам поднимает над клавой */}
+            (tabBarHideOnKeyboard), а отступ = высота клавиатуры (окно при edge-to-edge
+            не ресайзится) — закрылась клава, отступ детерминированно вернулся к таббару */}
         <View
           className="border-t border-graphite-800 px-3 pt-3"
-          style={{ paddingBottom: keyboardVisible ? 12 : tabBarHeight + 12 }}
+          style={{ paddingBottom: keyboardHeight > 0 ? keyboardHeight + 12 : tabBarHeight + 12 }}
         >
           <View className="flex-row items-end gap-1 rounded-3xl bg-graphite-900 px-2 py-1.5">
             {recording ? (
@@ -484,7 +485,7 @@ export default function CoachScreen() {
             )}
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       <BottomSheet visible={threadSheetOpen} onClose={() => setThreadSheetOpen(false)}>
         <Text className="mb-4 text-lg font-bold text-graphite-50">{t('coach.history')}</Text>

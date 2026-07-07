@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { getHealthRelevant } from '@/lib/db/profile';
+import { useShowLeaderboard } from '@/lib/use-show-leaderboard';
 import { TAB_BAR_BASE_HEIGHT } from '@/lib/tab-bar';
 import { useRole } from '@/lib/use-role';
 
@@ -41,6 +42,9 @@ export default function TabsLayout() {
     enabled: !!userId,
     staleTime: 1000 * 60 * 30,
   });
+  // «Лідерборд» — по тумблеру в Акаунте. Пока не загружено (undefined) — показываем
+  // (дефолт true у большинства; прячем только явный false, чтобы таб не мигал).
+  const { data: showLeaderboard } = useShowLeaderboard(userId);
 
   // Гард: на табы можно попасть прямым deep-link (скан QR), минуя гейт index.tsx.
   // Без сессии — выкидываем на вход, иначе экраны грузятся «без пользователя».
@@ -88,10 +92,6 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="home"
-        options={{ title: t('tabs.home'), tabBarIcon: icon('home-outline') }}
-      />
-      <Tabs.Screen
         name="workouts"
         options={{ title: t('tabs.workouts'), tabBarIcon: icon('barbell-outline') }}
       />
@@ -126,7 +126,11 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="leaderboard"
-        options={{ title: t('tabs.leaderboard'), tabBarIcon: icon('trophy-outline') }}
+        options={{
+          title: t('tabs.leaderboard'),
+          tabBarIcon: icon('trophy-outline'),
+          href: showLeaderboard === false ? null : undefined,
+        }}
       />
     </Tabs>
   );

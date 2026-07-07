@@ -12,7 +12,7 @@ import { setWeightUnit } from '@/lib/use-unit';
 // (синкается между устройствами). Локальный AsyncStorage — оффлайн-фолбэк.
 export default function Index() {
   const { session, initializing } = useAuth();
-  const [target, setTarget] = useState<'onboarding' | 'home' | null>(null);
+  const [target, setTarget] = useState<'onboarding' | 'tabs' | null>(null);
 
   useEffect(() => {
     if (initializing || !session) return;
@@ -34,11 +34,11 @@ export default function Index() {
         }
         if (data?.units === 'kg' || data?.units === 'lb') setWeightUnit(data.units);
 
-        setTarget(data?.onboarded_at ? 'home' : 'onboarding');
+        setTarget(data?.onboarded_at ? 'tabs' : 'onboarding');
       } catch {
         // БД недоступна / колонки ещё нет — падаем на локальный флаг
         const flag = await AsyncStorage.getItem('app.onboarded');
-        if (active) setTarget(flag === 'true' ? 'home' : 'onboarding');
+        if (active) setTarget(flag === 'true' ? 'tabs' : 'onboarding');
       }
     })();
 
@@ -56,5 +56,5 @@ export default function Index() {
   }
 
   if (!session) return <Redirect href="/auth" />;
-  return <Redirect href={target === 'home' ? '/home' : '/onboarding'} />;
+  return <Redirect href={target === 'tabs' ? '/workouts' : '/onboarding'} />;
 }

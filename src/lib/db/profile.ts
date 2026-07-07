@@ -55,6 +55,28 @@ export async function getHealthRelevant(userId: string): Promise<boolean> {
   return !!data?.oura_connected || !!data?.track_cycle;
 }
 
+/** Тумблер таба «Лідерборд»: комьюнити-борд нужен не всем (Маше — нет), выключенный
+ *  прячет таб целиком. UI-преференция, не защита: RLS борда не меняется. Дефолт — показывать. */
+export async function getShowLeaderboard(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('profile')
+    .select('show_leaderboard')
+    .eq('user_id', userId)
+    .maybeSingle();
+  // ошибку НЕ глотаем: молчаливый дефолт true перезаписал бы в persisted-кэше
+  // осознанно выключенный тумблер (спрятанный таб «всплывал» бы при сбое сети)
+  if (error) throw error;
+  return data?.show_leaderboard ?? true;
+}
+
+export async function setShowLeaderboard(userId: string, show: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('profile')
+    .update({ show_leaderboard: show })
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
 /** Имя/никнейм: показывается на лидерборде и в persona коуча. NULL = «Athlete» на борде. */
 export async function getDisplayName(userId: string): Promise<string | null> {
   const { data } = await supabase

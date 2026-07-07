@@ -54,7 +54,6 @@
     "deleteWarn": "This permanently deletes the workout from the database. This can't be undone."
   },
   "tabs": {
-    "home": "Home",
     "workouts": "Workouts",
     "programs": "Programs",
     "coach": "Coach",
@@ -62,17 +61,6 @@
     "health": "Health",
     "account": "Account",
     "leaderboard": "Board"
-  },
-  "hub": {
-    "title": "Home",
-    "snapshot": "Today",
-    "asOf": "as of {{date}}",
-    "readiness": "Readiness",
-    "sleep": "Sleep",
-    "cycleDay": "Cycle day",
-    "fromProgram": "Start from a program",
-    "lastRecord": "Latest record",
-    "allHistory": "All history"
   },
   "leaderboard": {
     "title": "Leaderboard",
@@ -171,6 +159,8 @@
     "avatarDefault": "Initials",
     "trackCycle": "Track cycle",
     "trackCycleHint": "Show menstrual cycle day & phase in Health.",
+    "showLeaderboard": "Show leaderboard",
+    "showLeaderboardHint": "Hide the Board tab if community rankings aren't your thing.",
     "myExercises": "My exercises",
     "disciplines": "Exercises in the catalog",
     "disciplinesHint": "Pick what shows in the exercise list. Anything off is still found by search.",

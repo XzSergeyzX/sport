@@ -25,7 +25,9 @@ import {
   setBodyweight,
   setDisplayName,
   setGender,
+  setShowLeaderboard,
 } from '@/lib/db/profile';
+import { showLeaderboardKey, useShowLeaderboard } from '@/lib/use-show-leaderboard';
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { formatWeight, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -104,6 +106,17 @@ export default function AccountScreen() {
     mutationFn: (v: boolean) => setTrackCycle(userId as string, v),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['track-cycle', userId] }),
   });
+
+  // тумблер таба «Лідерборд» — оптимистично (таб исчезает/появляется сразу), при ошибке откат
+  const { data: showLeaderboard } = useShowLeaderboard(userId);
+  const leaderboardMut = useMutation({
+    mutationFn: (v: boolean) => setShowLeaderboard(userId as string, v),
+    onError: () => qc.invalidateQueries({ queryKey: showLeaderboardKey(userId) }),
+  });
+  const toggleLeaderboard = (v: boolean) => {
+    qc.setQueryData(showLeaderboardKey(userId), v);
+    leaderboardMut.mutate(v);
+  };
 
   const { data: avatar } = useQuery({
     queryKey: ['avatar', userId],
@@ -279,6 +292,19 @@ export default function AccountScreen() {
                 { value: 'kg', label: t('common.kg') },
                 { value: 'lb', label: t('common.lb') },
               ]}
+            />
+          </View>
+          <Divider />
+          <View className="flex-row items-center justify-between px-4 py-4">
+            <View className="flex-1 pr-4">
+              <Text className="text-base font-medium text-graphite-100">{t('account.showLeaderboard')}</Text>
+              <Text className="mt-0.5 text-xs text-graphite-500">{t('account.showLeaderboardHint')}</Text>
+            </View>
+            <Switch
+              value={showLeaderboard !== false}
+              onValueChange={toggleLeaderboard}
+              trackColor={{ true: '#1FB89A', false: '#3A3F49' }}
+              thumbColor="#E5E7EB"
             />
           </View>
         </Card>

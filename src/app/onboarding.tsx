@@ -60,7 +60,7 @@ export default function OnboardingScreen() {
         ['app.language', language],
         ['app.onboarded', 'true'],
       ]);
-      router.replace('/home');
+      router.replace('/workouts');
     } finally {
       setSaving(false);
     }
