@@ -45,6 +45,7 @@ import {
 } from '@/lib/db/leaderboard';
 import { type Gripper, gripperLabel, gripperMatches, listGripperCatalog, normSearch } from '@/lib/db/grippers';
 import i18n from '@/lib/i18n';
+import { useTabBarHeight } from '@/lib/tab-bar';
 import { fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 import { useRole } from '@/lib/use-role';
 
@@ -444,6 +445,7 @@ export default function LeaderboardScreen() {
   const userId = session?.user.id;
   const unit = useWeightUnit();
   const role = useRole();
+  const tabBarHeight = useTabBarHeight();
   const qc = useQueryClient();
   const { openVideo, videoDialog } = useConfirmedVideoLink();
   const { showDialog, dialog } = useAppDialog();
@@ -529,7 +531,7 @@ export default function LeaderboardScreen() {
 
       <ScrollView
         className="flex-1 px-6 pt-3"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 24 }}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

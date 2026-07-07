@@ -26,6 +26,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomSheet } from '@/components/bottom-sheet';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
+import { useTabBarHeight } from '@/lib/tab-bar';
+import { useKeyboardVisible } from '@/lib/use-keyboard-visible';
 import {
   type CoachMessage,
   type CoachThread,
@@ -96,6 +98,8 @@ export default function CoachScreen() {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const tabBarHeight = useTabBarHeight();
+  const keyboardVisible = useKeyboardVisible();
 
   // выбранный разговор. undefined = «ещё не выбирали» → показываем самый свежий тред;
   // null = «Нова розмова» (пустой экран, первое сообщение заведёт тред на сервере);
@@ -405,7 +409,12 @@ export default function CoachScreen() {
           </View>
         )}
 
-        <View className="border-t border-graphite-800 px-3 py-3">
+        {/* инпут сидит над absolute-таббаром; при открытой клаве бар прячется
+            (tabBarHideOnKeyboard) — отступ убираем, KAV сам поднимает над клавой */}
+        <View
+          className="border-t border-graphite-800 px-3 pt-3"
+          style={{ paddingBottom: keyboardVisible ? 12 : tabBarHeight + 12 }}
+        >
           <View className="flex-row items-end gap-1 rounded-3xl bg-graphite-900 px-2 py-1.5">
             {recording ? (
               // режим записи: ✕ отмена · пульс + таймер · ↑ подтвердить (→ расшифровка)

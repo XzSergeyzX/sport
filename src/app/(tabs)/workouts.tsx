@@ -13,6 +13,7 @@ import { humanDate } from '@/lib/dates';
 import { importPastWorkout, listWorkoutSummaries } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
+import { useTabBarHeight } from '@/lib/tab-bar';
 import { useRole } from '@/lib/use-role';
 import { useStartEmptyWorkout } from '@/lib/use-start-workout';
 import { fromKg, useWeightUnit } from '@/lib/use-unit';
@@ -34,6 +35,7 @@ export default function WorkoutsScreen() {
   const userId = session?.user.id;
   // grip (комьюнити) — без ИИ: кнопку импорта не показываем (сервер и так вернёт 403)
   const canUseAi = useRole() !== 'grip';
+  const tabBarHeight = useTabBarHeight();
 
   const { data: workouts, isLoading } = useQuery({
     queryKey: ['workouts', userId],
@@ -85,7 +87,7 @@ export default function WorkoutsScreen() {
           статичным заголовком (раньше заголовок был зафиксирован, а список — вложенный ScrollView) */}
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: tabBarHeight + 24 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >

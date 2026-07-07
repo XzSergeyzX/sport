@@ -22,6 +22,7 @@ import {
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
 import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
+import { useTabBarHeight } from '@/lib/tab-bar';
 import { formatWeight, fromKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 // стабильная пустышка, чтобы memo не пересчитывался на каждом рендере до прихода данных
@@ -623,6 +624,7 @@ export default function AnalyticsScreen() {
   const lang = i18n.language;
   const { session } = useAuth();
   const userId = session?.user.id;
+  const tabBarHeight = useTabBarHeight();
   const [openClusters, setOpenClusters] = useState<Record<string, boolean>>({});
   const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
   const [range, setRange] = useState<number>(30);
@@ -748,7 +750,7 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: tabBarHeight + 24 }}>
         <View className="flex-row items-center justify-between">
           <Text className="text-2xl font-extrabold text-graphite-50">{t('analytics.title')}</Text>
           <SettingsButton />

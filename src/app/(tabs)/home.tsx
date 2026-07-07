@@ -19,6 +19,7 @@ import { listWorkoutSummaries } from '@/lib/db/workouts';
 import { humanDate, localYmd } from '@/lib/dates';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
+import { useTabBarHeight } from '@/lib/tab-bar';
 import { useRole } from '@/lib/use-role';
 import { useStartEmptyWorkout } from '@/lib/use-start-workout';
 import { fromKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
@@ -70,6 +71,7 @@ export default function HomeScreen() {
   const locale = lang === 'uk' ? 'uk-UA' : 'en-US';
   const unit = useWeightUnit();
   const unitLabel = t(`common.${unit}`);
+  const tabBarHeight = useTabBarHeight();
 
   // все ключи — общие с экранами Тренування/Здоров'я/Аналітика: кэш один, хаб не плодит запросов
   const { data: workouts } = useQuery({
@@ -130,7 +132,7 @@ export default function HomeScreen() {
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: tabBarHeight + 24 }}
         showsVerticalScrollIndicator={false}
       >
         <View className="flex-row items-center justify-between">

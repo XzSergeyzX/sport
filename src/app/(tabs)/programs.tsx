@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import i18n from '@/lib/i18n';
+import { useTabBarHeight } from '@/lib/tab-bar';
 import {
   createProgram,
   deleteProgram,
@@ -33,6 +34,7 @@ export default function ProgramsScreen() {
   const qc = useQueryClient();
   const { session } = useAuth();
   const userId = session?.user.id;
+  const tabBarHeight = useTabBarHeight();
 
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
@@ -87,7 +89,11 @@ export default function ProgramsScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <ScrollView className="flex-1 px-6 pt-4" keyboardShouldPersistTaps="handled">
+      <ScrollView
+        className="flex-1 px-6 pt-4"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 24 }}
+      >
         <View className="flex-row items-center justify-between">
           <Text className="text-2xl font-extrabold text-graphite-50">{t('programs.title')}</Text>
           <SettingsButton />

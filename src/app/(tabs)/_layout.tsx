@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { BlurView } from 'expo-blur';
 import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth/auth-context';
 import { getHealthRelevant } from '@/lib/db/profile';
+import { TAB_BAR_BASE_HEIGHT } from '@/lib/tab-bar';
 import { useRole } from '@/lib/use-role';
 
 const ACTIVE = '#1FB89A';
@@ -57,15 +59,29 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: ACTIVE,
         tabBarInactiveTintColor: INACTIVE,
-        // нижний инсет в отступ (а не впритык к системному бару Android) + сам бар тянется
-        // под навбар тем же цветом → иконки «дышат», не выглядит как схлопнутая панель
+        // Блюр-таббар: бар лежит АБСОЛЮТНО поверх контента, фон — BlurView (контент
+        // просвечивает при скролле). Каждый таб-экран отступает снизу на useBottomTabBarHeight,
+        // иначе низ ленты прячется под баром. Нижний инсет в отступ — иконки «дышат».
         tabBarStyle: {
-          backgroundColor: '#16191F',
+          position: 'absolute',
+          backgroundColor:
+            Platform.OS === 'android' ? 'rgba(22,25,31,0.78)' : 'rgba(22,25,31,0.55)',
           borderTopColor: '#23272F',
-          height: 58 + insets.bottom,
+          height: TAB_BAR_BASE_HEIGHT + insets.bottom,
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
+          elevation: 0,
         },
+        tabBarBackground: () => (
+          <BlurView
+            tint="dark"
+            intensity={40}
+            // Android без этого рисует просто полупрозрачную плашку (не блюр);
+            // dimezis-метод — реальный блюр, S25 тянет без просадок
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          />
+        ),
         // только иконки (решение дня-46): подписи резались («Тренува…»), а 3–6 иконок
         // читаются сами; title остаётся — его читает screen-reader
         tabBarShowLabel: false,

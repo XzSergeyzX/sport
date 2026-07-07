@@ -8,6 +8,7 @@ import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { localYmd } from '@/lib/dates';
 import { getCycleStatus, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
+import { useTabBarHeight } from '@/lib/tab-bar';
 import i18n from '@/lib/i18n';
 import {
   connectOura,
@@ -135,6 +136,7 @@ export default function HealthScreen() {
   const qc = useQueryClient();
   const { session } = useAuth();
   const userId = session?.user.id;
+  const tabBarHeight = useTabBarHeight();
 
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -207,7 +209,7 @@ export default function HealthScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: tabBarHeight + 24 }}>
         <View className="flex-row items-center justify-between">
           <Text className="text-2xl font-extrabold text-graphite-50">{t('health.title')}</Text>
           <SettingsButton />
