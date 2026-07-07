@@ -382,8 +382,11 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return json({ error: 'unauthorized' }, 401);
     const userId = userData.user.id;
 
-    const { message } = await req.json().catch(() => ({ message: '' }));
-    if (!message || typeof message !== 'string' || !message.trim()) {
+    const body = await req.json().catch(() => ({}));
+    const message = typeof body.message === 'string' ? body.message : '';
+    // тред активного разговора; без него («Нова розмова») сервер заведёт новый
+    const requestedThreadId = typeof body.thread_id === 'string' ? body.thread_id : null;
+    if (!message || !message.trim()) {
       return json({ error: 'empty_input' }, 400);
     }
     // жёсткий предел длины: без него один вброс на сотни КБ уходит в модель как есть И
@@ -405,20 +408,26 @@ Deno.serve(async (req) => {
     const lang = prof?.language === 'uk' ? 'uk' : 'en';
     const sex = prof?.gender ?? 'na';
 
-    // один тред коуча на пользователя (берём последний, иначе создаём)
+    // тред: клиент передаёт id активного разговора. Проверяем, что он принадлежит юзеру
+    // (чужой тред не откроем). Нет id или он не наш → «Нова розмова»: заводим новый тред,
+    // заголовок берём из первого сообщения.
     let threadId: string;
-    const { data: th } = await admin
-      .from('ai_threads')
-      .select('id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (th?.id) threadId = th.id;
-    else {
+    let existing: { id: string } | null = null;
+    if (requestedThreadId) {
+      const { data } = await admin
+        .from('ai_threads')
+        .select('id')
+        .eq('id', requestedThreadId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      existing = data;
+    }
+    if (existing?.id) {
+      threadId = existing.id;
+    } else {
       const { data: created, error: tErr } = await admin
         .from('ai_threads')
-        .insert({ user_id: userId })
+        .insert({ user_id: userId, title: userMessage.slice(0, 60) })
         .select('id')
         .single();
       if (tErr) return json({ error: tErr.message }, 500);
@@ -511,7 +520,10 @@ Deno.serve(async (req) => {
       tokens_out: tokensOut,
     });
 
-    return json({ reply });
+    // время последней активности треда → сортировка списка разговоров по свежести
+    await admin.from('ai_threads').update({ updated_at: new Date().toISOString() }).eq('id', threadId);
+
+    return json({ reply, thread_id: threadId });
   } catch (e) {
     if (e instanceof AiError) {
       const code = e.code === 'budget_exceeded' ? 429 : 502;

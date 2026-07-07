@@ -7,22 +7,25 @@ export type CoachMessage = {
   created_at: string;
 };
 
-/** Тред коуча пользователя (последний). null — ещё не было ни одного сообщения. */
-async function getThreadId(userId: string): Promise<string | null> {
+export type CoachThread = {
+  id: string;
+  title: string | null;
+  updated_at: string;
+};
+
+/** Разговоры коуча пользователя, свежие сверху. RLS пускает только свои треды. */
+export async function listCoachThreads(userId: string): Promise<CoachThread[]> {
   const { data, error } = await supabase
     .from('ai_threads')
-    .select('id')
+    .select('id, title, updated_at')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order('updated_at', { ascending: false });
   if (error) throw error;
-  return data?.id ?? null;
+  return (data ?? []) as CoachThread[];
 }
 
-/** История чата коуча (по возрастанию времени). RLS пускает только свой тред. */
-export async function listCoachMessages(userId: string): Promise<CoachMessage[]> {
-  const threadId = await getThreadId(userId);
+/** История одного треда (по возрастанию времени). null-тред → пусто (ещё не начатый разговор). */
+export async function listCoachMessages(threadId: string | null): Promise<CoachMessage[]> {
   if (!threadId) return [];
   const { data, error } = await supabase
     .from('ai_messages')
@@ -34,10 +37,17 @@ export async function listCoachMessages(userId: string): Promise<CoachMessage[]>
   return (data ?? []) as CoachMessage[];
 }
 
-/** Отправить сообщение коучу → агент в edge-функции отвечает (с учётом данных атлета). */
-export async function sendCoachMessage(message: string): Promise<string> {
+/**
+ * Отправить сообщение коучу → агент в edge-функции отвечает (с учётом данных атлета).
+ * `threadId` — активный разговор; null («Нова розмова») → сервер заведёт новый тред.
+ * Возвращает ответ и id треда (для нового разговора — свежесозданный).
+ */
+export async function sendCoachMessage(
+  message: string,
+  threadId: string | null,
+): Promise<{ reply: string; threadId: string | null }> {
   const { data, error } = await supabase.functions.invoke('coach-chat', {
-    body: { message },
+    body: { message, thread_id: threadId ?? undefined },
   });
   if (error) {
     // тело ошибки функции — в error.context (Response): достаём код
@@ -54,7 +64,7 @@ export async function sendCoachMessage(message: string): Promise<string> {
     throw new Error(code);
   }
   if (data?.error) throw new Error(data.error);
-  return (data?.reply as string) ?? '';
+  return { reply: (data?.reply as string) ?? '', threadId: (data?.thread_id as string) ?? threadId };
 }
 
 /**

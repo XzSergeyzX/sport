@@ -23,11 +23,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BottomSheet } from '@/components/bottom-sheet';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   type CoachMessage,
+  type CoachThread,
   listCoachMessages,
+  listCoachThreads,
   sendCoachMessage,
   transcribeAudio,
 } from '@/lib/db/coach';
@@ -40,6 +43,32 @@ function fmtElapsed(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/** «Сьогодні»/«Вчора»/дата — для разделителей ленты и дат в списке разговоров. */
+function dayLabel(iso: string, t: (k: string) => string, lang: string): string {
+  const d = new Date(iso);
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return t('coach.today');
+  if (diffDays === 1) return t('coach.yesterday');
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'en-US', {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
+function DateSeparator({ label }: { label: string }) {
+  return (
+    <View className="my-2 items-center">
+      <Text className="rounded-full bg-graphite-900 px-3 py-1 text-[11px] font-medium text-graphite-500">
+        {label}
+      </Text>
+    </View>
+  );
 }
 
 function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string }) {
@@ -59,13 +88,30 @@ function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string
 }
 
 export default function CoachScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language;
   const qc = useQueryClient();
   const { session } = useAuth();
   const userId = session?.user.id;
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // выбранный разговор. undefined = «ещё не выбирали» → показываем самый свежий тред;
+  // null = «Нова розмова» (пустой экран, первое сообщение заведёт тред на сервере);
+  // string = конкретный тред.
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null | undefined>(undefined);
+  const [threadSheetOpen, setThreadSheetOpen] = useState(false);
+
+  const { data: threads, isLoading: threadsLoading } = useQuery({
+    queryKey: ['coach-threads', userId],
+    queryFn: () => listCoachThreads(userId!),
+    enabled: !!userId,
+  });
+  const threadList: CoachThread[] = threads ?? [];
+  // эффективный тред: до первого выбора идём по самому свежему
+  const activeThreadId =
+    selectedThreadId === undefined ? (threadList[0]?.id ?? null) : selectedThreadId;
 
   // голосовой ввод (STT): запись → расшифровка падает в инпут, юзер правит и шлёт сам.
   // На web прячем (эта итерация — нативка; запись на web ведёт себя иначе).
@@ -86,21 +132,52 @@ export default function CoachScreen() {
     }
   };
 
-  const { data: messages, isLoading } = useQuery({
-    queryKey: ['coach-messages', userId],
-    queryFn: () => listCoachMessages(userId!),
-    enabled: !!userId,
+  const { data: messages, isLoading: messagesLoading } = useQuery({
+    queryKey: ['coach-messages', activeThreadId],
+    queryFn: () => listCoachMessages(activeThreadId),
+    // ждём, пока треды подгрузятся и определят дефолтный (иначе мелькнёт пустой экран)
+    enabled: !!userId && !threadsLoading,
   });
+  const isLoading = threadsLoading || messagesLoading;
 
   const sendMut = useMutation({
-    mutationFn: (text: string) => sendCoachMessage(text),
+    mutationFn: (text: string) => sendCoachMessage(text, activeThreadId),
+    // новый разговор: сервер завёл тред → фиксируем его как активный, чтобы ответ и
+    // дальнейшие сообщения легли в него же
+    onSuccess: (res, text) => {
+      if (res.threadId && res.threadId !== activeThreadId) {
+        // засеваем кэш нового треда репликой+ответом, ИНАЧЕ смена ключа запроса на свежий
+        // тред показала бы полноэкранный спиннер поверх чата (пустой ключ → isLoading).
+        // Фоновая инвалидация ниже сверит с сервером и подставит реальные id.
+        const now = new Date().toISOString();
+        qc.setQueryData<CoachMessage[]>(['coach-messages', res.threadId], [
+          { id: `local-u-${now}`, role: 'user', content: text, created_at: now },
+          { id: `local-a-${now}`, role: 'assistant', content: res.reply, created_at: now },
+        ]);
+        setSelectedThreadId(res.threadId);
+      }
+    },
     // обновляем список в ЛЮБОМ исходе: сообщение пользователя сохраняется сервером ещё до
     // ответа модели, поэтому даже при ошибке оно должно остаться на экране (а не «откатить на старт»)
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['coach-messages', userId] });
+      qc.invalidateQueries({ queryKey: ['coach-messages'] });
+      qc.invalidateQueries({ queryKey: ['coach-threads', userId] });
       setPending(null);
     },
   });
+
+  const newConversation = () => {
+    setThreadSheetOpen(false);
+    setSelectedThreadId(null);
+    setDraft('');
+    setPending(null);
+  };
+
+  const pickThread = (id: string) => {
+    setThreadSheetOpen(false);
+    setSelectedThreadId(id);
+    setPending(null);
+  };
 
   const all: CoachMessage[] = messages ?? [];
   const hasContent = all.length > 0 || pending != null || sendMut.isPending;
@@ -237,7 +314,25 @@ export default function CoachScreen() {
           <Text className="text-2xl font-extrabold text-graphite-50">{t('coach.title')}</Text>
           <Text className="mt-0.5 text-xs text-graphite-500">{t('coach.subtitle')}</Text>
         </View>
-        <SettingsButton />
+        <View className="flex-row items-center gap-1">
+          <Pressable
+            onPress={newConversation}
+            hitSlop={8}
+            accessibilityLabel={t('coach.newChat')}
+            className="h-9 w-9 items-center justify-center rounded-full active:opacity-70"
+          >
+            <Feather name="edit" size={19} color="#848D9A" />
+          </Pressable>
+          <Pressable
+            onPress={() => setThreadSheetOpen(true)}
+            hitSlop={8}
+            accessibilityLabel={t('coach.history')}
+            className="h-9 w-9 items-center justify-center rounded-full active:opacity-70"
+          >
+            <Feather name="clock" size={19} color="#848D9A" />
+          </Pressable>
+          <SettingsButton />
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -282,9 +377,14 @@ export default function CoachScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {all.map((m) => (
-              <Bubble key={m.id} role={m.role} content={m.content} />
-            ))}
+            {all.flatMap((m, i) => {
+              const prev = i > 0 ? all[i - 1] : null;
+              const newDay = !prev || m.created_at.slice(0, 10) !== prev.created_at.slice(0, 10);
+              const bubble = <Bubble key={m.id} role={m.role} content={m.content} />;
+              return newDay
+                ? [<DateSeparator key={`sep-${m.id}`} label={dayLabel(m.created_at, t, lang)} />, bubble]
+                : [bubble];
+            })}
             {pending != null && <Bubble role="user" content={pending} />}
             {sendMut.isPending && (
               <View className="mb-3 max-w-[85%] self-start">
@@ -376,6 +476,41 @@ export default function CoachScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <BottomSheet visible={threadSheetOpen} onClose={() => setThreadSheetOpen(false)}>
+        <Text className="mb-4 text-lg font-bold text-graphite-50">{t('coach.history')}</Text>
+        <Pressable
+          onPress={newConversation}
+          className="mb-2 flex-row items-center gap-2 rounded-xl border border-graphite-700 px-4 py-3 active:opacity-70"
+        >
+          <Feather name="edit" size={16} color="#1FB89A" />
+          <Text className="text-sm font-semibold text-accent">{t('coach.newChat')}</Text>
+        </Pressable>
+        {threadList.length === 0 ? (
+          <Text className="py-4 text-center text-sm text-graphite-500">{t('coach.noThreads')}</Text>
+        ) : (
+          threadList.map((th) => {
+            const active = th.id === activeThreadId;
+            return (
+              <Pressable
+                key={th.id}
+                onPress={() => pickThread(th.id)}
+                className={`mb-1 flex-row items-center justify-between gap-3 rounded-xl px-4 py-3 active:opacity-70 ${
+                  active ? 'bg-graphite-800' : ''
+                }`}
+              >
+                <Text
+                  numberOfLines={1}
+                  className={`flex-1 text-[15px] ${active ? 'font-semibold text-graphite-50' : 'text-graphite-200'}`}
+                >
+                  {th.title?.trim() || t('coach.newChat')}
+                </Text>
+                <Text className="text-xs text-graphite-500">{dayLabel(th.updated_at, t, lang)}</Text>
+              </Pressable>
+            );
+          })
+        )}
+      </BottomSheet>
     </SafeAreaView>
   );
 }

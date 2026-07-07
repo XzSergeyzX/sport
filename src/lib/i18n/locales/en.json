@@ -139,7 +139,12 @@
     "transcribing": "Transcribing…",
     "micPermission": "Microphone access is needed for voice messages.",
     "micError": "Couldn't record audio. Try again.",
-    "micEmpty": "Didn't catch that — try again."
+    "micEmpty": "Didn't catch that — try again.",
+    "newChat": "New chat",
+    "history": "Conversations",
+    "noThreads": "No conversations yet.",
+    "today": "Today",
+    "yesterday": "Yesterday"
   },
   "account": {
     "title": "Account",
