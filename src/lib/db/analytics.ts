@@ -57,6 +57,24 @@ export type AnalyticsSummary = {
   grip_records: GripRecordRow[]; // топ-3 на вид установки, отсортированы по оценке
 };
 
+/**
+ * Первая строка на ключ = топ-1. Контракт сортировки живёт в SQL (миграция 20260704110000):
+ * rep/time_records отсортированы (exercise_id, rn), grip_records — (set_type, rn), где rn=1 —
+ * лучший результат. Меняешь ORDER BY в RPC — этот помощник и его потребители (Головна;
+ * та же логика в тулзе get_records коуча) начнут отдавать не-топ строки.
+ */
+export function topPerKey<T>(rows: T[], key: (r: T) => string | null): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const r of rows) {
+    const k = key(r) ?? '';
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
 /** Сводка аналитики за всю историю (агрегаты по тренировкам + готовые топы рекордов). */
 export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
   const { data, error } = await supabase.rpc('get_analytics_summary');

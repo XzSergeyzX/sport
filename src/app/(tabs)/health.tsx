@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
+import { localYmd } from '@/lib/dates';
 import { getCycleStatus, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
 import i18n from '@/lib/i18n';
 import {
@@ -24,12 +25,6 @@ function fmtMin(m: number): string {
   const h = Math.floor(m / 60);
   const mm = Math.round(m % 60);
   return `${h}:${String(mm).padStart(2, '0')}`;
-}
-
-// сегодняшняя дата в локальном времени (YYYY-MM-DD) — для сверки с днём снимка OURA
-function todayYmd(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 type Metric = { key: string; value: string; unit?: string };
@@ -265,7 +260,7 @@ export default function HealthScreen() {
                   })}
                 </Text>
               )}
-              {snapshot?.date && snapshot.date < todayYmd() && (
+              {snapshot?.date && snapshot.date < localYmd() && (
                 <Text className="mt-1 text-xs leading-4 text-amber-500/80">{t('health.stale')}</Text>
               )}
               {metrics.length > 0 ? (

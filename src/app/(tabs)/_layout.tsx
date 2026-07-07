@@ -72,6 +72,10 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
+        name="home"
+        options={{ title: t('tabs.home'), tabBarIcon: icon('home-outline') }}
+      />
+      <Tabs.Screen
         name="workouts"
         options={{ title: t('tabs.workouts'), tabBarIcon: icon('barbell-outline') }}
       />

@@ -9,29 +9,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SettingsButton } from '@/components/settings-button';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth/auth-context';
-import { useRole } from '@/lib/use-role';
-import { WORKOUT_START } from '@/lib/db/workout-mutations';
-import {
-  buildEmptyWorkout,
-  importPastWorkout,
-  listWorkoutSummaries,
-  summarizeWorkout,
-  type WorkoutDetail,
-  type WorkoutSummary,
-} from '@/lib/db/workouts';
+import { humanDate } from '@/lib/dates';
+import { importPastWorkout, listWorkoutSummaries } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
+import { useRole } from '@/lib/use-role';
+import { useStartEmptyWorkout } from '@/lib/use-start-workout';
 import { fromKg, useWeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
-
-// «21.06.26, сб» — спершу дата, потім (після коми) день тижня, мовою застосунку
-function humanDate(iso: string, locale: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: '2-digit' });
-  const wd = d.toLocaleDateString(locale, { weekday: 'short' });
-  return `${date}, ${wd}`;
-}
 const IMPORT_ERROR_KEYS: Record<string, string> = {
   budget_exceeded: 'programs.errBudget',
   provider_unavailable: 'programs.errProvider',
@@ -55,20 +41,7 @@ export default function WorkoutsScreen() {
     enabled: !!userId,
   });
 
-  // старт по mutationKey → переживает перезапуск; оптимистику кладём синхронно (как у старта из
-  // программы) → оффлайн пустая тренировка открывается мгновенно и досинкивается на реконнекте
-  const startMut = useMutation<void, Error, WorkoutDetail>({ mutationKey: WORKOUT_START });
-
-  const onStart = () => {
-    if (!userId) return;
-    const workout = buildEmptyWorkout(userId);
-    qc.setQueryData(['workout', workout.id], workout);
-    qc.setQueryData<WorkoutSummary[]>(['workouts', userId], (old) =>
-      old ? [summarizeWorkout(workout), ...old] : [summarizeWorkout(workout)],
-    );
-    startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
-    router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
-  };
+  const onStart = useStartEmptyWorkout();
 
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
