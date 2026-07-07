@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
   type KeyboardTypeOptions,
   Modal,
   Pressable,
@@ -18,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAppDialog } from '@/components/use-app-dialog';
 import { SyncStatus } from '@/components/sync-status';
+import { useKeyboardVisible } from '@/lib/use-keyboard-visible';
 
 import {
   createCustomExercise,
@@ -661,6 +663,7 @@ export default function WorkoutScreen() {
   const qc = useQueryClient();
   const unit = useWeightUnit();
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const lang = i18n.language;
   const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1142,6 +1145,10 @@ export default function WorkoutScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
+      {/* padding и на Android: edge-to-edge (SDK 54) не ресайзит окно под клавиатуру — без
+          KAV низ ленты подходов оставался ПОД клавой и последние подходы было не доскроллить
+          (тот же фикс, что у инпута коуча) */}
+      <KeyboardAvoidingView className="flex-1" behavior="padding" keyboardVerticalOffset={0}>
       <View className="flex-1 px-5 pt-3">
         <View className="flex-row items-center justify-between">
           <Pressable onPress={() => router.back()} hitSlop={8}>
@@ -1172,20 +1179,24 @@ export default function WorkoutScreen() {
           })}
         </ScrollView>
 
-        <Pressable
-          onPress={() => setPickerOpen(true)}
-          style={{ marginBottom: insets.bottom + 8 }}
-          className="rounded-2xl border border-graphite-700 py-4 active:opacity-70"
-        >
-          <Text
-            numberOfLines={1}
-            style={{ width: '100%', textAlign: 'center' }}
-            className="text-base font-semibold text-graphite-100"
+        {/* пока печатают — кнопку прячем: каждый пиксель над клавой отдаём ленте подходов */}
+        {!keyboardVisible && (
+          <Pressable
+            onPress={() => setPickerOpen(true)}
+            style={{ marginBottom: insets.bottom + 8 }}
+            className="rounded-2xl border border-graphite-700 py-4 active:opacity-70"
           >
-            {t('workout.addExercise')}
-          </Text>
-        </Pressable>
+            <Text
+              numberOfLines={1}
+              style={{ width: '100%', textAlign: 'center' }}
+              className="text-base font-semibold text-graphite-100"
+            >
+              {t('workout.addExercise')}
+            </Text>
+          </Pressable>
+        )}
       </View>
+      </KeyboardAvoidingView>
 
       <ExercisePicker
         visible={pickerOpen}
