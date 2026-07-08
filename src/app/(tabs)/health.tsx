@@ -392,9 +392,10 @@ export default function HealthScreen() {
           </View>
         )}
 
-        {/* корреляции/тренды/календарь живут в Аналітиці — карточка-переход вместо стухшей «скоро» */}
+        {/* корреляции/тренды/календарь живут в Аналітиці — карточка-переход вместо стухшей «скоро»;
+            tab=recovery: обещанные корреляции — на суб-табе «Відновлення», не на дефолтном */}
         <Pressable
-          onPress={() => router.push('/analytics')}
+          onPress={() => router.push({ pathname: '/analytics', params: { tab: 'recovery' } })}
           className="mt-4 rounded-2xl bg-graphite-900 p-5 active:opacity-80"
         >
           <Text className="text-base font-semibold text-graphite-100">

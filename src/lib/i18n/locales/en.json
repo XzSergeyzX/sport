@@ -254,6 +254,9 @@
   "analytics": {
     "title": "Analytics",
     "empty": "No workouts yet — analytics will appear after your first sessions.",
+    "tabTraining": "Training",
+    "recordsEmpty": "No records yet — they need weighted, timed, or gripper sets.",
+    "recoveryEmptyRange": "No OURA data in this period — try a longer range.",
     "statWorkouts": "Workouts",
     "statTime": "Training time",
     "hrShort": "h",

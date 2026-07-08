@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { type SegmentOption, Segmented } from '@/components/segmented';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
@@ -445,6 +446,10 @@ function analyzeCorrelation(
 
 const PHASE_ORDER: CyclePhase[] = ['menstrual', 'follicular', 'ovulation', 'luteal'];
 
+// суб-табы: экран был перегружен одной лентой (фидбек день-53) — статы/тоннаж/календарь,
+// рекорды и восстановление разнесены; «Відновлення» — только при данных OURA (как таб Здоров'я)
+type SubTab = 'training' | 'records' | 'recovery';
+
 function CompareStat({ label, value, vs }: { label: string; value: string; vs: string | null }) {
   return (
     <View className="flex-1 rounded-2xl bg-graphite-900 p-4">
@@ -481,6 +486,14 @@ function CorrRow({ w, unit, unitLabel }: { w: CorrWorkout; unit: WeightUnit; uni
       <Text className="ml-2 flex-1 text-right text-xs text-graphite-400" numberOfLines={1}>
         {parts.join(' · ')}
       </Text>
+    </View>
+  );
+}
+
+function EmptyCard({ text }: { text: string }) {
+  return (
+    <View className="mt-6 rounded-2xl bg-graphite-900 p-5">
+      <Text className="text-sm leading-5 text-graphite-400">{text}</Text>
     </View>
   );
 }
@@ -671,6 +684,8 @@ export default function AnalyticsScreen() {
   const [openClusters, setOpenClusters] = useState<Record<string, boolean>>({});
   const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
   const [range, setRange] = useState<number>(30);
+  const [tab, setTab] = useState<SubTab>('training');
+  const scrollRef = useRef<ScrollView>(null);
 
   // ключ иерархический: ['analytics', ...] — мутации (финиш/удаление/импорт тренировки,
   // замена упражнения) инвалидируют префиксом ['analytics'] всю сводку разом
@@ -718,6 +733,35 @@ export default function AnalyticsScreen() {
     () => analyzeCorrelation(summary?.workouts ?? [], snaps ?? [], cycleStarts ?? [], range),
     [summary, snaps, cycleStarts, range],
   );
+
+  const corrAvailable = corr.trainCount > 0 && corr.readinessAll != null;
+  // гейт таба «Відновлення» — по факту наличия OURA-данных вообще, НЕ по окну range:
+  // чипы 30/90/180 живут внутри таба, и окно-зависимый гейт прятал бы разом и данные
+  // старше 30 дней, и чипы, которыми их можно раскрыть
+  const hasOura = (snaps?.length ?? 0) > 0;
+  const showRecoveryTab = hasOura;
+  // если данные OURA пропали (сменился аккаунт/кэш) — с «Відновлення» тихо падаем на первый таб
+  const activeTab: SubTab = tab === 'recovery' && !showRecoveryTab ? 'training' : tab;
+  const switchTab = (next: SubTab) => {
+    setTab(next);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+  const tabItems: SegmentOption<SubTab>[] = [
+    { value: 'training', label: t('analytics.tabTraining') },
+    { value: 'records', label: t('analytics.records') },
+    ...(showRecoveryTab ? [{ value: 'recovery' as const, label: t('analytics.recovery') }] : []),
+  ];
+
+  // переход из Здоров'я («Кореляції — в Аналітиці») открывает нужный суб-таб; после
+  // применения параметр сбрасывается, чтобы повторный переход сработал снова
+  const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
+  useEffect(() => {
+    if (tabParam === 'training' || tabParam === 'records' || tabParam === 'recovery') {
+      switchTab(tabParam);
+      router.setParams({ tab: '' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabParam]);
 
   const dayInfo = useMemo(() => {
     const starts = cycleStarts ?? [];
@@ -793,7 +837,7 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      <ScrollView className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: tabBarHeight + 24 }}>
+      <ScrollView ref={scrollRef} className="flex-1 px-6 pt-4" contentContainerStyle={{ paddingBottom: tabBarHeight + 24 }}>
         <View className="flex-row items-center justify-between">
           <Text className="text-2xl font-extrabold text-graphite-50">{t('analytics.title')}</Text>
           <SettingsButton />
@@ -803,134 +847,155 @@ export default function AnalyticsScreen() {
           <View className="mt-10 items-center">
             <ActivityIndicator color="#848D9A" />
           </View>
-        ) : a.workouts === 0 && recovery.length === 0 ? (
-          <View className="mt-6 rounded-2xl bg-graphite-900 p-5">
-            <Text className="text-sm leading-5 text-graphite-400">{t('analytics.empty')}</Text>
-          </View>
+        ) : a.workouts === 0 && !hasOura ? (
+          <EmptyCard text={t('analytics.empty')} />
         ) : (
           <>
-            {a.workouts > 0 && (
-              <>
-            <View className="mt-5 gap-3">
-              <View className="flex-row gap-3">
-                <Stat label={t('analytics.statWorkouts')} value={String(a.workouts)} />
-                <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={fmtTonnage(fromKg(a.totalTonnage, unit) ?? 0)} />
-              </View>
-              <View className="flex-row gap-3">
-                <Stat label={t('summary.sets')} value={String(a.totalSets)} />
-                <Stat label={t('analytics.statTime')} value={fmtDuration(a.totalMin, t)} />
-              </View>
+            <View className="mt-4">
+              <Segmented options={tabItems} value={activeTab} onChange={switchTab} />
             </View>
 
-            <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
-              {t('analytics.tonnageTrend')}
-            </Text>
-            <TonnageBars
-              series={a.tonnageSeries.map((p) => ({ date: p.date, tonnage: fromKg(p.tonnage, unit) ?? 0 }))}
-              unit={unitLabel}
-              hint={t('analytics.tonnageHint')}
-            />
-
-            <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
-              {t('analytics.records')}
-            </Text>
-            <View className="gap-2">
-              {a.recordGroups.map((g, gi) => {
-                const ckey = g.cluster ?? 'other';
-                const cOpen = openClusters[ckey] ?? gi === 0;
-                return (
-                  <View key={ckey} className="rounded-2xl bg-graphite-900 p-3">
-                    <Pressable
-                      onPress={() => setOpenClusters((c) => ({ ...c, [ckey]: !cOpen }))}
-                      className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
-                    >
-                      <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
-                        {t(clusterKey(g.cluster))} · {g.exercises.length}
-                      </Text>
-                      <Text className="ml-2 text-graphite-500">{cOpen ? '▲' : '▼'}</Text>
-                    </Pressable>
-
-                    {cOpen && (
-                      <View className="mt-2 gap-1">
-                        {g.exercises.map((ex) => {
-                          const xOpen = !!openEx[ex.id];
-                          const head =
-                            ex.headlineKind === 'reps'
-                              ? `≈${formatWeight(ex.headline, unit)} ${unitLabel}`
-                              : ex.headlineKind === 'timeWeight'
-                                ? `${formatWeight(ex.headline, unit)} ${unitLabel}`
-                                : fmtSec(ex.headline, secShort);
-                          return (
-                            <View key={ex.id} className="rounded-xl bg-graphite-800 p-3">
-                              <Pressable
-                                onPress={() => setOpenEx((e) => ({ ...e, [ex.id]: !xOpen }))}
-                                className="flex-row items-center justify-between active:opacity-80"
-                              >
-                                <Text className="flex-1 text-base font-semibold text-graphite-100" numberOfLines={1}>
-                                  {ex.name}
-                                </Text>
-                                <Text className="ml-2 text-sm font-bold text-accent">{head}</Text>
-                                <Text className="ml-2 text-graphite-600">{xOpen ? '▲' : '▼'}</Text>
-                              </Pressable>
-                              {xOpen && (
-                                <View className="mt-2 border-t border-graphite-700 pt-1">
-                                  {/* вес×повторы — выше по приоритету; статика-с-весом — ниже */}
-                                  {ex.reps.map((r, i) => recLine(r, i))}
-                                  {ex.reps.length > 0 && ex.time.length > 0 ? (
-                                    <View className="my-1 border-t border-graphite-800" />
-                                  ) : null}
-                                  {ex.time.map((r, i) => recLine(r, i))}
-                                </View>
-                              )}
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-
-            {a.gripGroups.length > 0 && (
+            {activeTab === 'training' && (
               <>
-                <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
-                  {t('analytics.gripRecords')}
-                </Text>
-                <View className="gap-2">
-                  {a.gripGroups.map((g) => (
-                    <View key={g.setType} className="rounded-2xl bg-graphite-900 p-3">
-                      <View className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1">
-                        <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
-                          {i18n.exists(`setTypes.${g.setType}`)
-                            ? t(`setTypes.${g.setType}`)
-                            : t('workout.setType')}
-                        </Text>
-                        {g.headline > 0 && (
-                          <Text className="ml-2 text-sm font-bold text-accent">
-                            ≈{formatWeight(g.headline, unit)} {unitLabel}
-                          </Text>
-                        )}
+                {a.workouts > 0 && (
+                  <>
+                    <View className="mt-5 gap-3">
+                      <View className="flex-row gap-3">
+                        <Stat label={t('analytics.statWorkouts')} value={String(a.workouts)} />
+                        <Stat label={`${t('summary.tonnage')}, ${unitLabel}`} value={fmtTonnage(fromKg(a.totalTonnage, unit) ?? 0)} />
                       </View>
-                      {/* внутренняя карточка bg-800 — как карточки упражнений в обычных рекордах */}
-                      <View className="mt-2 rounded-xl bg-graphite-800 p-3">
-                        {g.top.map((r, i) => gripLine(r, i))}
+                      <View className="flex-row gap-3">
+                        <Stat label={t('summary.sets')} value={String(a.totalSets)} />
+                        <Stat label={t('analytics.statTime')} value={fmtDuration(a.totalMin, t)} />
                       </View>
                     </View>
-                  ))}
-                </View>
-                <Text className="mt-1 px-1 text-[10px] text-graphite-600">{t('analytics.gripHint')}</Text>
-              </>
-            )}
+
+                    <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                      {t('analytics.tonnageTrend')}
+                    </Text>
+                    <TonnageBars
+                      series={a.tonnageSeries.map((p) => ({ date: p.date, tonnage: fromKg(p.tonnage, unit) ?? 0 }))}
+                      unit={unitLabel}
+                      hint={t('analytics.tonnageHint')}
+                    />
+                  </>
+                )}
+
+                <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                  {t('analytics.calendar')}
+                </Text>
+                <Calendar
+                  monthOffset={monthOffset}
+                  info={dayInfo}
+                  starts={startsSet}
+                  showPhases={!!trackCycle}
+                  onPrev={() => setMonthOffset((o) => o - 1)}
+                  onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
+                  onSelectDay={setSelectedDay}
+                />
               </>
             )}
 
-            {recovery.length > 0 && (
+            {activeTab === 'records' &&
+              (a.recordGroups.length === 0 && a.gripGroups.length === 0 ? (
+                <EmptyCard text={t('analytics.recordsEmpty')} />
+              ) : (
+                <>
+                  <View className="mt-5 gap-2">
+                    {a.recordGroups.map((g, gi) => {
+                      const ckey = g.cluster ?? 'other';
+                      const cOpen = openClusters[ckey] ?? gi === 0;
+                      return (
+                        <View key={ckey} className="rounded-2xl bg-graphite-900 p-3">
+                          <Pressable
+                            onPress={() => setOpenClusters((c) => ({ ...c, [ckey]: !cOpen }))}
+                            className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1 active:opacity-80"
+                          >
+                            <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                              {t(clusterKey(g.cluster))} · {g.exercises.length}
+                            </Text>
+                            <Text className="ml-2 text-graphite-500">{cOpen ? '▲' : '▼'}</Text>
+                          </Pressable>
+
+                          {cOpen && (
+                            <View className="mt-2 gap-1">
+                              {g.exercises.map((ex) => {
+                                const xOpen = !!openEx[ex.id];
+                                const head =
+                                  ex.headlineKind === 'reps'
+                                    ? `≈${formatWeight(ex.headline, unit)} ${unitLabel}`
+                                    : ex.headlineKind === 'timeWeight'
+                                      ? `${formatWeight(ex.headline, unit)} ${unitLabel}`
+                                      : fmtSec(ex.headline, secShort);
+                                return (
+                                  <View key={ex.id} className="rounded-xl bg-graphite-800 p-3">
+                                    <Pressable
+                                      onPress={() => setOpenEx((e) => ({ ...e, [ex.id]: !xOpen }))}
+                                      className="flex-row items-center justify-between active:opacity-80"
+                                    >
+                                      <Text className="flex-1 text-base font-semibold text-graphite-100" numberOfLines={1}>
+                                        {ex.name}
+                                      </Text>
+                                      <Text className="ml-2 text-sm font-bold text-accent">{head}</Text>
+                                      <Text className="ml-2 text-graphite-600">{xOpen ? '▲' : '▼'}</Text>
+                                    </Pressable>
+                                    {xOpen && (
+                                      <View className="mt-2 border-t border-graphite-700 pt-1">
+                                        {/* вес×повторы — выше по приоритету; статика-с-весом — ниже */}
+                                        {ex.reps.map((r, i) => recLine(r, i))}
+                                        {ex.reps.length > 0 && ex.time.length > 0 ? (
+                                          <View className="my-1 border-t border-graphite-800" />
+                                        ) : null}
+                                        {ex.time.map((r, i) => recLine(r, i))}
+                                      </View>
+                                    )}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  {a.gripGroups.length > 0 && (
+                    <>
+                      <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                        {t('analytics.gripRecords')}
+                      </Text>
+                      <View className="gap-2">
+                        {a.gripGroups.map((g) => (
+                          <View key={g.setType} className="rounded-2xl bg-graphite-900 p-3">
+                            <View className="flex-row items-center justify-between border-l-2 border-accent px-3 py-1">
+                              <Text className="text-sm font-extrabold uppercase tracking-wide text-accent">
+                                {i18n.exists(`setTypes.${g.setType}`)
+                                  ? t(`setTypes.${g.setType}`)
+                                  : t('workout.setType')}
+                              </Text>
+                              {g.headline > 0 && (
+                                <Text className="ml-2 text-sm font-bold text-accent">
+                                  ≈{formatWeight(g.headline, unit)} {unitLabel}
+                                </Text>
+                              )}
+                            </View>
+                            {/* внутренняя карточка bg-800 — как карточки упражнений в обычных рекордах */}
+                            <View className="mt-2 rounded-xl bg-graphite-800 p-3">
+                              {g.top.map((r, i) => gripLine(r, i))}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                      <Text className="mt-1 px-1 text-[10px] text-graphite-600">{t('analytics.gripHint')}</Text>
+                    </>
+                  )}
+                </>
+              ))}
+
+            {activeTab === 'recovery' && (
               <>
-                <Text className="mb-1 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
-                  {t('analytics.recovery')}
-                </Text>
-                <View className="mb-3 flex-row gap-2">
+                {/* один период на весь таб: чипы правят и карточки восстановления, и корреляции */}
+                <View className="mb-3 mt-5 flex-row gap-2">
                   {[30, 90, 180].map((n) => (
                     <Pressable
                       key={n}
@@ -945,126 +1010,123 @@ export default function AnalyticsScreen() {
                     </Pressable>
                   ))}
                 </View>
-                <Text className="mb-3 text-xs text-graphite-600">
-                  {t('analytics.recoveryHint', { n: range })}
-                </Text>
-                <View className="flex-row flex-wrap justify-between">
-                  {recovery.map((m) => (
-                    <RecoveryCard key={m.key} m={m} />
-                  ))}
-                </View>
-              </>
-            )}
 
-            {corr.trainCount > 0 && corr.readinessAll != null && (
-              <>
-                <Text className="mb-1 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
-                  {t('analytics.corrTitle')}
-                </Text>
-                {/* «скільки тренувань за період» — прямое требование §6b */}
-                <Text className="mb-3 text-xs text-graphite-600">
-                  {t('analytics.corrCount', { days: range })}: {corr.trainCount}
-                </Text>
+                {/* окно пустое, а таб виден (данные OURA старше окна) — говорим, что делать */}
+                {recovery.length === 0 && !corrAvailable && (
+                  <EmptyCard text={t('analytics.recoveryEmptyRange')} />
+                )}
 
-                <View className="flex-row gap-3">
-                  {corr.readinessTrain != null && (
-                    <CompareStat
-                      label={t('analytics.corrReadinessOnTrain')}
-                      value={String(Math.round(corr.readinessTrain))}
-                      vs={
-                        corr.readinessAll != null
-                          ? t('analytics.corrVsAvg', { v: Math.round(corr.readinessAll) })
-                          : null
-                      }
-                    />
-                  )}
-                  {corr.sleepTrain != null && (
-                    <CompareStat
-                      label={t('analytics.corrSleepOnTrain')}
-                      value={String(Math.round(corr.sleepTrain))}
-                      vs={
-                        corr.sleepAll != null
-                          ? t('analytics.corrVsAvg', { v: Math.round(corr.sleepAll) })
-                          : null
-                      }
-                    />
-                  )}
-                </View>
-
-                {/* «легкість ↔ готовність»: средний RPE/тоннаж в дни высокой vs низкой готовности.
-                    Показываем только когда наполнились ОБЕ корзины — иначе сравнивать не с чем. */}
-                {corr.easeHigh && corr.easeLow && (
+                {recovery.length > 0 && (
                   <>
-                    <View className="mt-3 flex-row gap-3">
-                      {(
-                        [
-                          ['readyHigh', corr.easeHigh],
-                          ['readyLow', corr.easeLow],
-                        ] as const
-                      ).map(([key, b]) => (
-                        <CompareStat
-                          key={key}
-                          label={t(`analytics.${key}`, { v: READY_SPLIT })}
-                          value={`RPE ${b.avgRpe.toFixed(1)}`}
-                          vs={
-                            b.avgTonnage != null
-                              ? `${b.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(b.avgTonnage, unit) ?? 0) })} ${unitLabel}`
-                              : `${b.count}×`
-                          }
-                        />
+                    <Text className="mb-3 text-xs text-graphite-600">
+                      {t('analytics.recoveryHint', { n: range })}
+                    </Text>
+                    <View className="flex-row flex-wrap justify-between">
+                      {recovery.map((m) => (
+                        <RecoveryCard key={m.key} m={m} />
                       ))}
                     </View>
-                    <Text className="mt-1 px-1 text-[10px] text-graphite-600">
-                      {t('analytics.easeHint')}
-                    </Text>
                   </>
                 )}
 
-                {corr.phaseStats.length > 0 && (
-                  <View className="mt-3 rounded-2xl bg-graphite-900 p-4">
-                    <Text className="text-xs uppercase tracking-wide text-graphite-500">
-                      {t('analytics.corrPhases')}
+                {corrAvailable && (
+                  <>
+                    <Text className="mb-1 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
+                      {t('analytics.corrTitle')}
                     </Text>
-                    {/* фаза: скільки × · середній RPE · середній тоннаж — «як ідуть тренування по фазах» */}
-                    <View className="mt-2">
-                      {corr.phaseStats.map((ps) => (
-                        <View key={ps.phase} className="flex-row items-center justify-between py-1">
-                          <Text className="text-sm text-graphite-200">
-                            {t(`health.cycle.phase.${ps.phase}`)}
-                          </Text>
-                          <Text className="ml-2 text-xs text-graphite-400" numberOfLines={1}>
-                            <Text className="font-bold text-accent">{ps.count}×</Text>
-                            {ps.avgRpe != null ? ` · RPE ${ps.avgRpe.toFixed(1)}` : ''}
-                            {ps.avgTonnage != null
-                              ? ` · ${fmtTonnage(fromKg(ps.avgTonnage, unit) ?? 0)} ${unitLabel}`
-                              : ''}
-                          </Text>
+                    {/* «скільки тренувань за період» — прямое требование §6b */}
+                    <Text className="mb-3 text-xs text-graphite-600">
+                      {t('analytics.corrCount', { days: range })}: {corr.trainCount}
+                    </Text>
+
+                    <View className="flex-row gap-3">
+                      {corr.readinessTrain != null && (
+                        <CompareStat
+                          label={t('analytics.corrReadinessOnTrain')}
+                          value={String(Math.round(corr.readinessTrain))}
+                          vs={
+                            corr.readinessAll != null
+                              ? t('analytics.corrVsAvg', { v: Math.round(corr.readinessAll) })
+                              : null
+                          }
+                        />
+                      )}
+                      {corr.sleepTrain != null && (
+                        <CompareStat
+                          label={t('analytics.corrSleepOnTrain')}
+                          value={String(Math.round(corr.sleepTrain))}
+                          vs={
+                            corr.sleepAll != null
+                              ? t('analytics.corrVsAvg', { v: Math.round(corr.sleepAll) })
+                              : null
+                          }
+                        />
+                      )}
+                    </View>
+
+                    {/* «легкість ↔ готовність»: средний RPE/тоннаж в дни высокой vs низкой готовности.
+                        Показываем только когда наполнились ОБЕ корзины — иначе сравнивать не с чем. */}
+                    {corr.easeHigh && corr.easeLow && (
+                      <>
+                        <View className="mt-3 flex-row gap-3">
+                          {(
+                            [
+                              ['readyHigh', corr.easeHigh],
+                              ['readyLow', corr.easeLow],
+                            ] as const
+                          ).map(([key, b]) => (
+                            <CompareStat
+                              key={key}
+                              label={t(`analytics.${key}`, { v: READY_SPLIT })}
+                              value={`RPE ${b.avgRpe.toFixed(1)}`}
+                              vs={
+                                b.avgTonnage != null
+                                  ? `${b.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(b.avgTonnage, unit) ?? 0) })} ${unitLabel}`
+                                  : `${b.count}×`
+                              }
+                            />
+                          ))}
                         </View>
+                        <Text className="mt-1 px-1 text-[10px] text-graphite-600">
+                          {t('analytics.easeHint')}
+                        </Text>
+                      </>
+                    )}
+
+                    {corr.phaseStats.length > 0 && (
+                      <View className="mt-3 rounded-2xl bg-graphite-900 p-4">
+                        <Text className="text-xs uppercase tracking-wide text-graphite-500">
+                          {t('analytics.corrPhases')}
+                        </Text>
+                        {/* фаза: скільки × · середній RPE · середній тоннаж — «як ідуть тренування по фазах» */}
+                        <View className="mt-2">
+                          {corr.phaseStats.map((ps) => (
+                            <View key={ps.phase} className="flex-row items-center justify-between py-1">
+                              <Text className="text-sm text-graphite-200">
+                                {t(`health.cycle.phase.${ps.phase}`)}
+                              </Text>
+                              <Text className="ml-2 text-xs text-graphite-400" numberOfLines={1}>
+                                <Text className="font-bold text-accent">{ps.count}×</Text>
+                                {ps.avgRpe != null ? ` · RPE ${ps.avgRpe.toFixed(1)}` : ''}
+                                {ps.avgTonnage != null
+                                  ? ` · ${fmtTonnage(fromKg(ps.avgTonnage, unit) ?? 0)} ${unitLabel}`
+                                  : ''}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    <View className="mt-3 rounded-2xl bg-graphite-900 px-4 pb-2 pt-1">
+                      {corr.workouts.slice(0, 15).map((w) => (
+                        <CorrRow key={w.id} w={w} unit={unit} unitLabel={unitLabel} />
                       ))}
                     </View>
-                  </View>
+                  </>
                 )}
-
-                <View className="mt-3 rounded-2xl bg-graphite-900 px-4 pb-2 pt-1">
-                  {corr.workouts.slice(0, 15).map((w) => (
-                    <CorrRow key={w.id} w={w} unit={unit} unitLabel={unitLabel} />
-                  ))}
-                </View>
               </>
             )}
-
-            <Text className="mb-2 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
-              {t('analytics.calendar')}
-            </Text>
-            <Calendar
-              monthOffset={monthOffset}
-              info={dayInfo}
-              starts={startsSet}
-              showPhases={!!trackCycle}
-              onPrev={() => setMonthOffset((o) => o - 1)}
-              onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
-              onSelectDay={setSelectedDay}
-            />
           </>
         )}
       </ScrollView>
