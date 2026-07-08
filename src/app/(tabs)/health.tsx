@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { localYmd } from '@/lib/dates';
-import { getCycleStatus, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
+import { getCycleStatus, getPeriodStarts, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
 import { useTabBarHeight } from '@/lib/tab-bar';
 import i18n from '@/lib/i18n';
 import {
@@ -196,6 +196,32 @@ export default function HealthScreen() {
     enabled: !!userId && !!trackCycle,
   });
 
+  // тот же ключ, что у корреляций аналитики — одни отметки «день 1», ноль дублей запросов
+  const { data: cycleStarts } = useQuery({
+    queryKey: ['analytics-cycle-starts', userId],
+    queryFn: () => getPeriodStarts(userId as string),
+    enabled: !!userId && !!trackCycle,
+  });
+
+  // средняя длина цикла (§4 бэклога): диффы соседних отметок; неправдоподобные (пропущена
+  // отметка / опечатка) отсекаем окном 15–60 дн; усредняем последние ≤6 реальных циклов
+  const avgCycle = useMemo(() => {
+    const starts = cycleStarts ?? [];
+    const diffs: number[] = [];
+    for (let i = 1; i < starts.length; i++) {
+      const d = Math.round(
+        (+new Date(`${starts[i]}T00:00:00`) - +new Date(`${starts[i - 1]}T00:00:00`)) / 86_400_000,
+      );
+      if (d >= 15 && d <= 60) diffs.push(d);
+    }
+    const recent = diffs.slice(-6);
+    if (recent.length === 0) return null;
+    return {
+      days: Math.round(recent.reduce((n, v) => n + v, 0) / recent.length),
+      cycles: recent.length,
+    };
+  }, [cycleStarts]);
+
   const logCycleMut = useMutation({
     mutationFn: () => logPeriodStart(userId as string),
     onSuccess: () => {
@@ -328,6 +354,11 @@ export default function HealthScreen() {
                 <Text className="mt-1 text-xs text-graphite-600">
                   {t('health.cycle.since', { date: cycle.startDate })}
                 </Text>
+                {avgCycle && (
+                  <Text className="mt-1 text-xs text-graphite-500">
+                    {t('health.cycle.avgLen', { n: avgCycle.days, m: avgCycle.cycles })}
+                  </Text>
+                )}
               </>
             ) : (
               <Text className="mt-2 text-sm leading-5 text-graphite-400">{t('health.cycle.empty')}</Text>

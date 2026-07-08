@@ -228,6 +228,7 @@ const RECOVERY_SPECS: RecoverySpec[] = [
   { key: 'temp', unit: 'c', get: (s) => s.temp, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`, dir: 0 },
   { key: 'spo2', unit: 'pct', get: (s) => s.spo2_avg, fmt: r1, dir: 1 },
   { key: 'stress', unit: 'min', get: (s) => s.stress_high_min, fmt: r0, dir: -1 },
+  { key: 'activity', get: (s) => s.activity_score, fmt: r0, dir: 1 },
   { key: 'steps', get: (s) => s.steps, fmt: r0, dir: 1 },
 ];
 
@@ -350,15 +351,26 @@ type CorrWorkout = {
   sleep: number | null;
   phase: CyclePhase | null;
 };
+// фаза → не только «сколько», но и «как шло»: середні RPE/тоннаж отвечают на вопрос
+// «в какую фазу тренировки идут легче/тяжелее» (главная ценность корреляций по ТЗ §6b)
+type PhaseStat = { phase: CyclePhase; count: number; avgRpe: number | null; avgTonnage: number | null };
+// «легкість ↔ готовність»: середні RPE/тоннаж тренировок в дни високої vs низької готовності
+type EaseBucket = { count: number; avgRpe: number; avgTonnage: number | null };
 type Correlation = {
   workouts: CorrWorkout[];
   trainCount: number;
-  phaseCounts: Partial<Record<CyclePhase, number>>;
+  phaseStats: PhaseStat[];
+  easeHigh: EaseBucket | null;
+  easeLow: EaseBucket | null;
   readinessTrain: number | null;
   readinessAll: number | null;
   sleepTrain: number | null;
   sleepAll: number | null;
 };
+
+// порог «висока готовність» — граница зоны optimal у OURA (85+ optimal, 70–84 good);
+// берём 80 как компромисс, чтобы обе корзины наполнялись на реальных данных
+const READY_SPLIT = 80;
 
 const mean = (xs: number[]): number | null =>
   xs.length ? xs.reduce((n, v) => n + v, 0) / xs.length : null;
@@ -395,13 +407,35 @@ function analyzeCorrelation(
   const inRange = snaps.filter((s) => s.date >= fromYmd);
   const onTrain = inRange.filter((s) => trainDays.has(s.date));
 
-  const phaseCounts: Partial<Record<CyclePhase, number>> = {};
-  for (const w of workouts) if (w.phase) phaseCounts[w.phase] = (phaseCounts[w.phase] ?? 0) + 1;
+  // тоннаж усредняем только по силовым тренировкам (tonnage>0) — чисто грип/статика-сессии
+  // не должны размывать среднее нулями
+  const agg = (ws: CorrWorkout[]) => ({
+    avgRpe: mean(nums(ws.map((w) => w.avgRpe))),
+    avgTonnage: mean(ws.filter((w) => w.tonnage > 0).map((w) => w.tonnage)),
+  });
+
+  const phaseStats: PhaseStat[] = PHASE_ORDER.map((phase) => {
+    const ws = workouts.filter((w) => w.phase === phase);
+    return { phase, count: ws.length, ...agg(ws) };
+  }).filter((p) => p.count > 0);
+
+  // корзина осмысленна от 2 тренировок с RPE; сравнение показываем только когда есть обе
+  const bucket = (ws: CorrWorkout[]): EaseBucket | null => {
+    const withRpe = ws.filter((w) => w.avgRpe != null);
+    if (withRpe.length < 2) return null;
+    const { avgRpe, avgTonnage } = agg(withRpe);
+    return avgRpe == null ? null : { count: withRpe.length, avgRpe, avgTonnage };
+  };
+  const rated = workouts.filter((w) => w.readiness != null);
+  const easeHigh = bucket(rated.filter((w) => (w.readiness as number) >= READY_SPLIT));
+  const easeLow = bucket(rated.filter((w) => (w.readiness as number) < READY_SPLIT));
 
   return {
     workouts,
     trainCount: workouts.length,
-    phaseCounts,
+    phaseStats,
+    easeHigh,
+    easeLow,
     readinessTrain: mean(nums(onTrain.map((s) => s.readiness))),
     readinessAll: mean(nums(inRange.map((s) => s.readiness))),
     sleepTrain: mean(nums(onTrain.map((s) => s.sleep_score))),
@@ -918,8 +952,9 @@ export default function AnalyticsScreen() {
                 <Text className="mb-1 mt-7 text-sm font-semibold uppercase tracking-wide text-graphite-500">
                   {t('analytics.corrTitle')}
                 </Text>
+                {/* «скільки тренувань за період» — прямое требование §6b */}
                 <Text className="mb-3 text-xs text-graphite-600">
-                  {t('analytics.recoveryHint', { n: range })}
+                  {t('analytics.corrCount', { days: range })}: {corr.trainCount}
                 </Text>
 
                 <View className="flex-row gap-3">
@@ -947,17 +982,56 @@ export default function AnalyticsScreen() {
                   )}
                 </View>
 
-                {Object.keys(corr.phaseCounts).length > 0 && (
+                {/* «легкість ↔ готовність»: средний RPE/тоннаж в дни высокой vs низкой готовности.
+                    Показываем только когда наполнились ОБЕ корзины — иначе сравнивать не с чем. */}
+                {corr.easeHigh && corr.easeLow && (
+                  <>
+                    <View className="mt-3 flex-row gap-3">
+                      <CompareStat
+                        label={t('analytics.readyHigh', { v: READY_SPLIT })}
+                        value={`RPE ${corr.easeHigh.avgRpe.toFixed(1)}`}
+                        vs={
+                          corr.easeHigh.avgTonnage != null
+                            ? `${corr.easeHigh.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(corr.easeHigh.avgTonnage, unit) ?? 0) })} ${unitLabel}`
+                            : `${corr.easeHigh.count}×`
+                        }
+                      />
+                      <CompareStat
+                        label={t('analytics.readyLow', { v: READY_SPLIT })}
+                        value={`RPE ${corr.easeLow.avgRpe.toFixed(1)}`}
+                        vs={
+                          corr.easeLow.avgTonnage != null
+                            ? `${corr.easeLow.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(corr.easeLow.avgTonnage, unit) ?? 0) })} ${unitLabel}`
+                            : `${corr.easeLow.count}×`
+                        }
+                      />
+                    </View>
+                    <Text className="mt-1 px-1 text-[10px] text-graphite-600">
+                      {t('analytics.easeHint')}
+                    </Text>
+                  </>
+                )}
+
+                {corr.phaseStats.length > 0 && (
                   <View className="mt-3 rounded-2xl bg-graphite-900 p-4">
                     <Text className="text-xs uppercase tracking-wide text-graphite-500">
                       {t('analytics.corrPhases')}
                     </Text>
-                    <View className="mt-2 flex-row flex-wrap gap-x-4 gap-y-1">
-                      {PHASE_ORDER.filter((p) => corr.phaseCounts[p]).map((p) => (
-                        <Text key={p} className="text-sm text-graphite-200">
-                          {t(`health.cycle.phase.${p}`)}{' '}
-                          <Text className="font-bold text-accent">{corr.phaseCounts[p]}</Text>
-                        </Text>
+                    {/* фаза: скільки × · середній RPE · середній тоннаж — «як ідуть тренування по фазах» */}
+                    <View className="mt-2">
+                      {corr.phaseStats.map((ps) => (
+                        <View key={ps.phase} className="flex-row items-center justify-between py-1">
+                          <Text className="text-sm text-graphite-200">
+                            {t(`health.cycle.phase.${ps.phase}`)}
+                          </Text>
+                          <Text className="ml-2 text-xs text-graphite-400" numberOfLines={1}>
+                            <Text className="font-bold text-accent">{ps.count}×</Text>
+                            {ps.avgRpe != null ? ` · RPE ${ps.avgRpe.toFixed(1)}` : ''}
+                            {ps.avgTonnage != null
+                              ? ` · ${fmtTonnage(fromKg(ps.avgTonnage, unit) ?? 0)} ${unitLabel}`
+                              : ''}
+                          </Text>
+                        </View>
                       ))}
                     </View>
                   </View>

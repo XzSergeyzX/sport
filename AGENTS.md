@@ -18,7 +18,9 @@ https://docs.expo.dev/versions/v54.0.0/
 
 ## Стек (зафиксирован, не менять без согласования)
 - Expo SDK 54 + React Native + TypeScript + Expo Router; NativeWind; TanStack Query
-- expo-sqlite — offline-first запись + очередь синка в Supabase
+- Offline-first — TanStack Query persist (AsyncStorage) + persisted paused-мутации
+  (durable-дефолты по mutationKey в `src/lib/db/workout-mutations.ts`, резюм на реконнекте).
+  `expo-sqlite` в зависимостях есть, но НЕ используется (аудит дня-52) — задел, не факт стека.
 - Supabase (Postgres + Auth + Storage + Edge Functions/Deno + RLS)
 - ИИ — гейтвей в `supabase/functions/_shared/ai/` (адаптеры Claude/OpenAI/Gemini), tool-calling, без векторки
 - i18n — только `en`/`uk` (см. правило ниже)
