@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -123,6 +123,10 @@ export default function CoachScreen() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // подсказка «немає з'єднання» под инпутом: показываем при попытке отправить оффлайн (см. send()).
+  const [sendOffline, setSendOffline] = useState(false);
+  // как только сеть вернулась — убираем подсказку (можно слать).
+  useEffect(() => onlineManager.subscribe((isOnline) => isOnline && setSendOffline(false)), []);
   const [elapsed, setElapsed] = useState(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingRef = useRef(false); // для cleanup при потере фокуса (без стейл-стейта)
@@ -145,6 +149,12 @@ export default function CoachScreen() {
 
   const sendMut = useMutation({
     mutationFn: (text: string) => sendCoachMessage(text, activeThreadId),
+    // coach-chat — платный НЕидемпотентный вызов ИИ: повтор дважды списал бы кост и мог дважды
+    // записать сообщение. Поэтому глобальный mutations.retry:3 (query.ts) здесь глушим в 0.
+    // Реплей из persist этой мутации тоже не грозит: у неё нет mutationFn-дефолта по mutationKey
+    // (ключа нет вовсе) — восстановленная мутация без fn не доиграется; к тому же в оффлайне мы её
+    // вообще не запускаем (см. send()), так что в очередь/persist она и не попадёт.
+    retry: 0,
     // новый разговор: сервер завёл тред → фиксируем его как активный, чтобы ответ и
     // дальнейшие сообщения легли в него же
     onSuccess: (res, text) => {
@@ -193,6 +203,15 @@ export default function CoachScreen() {
   const send = () => {
     const text = draft.trim();
     if (!text || sendMut.isPending) return;
+    // Оффлайн: НЕ ставим отправку в очередь. coach-chat — платный вызов ИИ, а «доигрывание» из
+    // паузы на реконнекте (возможно через сутки) отправило бы неожиданное сообщение и списало кост
+    // в отрыве от контекста. Честнее сказать «немає з'єднання» и оставить черновик для ручной
+    // пересылки, когда сеть вернётся.
+    if (!onlineManager.isOnline()) {
+      setSendOffline(true);
+      return;
+    }
+    setSendOffline(false);
     setPending(text);
     setDraft('');
     sendMut.mutate(text);
@@ -406,6 +425,14 @@ export default function CoachScreen() {
         {voiceError && !recording && !transcribing && (
           <View className="px-4 pt-2">
             <Text className="text-center text-xs text-red-400">{voiceError}</Text>
+          </View>
+        )}
+
+        {sendOffline && (
+          <View className="px-4 pt-2">
+            <Text className="text-center text-xs" style={{ color: '#F59E0B' }}>
+              {t('coach.offline')}
+            </Text>
           </View>
         )}
 

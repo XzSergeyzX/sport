@@ -2,7 +2,8 @@
   "sync": {
     "offline": "Offline",
     "offlinePending": "Offline · pending sync: {{count}}",
-    "syncing": "Syncing: {{count}}…"
+    "syncing": "Syncing: {{count}}…",
+    "failed": "Sync failed ({{count}}) — tap to retry"
   },
   "auth": {
     "title": "Welcome",
@@ -131,6 +132,7 @@
     "placeholder": "Ask your coach…",
     "thinking": "Thinking…",
     "error": "Couldn't reach the coach. Try again.",
+    "offline": "No connection — message not sent.",
     "send": "Send",
     "suggest1": "Am I recovered enough to train today?",
     "suggest2": "How is my bench progressing?",

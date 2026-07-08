@@ -50,6 +50,9 @@ export default function WorkoutsScreen() {
   const [importError, setImportError] = useState<string | null>(null);
   const importMut = useMutation({
     mutationFn: () => importPastWorkout(importText.trim()),
+    // платный НЕидемпотентный вызов ИИ → глушим глобальный mutations.retry:3 (query.ts) в 0,
+    // иначе транзиентный сбой повторил бы импорт и повторно списал ИИ-кост.
+    retry: 0,
     onSuccess: (res) => {
       setImportText('');
       setImportOpen(false);

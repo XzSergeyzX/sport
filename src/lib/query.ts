@@ -7,7 +7,7 @@
 //   перезапуска без сети. gcTime длинный, иначе персист нечего хранить.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { onlineManager, QueryClient } from '@tanstack/react-query';
+import { MutationCache, onlineManager, QueryClient } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 
 import { registerWorkoutMutationDefaults } from './db/workout-mutations';
@@ -22,7 +22,17 @@ onlineManager.setEventListener((setOnline) => {
   return () => sub();
 });
 
+// Глобальный лог сбоя мутации: без него упавшая durable-запись (после исчерпания retry) исчезала бы
+// бесшумно — ни следа в консоли, ни где-либо. Тостов/алертов тут намеренно нет (глобально это шум) —
+// видимую подсказку о провале и ручной повтор даёт бейдж SyncStatus, здесь только след для отладки.
+const mutationCache = new MutationCache({
+  onError: (error, _vars, _ctx, mutation) => {
+    console.warn('[mutation] failed', mutation.options.mutationKey, error);
+  },
+});
+
 export const queryClient = new QueryClient({
+  mutationCache,
   defaultOptions: {
     queries: {
       networkMode: 'offlineFirst',
@@ -33,9 +43,16 @@ export const queryClient = new QueryClient({
     mutations: {
       // 'online' (дефолт, но фиксируем явно): в оффлайне мутация НЕ выполняется, а ставится на
       // паузу (onMutate с оптимистикой при этом отрабатывает сразу) и сама доигрывается на
-      // реконнекте — это и есть очередь записи. retry не ставим (создание идемпотентно через
-      // upsert по client-id, апдейты/удаления идемпотентны сами).
+      // реконнекте — это и есть очередь записи.
       networkMode: 'online',
+      // Ретраим транзиентные сбои: единичный сетевой blip в момент реконнекта не должен
+      // безвозвратно ронять durable-запись логирования. Ретраить безопасно — эти записи
+      // идемпотентны (создание через upsert по client-id, апдейты/удаления идемпотентны сами),
+      // повтор не задваивает данные. Экспонента с cap 30с — не долбим сервер при затяжной
+      // недоступности. ВАЖНО: неидемпотентные платные ИИ-мутации (coach-chat, импорт программ/
+      // тренировок) переопределяют это на retry:0 у себя — иначе повтор бы дважды списал ИИ-кост.
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
     },
   },
 });

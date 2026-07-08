@@ -54,6 +54,9 @@ export default function ProgramsScreen() {
 
   const importMut = useMutation({
     mutationFn: () => importProgram(text.trim()),
+    // платный НЕидемпотентный вызов ИИ → глушим глобальный mutations.retry:3 (query.ts) в 0,
+    // иначе транзиентный сбой повторил бы импорт и повторно списал ИИ-кост.
+    retry: 0,
     onSuccess: (res) => {
       setText('');
       setOpen(false);

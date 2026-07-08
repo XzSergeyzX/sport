@@ -1,15 +1,17 @@
 // Дефолты мутаций логирования тренировки, зарегистрированные на QueryClient (SPEC §4, шаг 2).
 // Зачем централизованно, а не в компоненте: персист (PersistQueryClientProvider) сохраняет
 // поставленные на паузу оффлайн-мутации, но у восстановленной мутации НЕТ функций (mutationFn/
-// onMutate/onSettled) — их react-query берёт из mutation defaults по mutationKey. Поэтому, чтобы
+// onMutate/onSuccess) — их react-query берёт из mutation defaults по mutationKey. Поэтому, чтобы
 // запись пережила полный перезапуск приложения и доигралась на реконнекте, fn+оптимистика
 // должны жить в defaults, а компонент лишь зовёт useMutation({ mutationKey }).
 //
 // Оптимистика пишет прямо в кэш дерева тренировки ['workout', workoutId] → мгновенный UI и работа
-// оффлайн. Реконсиляция — через onSettled→invalidate: при онлайне refetch подтянет правду с
-// сервера (и для успеха, и для ошибки); при оффлайне onSettled не сработает, пока мутация на паузе,
-// — оптимистика остаётся. Снапшот для отката не храним (тяжело и для cross-restart бессмысленно) —
-// источником истины при ошибке выступает сервер.
+// оффлайн. Реконсиляция — через onSuccess→invalidate: при УСПЕХЕ refetch подтягивает серверную
+// правду. При ОШИБКЕ намеренно НЕ инвалидируем — рефетч стёр бы оптимистичную запись с экрана без
+// следа (юзер её уже видел и ждёт, что сохранится); оставляем оптимистику в кэше, а провал виден
+// через бейдж SyncStatus (оттуда же — ручной повтор). При оффлайне мутация на паузе, onSuccess ещё
+// не наступил — оптимистика тоже остаётся. Снапшот для отката не храним (тяжело и для cross-restart
+// бессмысленно) — при повторе источником истины остаётся сервер.
 import type { QueryClient } from '@tanstack/react-query';
 
 import type { Exercise } from './exercises';
@@ -119,7 +121,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
         ),
       }));
     },
-    onSettled: (_d, _e, v: AddSetVars) => settle(v.workoutId),
+    onSuccess: (_d, v: AddSetVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(SET_UPDATE, {
@@ -128,7 +130,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
       await cancel(v.workoutId);
       patch(v.workoutId, (w) => mapSet(w, v.id, (s) => ({ ...s, ...v.input }) as SetRow));
     },
-    onSettled: (_d, _e, v: UpdateSetVars) => settle(v.workoutId),
+    onSuccess: (_d, v: UpdateSetVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(SET_DELETE, {
@@ -143,14 +145,14 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
         })),
       }));
     },
-    onSettled: (_d, _e, v: DeleteSetVars) => settle(v.workoutId),
+    onSuccess: (_d, v: DeleteSetVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(WORKOUT_START, {
     mutationFn: (d: WorkoutDetail) => persistStartedWorkout(d),
     // оптимистику в ['workout', id] и ['workouts'] кладёт экран программы синхронно — здесь не
     // дублируем (onMutate из восстановленной мутации не вызовется; кэш и так персистится).
-    onSettled: (_data, _err, d: WorkoutDetail) => {
+    onSuccess: (_data, d: WorkoutDetail) => {
       qc.invalidateQueries({ queryKey: wkey(d.id) });
       qc.invalidateQueries({ queryKey: ['workouts'] });
     },
@@ -182,7 +184,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
         ],
       }));
     },
-    onSettled: (_d, _e, v: AddWeVars) => settle(v.workoutId),
+    onSuccess: (_d, v: AddWeVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(WE_REMOVE, {
@@ -194,7 +196,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
         workout_exercises: w.workout_exercises.filter((we) => !v.ids.includes(we.id)),
       }));
     },
-    onSettled: (_d, _e, v: RemoveWeVars) => settle(v.workoutId),
+    onSuccess: (_d, v: RemoveWeVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(WE_REORDER, {
@@ -209,7 +211,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
           .sort((a, b) => a.order_index - b.order_index),
       }));
     },
-    onSettled: (_d, _e, v: ReorderWeVars) => settle(v.workoutId),
+    onSuccess: (_d, v: ReorderWeVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(WE_DONE, {
@@ -223,7 +225,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
         ),
       }));
     },
-    onSettled: (_d, _e, v: DoneWeVars) => settle(v.workoutId),
+    onSuccess: (_d, v: DoneWeVars) => settle(v.workoutId),
   });
 
   qc.setMutationDefaults(WORKOUT_FINISH, {
@@ -235,7 +237,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
       await cancel(v.workoutId);
       patch(v.workoutId, (w) => (w.ended_at ? w : { ...w, ended_at: v.endedAt }));
     },
-    onSettled: (_d, _e, v: FinishVars) => {
+    onSuccess: (_d, v: FinishVars) => {
       settle(v.workoutId);
       qc.invalidateQueries({ queryKey: ['workouts'] });
       // завершённая тренировка меняет тоннаж/рекорды → сводка аналитики (RPC) устарела
@@ -255,6 +257,6 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
         })),
       );
     },
-    onSettled: (_d, _e, v: LogSetVars) => settle(v.workoutId),
+    onSuccess: (_d, v: LogSetVars) => settle(v.workoutId),
   });
 }
