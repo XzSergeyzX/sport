@@ -15,10 +15,16 @@ export function useKeyboardVisible(): boolean {
  * ВРУЧНУЮ (паддингом), вместо KeyboardAvoidingView: его анимированный паддинг на
  * Android мог остаться после закрытия клавиатуры (стейл-геп на экране коуча) —
  * прямое значение из событий детерминировано, keyboardDidHide всегда обнуляет.
+ * enabled=false снимает листенеры (и обнуляет высоту): смонтированный, но закрытый
+ * BottomSheet не должен ре-рендериться на каждый показ клавиатуры где-то ещё.
  */
-export function useKeyboardHeight(): number {
+export function useKeyboardHeight(enabled = true): number {
   const [height, setHeight] = useState(0);
   useEffect(() => {
+    if (!enabled) {
+      setHeight(0);
+      return;
+    }
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const s = Keyboard.addListener(showEvt, (e) => setHeight(e.endCoordinates?.height ?? 0));
@@ -37,6 +43,6 @@ export function useKeyboardHeight(): number {
       h.remove();
       f?.remove();
     };
-  }, []);
+  }, [enabled]);
   return height;
 }

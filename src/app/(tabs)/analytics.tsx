@@ -987,24 +987,23 @@ export default function AnalyticsScreen() {
                 {corr.easeHigh && corr.easeLow && (
                   <>
                     <View className="mt-3 flex-row gap-3">
-                      <CompareStat
-                        label={t('analytics.readyHigh', { v: READY_SPLIT })}
-                        value={`RPE ${corr.easeHigh.avgRpe.toFixed(1)}`}
-                        vs={
-                          corr.easeHigh.avgTonnage != null
-                            ? `${corr.easeHigh.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(corr.easeHigh.avgTonnage, unit) ?? 0) })} ${unitLabel}`
-                            : `${corr.easeHigh.count}×`
-                        }
-                      />
-                      <CompareStat
-                        label={t('analytics.readyLow', { v: READY_SPLIT })}
-                        value={`RPE ${corr.easeLow.avgRpe.toFixed(1)}`}
-                        vs={
-                          corr.easeLow.avgTonnage != null
-                            ? `${corr.easeLow.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(corr.easeLow.avgTonnage, unit) ?? 0) })} ${unitLabel}`
-                            : `${corr.easeLow.count}×`
-                        }
-                      />
+                      {(
+                        [
+                          ['readyHigh', corr.easeHigh],
+                          ['readyLow', corr.easeLow],
+                        ] as const
+                      ).map(([key, b]) => (
+                        <CompareStat
+                          key={key}
+                          label={t(`analytics.${key}`, { v: READY_SPLIT })}
+                          value={`RPE ${b.avgRpe.toFixed(1)}`}
+                          vs={
+                            b.avgTonnage != null
+                              ? `${b.count}× · ${t('analytics.avg30', { v: fmtTonnage(fromKg(b.avgTonnage, unit) ?? 0) })} ${unitLabel}`
+                              : `${b.count}×`
+                          }
+                        />
+                      ))}
                     </View>
                     <Text className="mt-1 px-1 text-[10px] text-graphite-600">
                       {t('analytics.easeHint')}

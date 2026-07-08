@@ -21,7 +21,8 @@ export function BottomSheet({
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
-  const keyboardHeight = useKeyboardHeight();
+  // хук гейтим по visible: закрытый (но смонтированный) лист не подписывается на клавиатуру
+  const keyboardHeight = useKeyboardHeight(visible);
   const { height: windowHeight } = useWindowDimensions();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>

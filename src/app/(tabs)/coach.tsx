@@ -150,7 +150,8 @@ export default function CoachScreen() {
   const sendMut = useMutation({
     mutationFn: (text: string) => sendCoachMessage(text, activeThreadId),
     // coach-chat — платный НЕидемпотентный вызов ИИ: повтор дважды списал бы кост и мог дважды
-    // записать сообщение. Поэтому глобальный mutations.retry:3 (query.ts) здесь глушим в 0.
+    // записать сообщение. retry фиксируем в 0 явно (дефолт и так 0 — ретраи есть только у
+    // durableRetry в workout-mutations.ts) как страховку, если ретраи снова станут глобальными.
     // Реплей из persist этой мутации тоже не грозит: у неё нет mutationFn-дефолта по mutationKey
     // (ключа нет вовсе) — восстановленная мутация без fn не доиграется; к тому же в оффлайне мы её
     // вообще не запускаем (см. send()), так что в очередь/persist она и не попадёт.

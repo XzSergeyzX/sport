@@ -1,3 +1,4 @@
+import { localYmd } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 
 export type CyclePhase = 'menstrual' | 'follicular' | 'ovulation' | 'luteal';
@@ -23,10 +24,18 @@ export function cyclePhase(day: number): CyclePhase {
   return 'luteal';
 }
 
+/** Полных дней между двумя YYYY-MM-DD (положительно, если to позже from). Единственная
+ *  реализация диффа дат по YMD (её же используют фаза/статус/средняя длина цикла). Round,
+ *  а не floor: обе даты — локальная полночь, но день перевода часов длится 23/25 часов,
+ *  и floor на нём терял бы сутки. */
+export function daysBetween(fromYmd: string, toYmd: string): number {
+  return Math.round(
+    (+new Date(`${toYmd}T00:00:00`) - +new Date(`${fromYmd}T00:00:00`)) / 86_400_000,
+  );
+}
+
 function daysSince(startYmd: string, to: Date): number {
-  const start = new Date(`${startYmd}T00:00:00`);
-  const t = new Date(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.floor((+t - +start) / 86_400_000);
+  return daysBetween(startYmd, localYmd(to));
 }
 
 function todayYmd(): string {
@@ -69,7 +78,7 @@ export function phaseForDate(ymd: string, starts: string[]): CyclePhase | null {
     else break;
   }
   if (!start) return null;
-  const day = Math.floor((+new Date(`${ymd}T00:00:00`) - +new Date(`${start}T00:00:00`)) / 86_400_000) + 1;
+  const day = daysBetween(start, ymd) + 1;
   if (day < 1 || day > 40) return null;
   return cyclePhase(day);
 }

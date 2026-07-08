@@ -10,11 +10,10 @@ export function humanDate(iso: string, locale: string): string {
 }
 
 /**
- * Сегодняшняя дата в ЛОКАЛЬНОМ времени (YYYY-MM-DD) — для сверки с днём снимка OURA.
+ * Дата в ЛОКАЛЬНОМ времени (YYYY-MM-DD), по умолчанию — сегодня; для сверки с днём снимка OURA.
  * НЕ toISOString(): тот даёт UTC-день, и вечером в западных поясах «сегодня» уезжает
  * на завтра → свежий снимок помечался бы как устаревший (и наоборот утром к востоку).
  */
-export function localYmd(): string {
-  const d = new Date();
+export function localYmd(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

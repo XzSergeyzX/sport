@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SettingsButton } from '@/components/settings-button';
 import { useAuth } from '@/lib/auth/auth-context';
 import { localYmd } from '@/lib/dates';
-import { getCycleStatus, getPeriodStarts, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
+import { daysBetween, getCycleStatus, getPeriodStarts, getTrackCycle, logPeriodStart } from '@/lib/db/cycle';
 import { useTabBarHeight } from '@/lib/tab-bar';
 import i18n from '@/lib/i18n';
 import {
@@ -209,9 +209,7 @@ export default function HealthScreen() {
     const starts = cycleStarts ?? [];
     const diffs: number[] = [];
     for (let i = 1; i < starts.length; i++) {
-      const d = Math.round(
-        (+new Date(`${starts[i]}T00:00:00`) - +new Date(`${starts[i - 1]}T00:00:00`)) / 86_400_000,
-      );
+      const d = daysBetween(starts[i - 1], starts[i]);
       if (d >= 15 && d <= 60) diffs.push(d);
     }
     const recent = diffs.slice(-6);
