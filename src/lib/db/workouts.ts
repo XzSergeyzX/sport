@@ -385,8 +385,11 @@ export type WorkoutStats = {
   durationMin: number | null;
 };
 
-/** Метрики тренировки — считаем локально для мгновенной пост-тренировочной сводки.
- *  bodyweightKg: вес тела (кг) для весо-телесных упражнений; 0 = не учитывать (совпадает со старым). */
+/** Метрики тренировки — считаем локально для мгновенной пост-тренировочной сводки (offline-first).
+ *  bodyweightKg: вес тела (кг) для весо-телесных упражнений; 0 = не учитывать (совпадает со старым).
+ *  Тоннаж — клиентская копия канонической SQL-формулы public.set_tonnage()
+ *  (migrations/20260708100000_single_source_tonnage.sql; её используют вью workout_summaries
+ *  и RPC analytics_summary_for). Меняешь правило тоннажа — меняй В ОБОИХ местах. */
 export function workoutStats(w: WorkoutDetail, bodyweightKg = 0): WorkoutStats {
   let tonnage = 0;
   let sets = 0;
