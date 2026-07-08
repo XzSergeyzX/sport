@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Keyboard,
-  KeyboardAvoidingView,
   type KeyboardTypeOptions,
   Modal,
   Pressable,
@@ -19,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAppDialog } from '@/components/use-app-dialog';
 import { SyncStatus } from '@/components/sync-status';
-import { useKeyboardVisible } from '@/lib/use-keyboard-visible';
+import { useKeyboardHeight } from '@/lib/use-keyboard-visible';
 
 import {
   createCustomExercise,
@@ -663,7 +662,8 @@ export default function WorkoutScreen() {
   const qc = useQueryClient();
   const unit = useWeightUnit();
   const insets = useSafeAreaInsets();
-  const keyboardVisible = useKeyboardVisible();
+  const keyboardHeight = useKeyboardHeight();
+  const keyboardVisible = keyboardHeight > 0;
   const lang = i18n.language;
   const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1145,11 +1145,11 @@ export default function WorkoutScreen() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
-      {/* padding и на Android: edge-to-edge (SDK 54) не ресайзит окно под клавиатуру — без
-          KAV низ ленты подходов оставался ПОД клавой и последние подходы было не доскроллить
-          (тот же фикс, что у инпута коуча) */}
-      <KeyboardAvoidingView className="flex-1" behavior="padding" keyboardVerticalOffset={0}>
-      <View className="flex-1 px-5 pt-3">
+      {/* Без KeyboardAvoidingView: его анимированный паддинг на Android мог остаться после
+          закрытия клавиатуры (стейл-геп, как было на коуче). Низ прижимаем вручную:
+          paddingBottom = высота клавиатуры (edge-to-edge SDK 54 не ресайзит окно) —
+          keyboardDidHide детерминированно обнуляет отступ. */}
+      <View className="flex-1 px-5 pt-3" style={{ paddingBottom: keyboardHeight }}>
         <View className="flex-row items-center justify-between">
           <Pressable onPress={() => router.back()} hitSlop={8}>
             <Text className="text-2xl text-graphite-300">‹</Text>
@@ -1196,7 +1196,6 @@ export default function WorkoutScreen() {
           </Pressable>
         )}
       </View>
-      </KeyboardAvoidingView>
 
       <ExercisePicker
         visible={pickerOpen}

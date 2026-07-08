@@ -1,10 +1,15 @@
 import { type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useKeyboardHeight } from '@/lib/use-keyboard-visible';
 
 /**
  * Нижний лист. Бэкдроп — отдельный слой ПОД листом (а не обёртка над скроллом),
  * поэтому ScrollView внутри скроллится без перехвата жестов (раньше лагало).
+ * Без KeyboardAvoidingView: его анимированный паддинг на Android мог остаться после
+ * закрытия клавиатуры (стейл-геп, как было на коуче) — лист прижат к клавиатуре
+ * вручную (paddingBottom = высота клавы), maxHeight считаем от видимой части экрана.
  */
 export function BottomSheet({
   visible,
@@ -16,18 +21,20 @@ export function BottomSheet({
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
+  const { height: windowHeight } = useWindowDimensions();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       {/* лист поднимается над клавиатурой (edge-to-edge SDK 54 не ресайзит окно сам) */}
-      <KeyboardAvoidingView
-        style={{ flex: 1, justifyContent: 'flex-end' }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
         <Pressable
           style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.6)' }]}
           onPress={onClose}
         />
-        <View className="rounded-t-3xl bg-graphite-900 px-6 pt-5" style={{ maxHeight: '88%' }}>
+        <View
+          className="rounded-t-3xl bg-graphite-900 px-6 pt-5"
+          style={{ maxHeight: (windowHeight - keyboardHeight) * 0.88 }}
+        >
           <ScrollView
             contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
             keyboardShouldPersistTaps="handled"
@@ -36,7 +43,7 @@ export function BottomSheet({
             {children}
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
