@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -134,6 +135,7 @@ function MetricSheet({ metricKey, onClose }: { metricKey: string | null; onClose
 export default function HealthScreen() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const router = useRouter();
   const { session } = useAuth();
   const userId = session?.user.id;
   const tabBarHeight = useTabBarHeight();
@@ -148,11 +150,15 @@ export default function HealthScreen() {
     enabled: !!userId,
   });
 
-  const { data: snapshot } = useQuery({
-    queryKey: ['oura-snapshot', userId],
+  // 'v2' — форма ответа сменилась ({snap, pendingDate}); суффикс отсекает старый persisted-кэш,
+  // а инвалидации по префиксу ['oura-snapshot', userId] продолжают попадать
+  const { data: latest } = useQuery({
+    queryKey: ['oura-snapshot', userId, 'v2'],
     queryFn: () => getLatestSnapshot(userId as string),
     enabled: !!userId && !!connected,
   });
+  const snapshot = latest?.snap;
+  const pendingDate = latest?.pendingDate ?? null;
 
   const [syncInfo, setSyncInfo] = useState<SyncResult | null>(null);
   const [syncErr, setSyncErr] = useState<string | null>(null);
@@ -286,9 +292,14 @@ export default function HealthScreen() {
                   })}
                 </Text>
               )}
-              {snapshot?.date && snapshot.date < localYmd() && (
+              {/* есть день свежее показанного → облако доотдаёт данные; иначе — обычный стейл */}
+              {pendingDate ? (
+                <Text className="mt-1 text-xs leading-4 text-amber-500/80">
+                  {t('health.pendingCloud')}
+                </Text>
+              ) : snapshot?.date && snapshot.date < localYmd() ? (
                 <Text className="mt-1 text-xs leading-4 text-amber-500/80">{t('health.stale')}</Text>
-              )}
+              ) : null}
               {metrics.length > 0 ? (
                 <View className="mt-3 flex-row flex-wrap justify-between">
                   {metrics.map((m) => (
@@ -381,10 +392,18 @@ export default function HealthScreen() {
           </View>
         )}
 
-        <View className="mt-4 rounded-2xl bg-graphite-900 p-5">
-          <Text className="text-base font-semibold text-graphite-100">{t('health.soonTitle')}</Text>
-          <Text className="mt-2 text-sm leading-5 text-graphite-400">{t('health.soonBody')}</Text>
-        </View>
+        {/* корреляции/тренды/календарь живут в Аналітиці — карточка-переход вместо стухшей «скоро» */}
+        <Pressable
+          onPress={() => router.push('/analytics')}
+          className="mt-4 rounded-2xl bg-graphite-900 p-5 active:opacity-80"
+        >
+          <Text className="text-base font-semibold text-graphite-100">
+            {t('health.analyticsLinkTitle')}
+          </Text>
+          <Text className="mt-2 text-sm leading-5 text-graphite-400">
+            {t('health.analyticsLinkBody')}
+          </Text>
+        </Pressable>
       </ScrollView>
 
       <MetricSheet metricKey={selected} onClose={() => setSelected(null)} />

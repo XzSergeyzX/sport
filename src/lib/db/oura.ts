@@ -99,9 +99,17 @@ export async function getOuraConnected(userId: string): Promise<boolean> {
   return Boolean(data?.oura_connected);
 }
 
-export async function getLatestSnapshot(userId: string): Promise<HealthSnapshot | null> {
-  // берём последний день, где есть «утренние» данные (готовність/сон) — кольцо носят не всегда;
-  // дни без них (только активность) не должны маскировать последнее реальное утреннее чтение.
+export type LatestSnapshot = {
+  snap: HealthSnapshot | null;
+  // дата строки свежее показанной: облако OURA ещё не отдало утренние оценки за неё —
+  // UI показывает пометку «дані ще підтягуються», а не полупустой день
+  pendingDate: string | null;
+};
+
+export async function getLatestSnapshot(userId: string): Promise<LatestSnapshot> {
+  // берём последний день с утренними ОЦЕНКАМИ (готовність/сон): детальный сон (HRV/RHR/
+  // тривалість) приходит из облака на часы раньше оценок, и частичный сегодняшний день
+  // не должен вытеснять полный вчерашний (показывался «сон 0:13» без готовности).
   const { data } = await supabase
     .from('health_snapshots')
     .select('*')
@@ -109,21 +117,13 @@ export async function getLatestSnapshot(userId: string): Promise<HealthSnapshot 
     .order('date', { ascending: false })
     .limit(7);
   const rows = (data ?? []) as HealthSnapshot[];
-  // последний день с ЛЮБЫМИ ночными данными: детальный сон (HRV/RHR/тривалість) приходит
-  // в API раньше дневных оценок (readiness/sleep score), поэтому не ждём именно оценок —
-  // иначе сегодняшний день прятался и показывался вчерашний.
-  return (
-    rows.find(
-      (r) =>
-        r.readiness != null ||
-        r.sleep_score != null ||
-        r.hrv != null ||
-        r.rhr != null ||
-        r.sleep_total_min != null,
-    ) ??
-    rows[0] ??
-    null
-  );
+  const scored = rows.find((r) => r.readiness != null || r.sleep_score != null);
+  // оценок нет ни в одном из 7 дней (кольцо давно не носили) — любой день с ночными
+  // данными, потом просто последний
+  const nightly = rows.find((r) => r.hrv != null || r.rhr != null || r.sleep_total_min != null);
+  const snap = scored ?? nightly ?? rows[0] ?? null;
+  const pendingDate = snap != null && rows[0] != null && rows[0].date > snap.date ? rows[0].date : null;
+  return { snap, pendingDate };
 }
 
 /** Ряд снимков от даты (YYYY-MM-DD) до сегодня — для аналитики «по календарю». */

@@ -388,7 +388,7 @@ export default function CoachScreen() {
                   onPress={() => setDraft(s)}
                   className="items-center rounded-xl border border-graphite-800 px-4 py-3 active:opacity-70"
                 >
-                  <Text className="text-sm text-graphite-300">{s}</Text>
+                  <Text className="text-center text-sm text-graphite-300">{s}</Text>
                 </Pressable>
               ))}
             </View>

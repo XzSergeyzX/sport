@@ -512,13 +512,22 @@ function TonnageBars({ series, unit, hint }: { series: TonnagePoint[]; unit: str
           </View>
         ))}
       </View>
+      {/* «03.06» не влезает в колонку из 12 баров и переносится — поэтому день всегда,
+          а месяц строкой ниже и только там, где он меняется */}
       <View className="mt-1 flex-row gap-1.5">
         {last.map((p, i) => {
           const d = new Date(p.date);
+          const prev = i > 0 ? new Date(last[i - 1].date) : null;
+          const newMonth =
+            !prev || prev.getMonth() !== d.getMonth() || prev.getFullYear() !== d.getFullYear();
+          const locale = i18n.language === 'uk' ? 'uk-UA' : 'en-US';
           return (
-            <Text key={`${p.date}-${i}`} className="flex-1 text-center text-[9px] text-graphite-600">
-              {pad2(d.getDate())}.{pad2(d.getMonth() + 1)}
-            </Text>
+            <View key={`${p.date}-${i}`} className="flex-1 items-center">
+              <Text className="text-[9px] text-graphite-600">{pad2(d.getDate())}</Text>
+              <Text className="text-[8px] text-graphite-600" numberOfLines={1}>
+                {newMonth ? d.toLocaleDateString(locale, { month: 'short' }).replace('.', '') : ' '}
+              </Text>
+            </View>
           );
         })}
       </View>

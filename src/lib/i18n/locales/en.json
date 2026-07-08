@@ -283,9 +283,7 @@
     "noDataDay": "No data for this day",
     "openWorkout": "Open workout",
     "markDay1": "Mark cycle day 1",
-    "day1Marked": "Cycle day 1 ✓",
-    "soonTitle": "Analytics are coming",
-    "soonBody": "Tonnage, volume, per-exercise progress, estimated 1RM, PRs and trends — computed on the backend, visualized here."
+    "day1Marked": "Cycle day 1 ✓"
   },
   "health": {
     "title": "Health",
@@ -300,6 +298,7 @@
     "syncNow": "Sync now",
     "asOf": "as of {{date}}",
     "stale": "OURA hasn't published today yet. Open the OURA app to sync your ring, then tap Sync now.",
+    "pendingCloud": "* today's data is still arriving from the OURA cloud — showing the last complete day",
     "diag": "Diagnostics",
     "diagDays": "{{n}} days written",
     "noData": "No data yet — tap Sync now.",
@@ -446,8 +445,8 @@
         "luteal": "Luteal"
       }
     },
-    "soonTitle": "Analytics are coming",
-    "soonBody": "Next: correlations of readiness/sleep and cycle phase with training ease and results, by calendar."
+    "analyticsLinkTitle": "Correlations live in Analytics →",
+    "analyticsLinkBody": "Workouts × recovery × cycle, metric trends and the calendar — on the Analytics tab."
   },
   "workout": {
     "title": "Workout",
