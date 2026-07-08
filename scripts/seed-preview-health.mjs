@@ -1,10 +1,11 @@
-// ВРЕМЕННЫЙ одноразовый сидер для превью-аккаунта (preview-claude@sporty.local):
-// OURA-снимки (75 дн) + 3 отметки цикла + флаги профиля — чтобы проверить на веб-превью
-// секции «Відновлення»/«Тренування × Відновлення»/календарь с данными (день-52).
-// Тренировки сеет штатный scripts/seed-mock-workouts.mjs --user <uuid> (запускается после).
-// Аккаунт throwaway (grip) — чистка при желании: удалить строки health_snapshots/cycle_periods по user_id.
+// Сидер превью-аккаунта (preview-claude@sporty.local) для смоуков на веб-превью:
+// OURA-снимки (75 дн; готовность чередуется высокая/низкая по чётности дня — корзины
+// «легкість ↔ готовність» наполняются на любом окне) + 3 отметки цикла + флаги профиля.
+// Тренировки сеет штатный seed-mock-workouts.mjs --user <uuid> (uuid печатается в конце).
+// Аккаунт throwaway (grip). Чистка: health_snapshots/cycle_periods удалить по user_id,
+// тренировки — seed-mock-workouts.mjs --clean --user <uuid>.
 //
-// Запуск: $env:SUPABASE_SERVICE_ROLE_KEY=...; node scripts/tmp-seed-preview-health.mjs
+// Запуск: $env:SUPABASE_SERVICE_ROLE_KEY=...; node scripts/seed-preview-health.mjs
 
 import { createClient } from '@supabase/supabase-js';
 

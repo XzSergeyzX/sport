@@ -77,6 +77,16 @@ export type FinishVars = { workoutId: string; endedAt: string };
 
 const wkey = (workoutId: string) => ['workout', workoutId];
 
+// Ретрай транзиентных сбоев — ТОЛЬКО у durable-мутаций логирования: единичный сетевой blip
+// на реконнекте не должен безвозвратно ронять запись из очереди. Повторять безопасно — эти
+// записи идемпотентны (создание — upsert по клиентскому id, апдейты/удаления идемпотентны
+// сами). Глобального ретрая мутаций НЕТ намеренно: неидемпотентные insert'ы (заявка борда,
+// кастомна вправа) задваивались бы, а платные ИИ-вызовы дважды списывали бы кост.
+const durableRetry = {
+  retry: 3,
+  retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000),
+};
+
 export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   const patch = (workoutId: string, fn: (w: WorkoutDetail) => WorkoutDetail) =>
     qc.setQueryData<WorkoutDetail>(wkey(workoutId), (old) => (old ? fn(old) : old));
@@ -91,6 +101,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   const settle = (workoutId: string) => qc.invalidateQueries({ queryKey: wkey(workoutId) });
 
   qc.setMutationDefaults(SET_ADD, {
+    ...durableRetry,
     mutationFn: (v: AddSetVars) => addSet(v.weId, v.input, v.id, v.completedAt),
     onMutate: async (v: AddSetVars) => {
       await cancel(v.workoutId);
@@ -125,6 +136,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(SET_UPDATE, {
+    ...durableRetry,
     mutationFn: (v: UpdateSetVars) => updateSet(v.id, v.input),
     onMutate: async (v: UpdateSetVars) => {
       await cancel(v.workoutId);
@@ -134,6 +146,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(SET_DELETE, {
+    ...durableRetry,
     mutationFn: (v: DeleteSetVars) => deleteSet(v.setId),
     onMutate: async (v: DeleteSetVars) => {
       await cancel(v.workoutId);
@@ -149,6 +162,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WORKOUT_START, {
+    ...durableRetry,
     mutationFn: (d: WorkoutDetail) => persistStartedWorkout(d),
     // оптимистику в ['workout', id] и ['workouts'] кладёт экран программы синхронно — здесь не
     // дублируем (onMutate из восстановленной мутации не вызовется; кэш и так персистится).
@@ -159,6 +173,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WE_ADD, {
+    ...durableRetry,
     mutationFn: (v: AddWeVars) => addWorkoutExercise(v.workoutId, v.exerciseId, v.orderIndex, v.id),
     onMutate: async (v: AddWeVars) => {
       await cancel(v.workoutId);
@@ -188,6 +203,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WE_REMOVE, {
+    ...durableRetry,
     mutationFn: (v: RemoveWeVars) => Promise.all(v.ids.map(deleteWorkoutExercise)).then(() => {}),
     onMutate: async (v: RemoveWeVars) => {
       await cancel(v.workoutId);
@@ -200,6 +216,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WE_REORDER, {
+    ...durableRetry,
     mutationFn: (v: ReorderWeVars) => reorderWorkoutExercises(v.ids, v.orders),
     onMutate: async (v: ReorderWeVars) => {
       await cancel(v.workoutId);
@@ -215,6 +232,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WE_DONE, {
+    ...durableRetry,
     mutationFn: (v: DoneWeVars) => setExerciseDone(v.weId, v.done, v.at),
     onMutate: async (v: DoneWeVars) => {
       await cancel(v.workoutId);
@@ -229,6 +247,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(WORKOUT_FINISH, {
+    ...durableRetry,
     mutationFn: (v: FinishVars) => finishWorkout(v.workoutId, v.endedAt),
     // ended_at ставим только если ещё не завершена — как finishWorkout (правка завершённой
     // не должна раздувать длительность). Навигацию на сводку делает экран сразу по тапу
@@ -246,6 +265,7 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   });
 
   qc.setMutationDefaults(SET_LOG, {
+    ...durableRetry,
     mutationFn: (v: LogSetVars) => setSetLogged(v.id, v.logged, v.restSec, v.at),
     onMutate: async (v: LogSetVars) => {
       await cancel(v.workoutId);
