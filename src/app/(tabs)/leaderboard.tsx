@@ -32,8 +32,10 @@ import {
   certLabels,
   deleteEntry,
   type Dynamometer,
+  type DynamometerView,
   getLeaderboard,
   type GripSetType,
+  type Hand,
   type LeaderboardRow,
   listDynamometers,
   listMyEntries,
@@ -51,6 +53,7 @@ import { useRole } from '@/lib/use-role';
 
 const PLACEHOLDER = '#848D9A';
 const SET_TYPES: GripSetType[] = ['tns', 'card', 'deep'];
+const DYNAMOMETER_VIEWS: Exclude<DynamometerView, 'absolute'>[] = ['device_all', 'left', 'right', 'sum'];
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 function parseNum(v: string): number | null {
@@ -69,11 +72,26 @@ function entryDate(r: LeaderboardRow): string | null {
 }
 
 /** Результат строки борда: динамометр — вес в единице юзера; эспандер — модель + RGC в кг. */
-function rowResult(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string): string {
+function displayWeight(kg: number, unit: WeightUnit): string {
+  const value = fromKg(kg, unit) as number;
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function rowResult(
+  r: LeaderboardRow,
+  unit: WeightUnit,
+  t: (k: string) => string,
+  dynamometerView?: DynamometerView,
+): string {
   if (r.weight_kg != null) {
-    const v = fromKg(r.weight_kg, unit) as number;
-    const rd = Math.round(v * 10) / 10;
-    return `${Number.isInteger(rd) ? rd : rd.toFixed(1)} ${t(`common.${unit}`)}`;
+    const total = `${displayWeight(r.weight_kg, unit)} ${t(`common.${unit}`)}`;
+    if (r.left_weight_kg != null && r.right_weight_kg != null) {
+      return `${total} · ${t('leaderboard.leftShort')} ${displayWeight(r.left_weight_kg, unit)} + ${t('leaderboard.rightShort')} ${displayWeight(r.right_weight_kg, unit)}`;
+    }
+    const device = dynamometerView === 'absolute' && r.dynamometer ? ` · ${r.dynamometer}` : '';
+    const hand = r.hand ? ` · ${t(`leaderboard.hand.${r.hand}`)}` : '';
+    return `${total}${device}${hand}`;
   }
   const name = r.gripper_brand ? `${r.gripper_brand} ${r.gripper_name}` : (r.gripper_name ?? '—');
   const kg = rowRgcKg(r);
@@ -105,6 +123,7 @@ function SubmitForm({
   const unit = useWeightUnit();
 
   const [dynId, setDynId] = useState<string | null>(dynamometers[0]?.id ?? null);
+  const [hand, setHand] = useState<Hand | null>(null);
   const [weight, setWeight] = useState('');
   const [gripper, setGripper] = useState<Gripper | null>(null);
   const [gripSearch, setGripSearch] = useState('');
@@ -139,7 +158,7 @@ function SubmitForm({
   const canSubmit =
     urlOk &&
     (board === 'dynamometer'
-      ? dynId != null && weightKg != null && weightKg > 0 && weightKg < 400
+      ? dynId != null && hand != null && weightKg != null && weightKg > 0 && weightKg < 400
       : gripper != null);
 
   const { showDialog, dialog } = useAppDialog();
@@ -147,7 +166,7 @@ function SubmitForm({
     mutationFn: () =>
       submitEntry(
         board === 'dynamometer'
-          ? { userId, board, dynamometerId: dynId!, weightKg: weightKg!, videoUrl, note, certified: false, performedAt }
+          ? { userId, board, dynamometerId: dynId!, hand: hand!, weightKg: weightKg!, videoUrl, note, certified: false, performedAt }
           : { userId, board, gripperId: gripper!.id, setType, videoUrl, note, certified: canCert && certified, performedAt },
       ),
     onSuccess: () => {
@@ -186,6 +205,27 @@ function SubmitForm({
                   style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
                 >
                   <Text style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>{d.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text className="mt-4 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+            {t('leaderboard.handLabel')}
+          </Text>
+          <View className="mt-1 flex-row gap-2">
+            {(['left', 'right'] as Hand[]).map((side) => {
+              const active = hand === side;
+              return (
+                <Pressable
+                  key={side}
+                  onPress={() => setHand(side)}
+                  className="flex-1 items-center rounded-xl px-4 py-3 active:opacity-80"
+                  style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+                >
+                  <Text className="font-semibold" style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>
+                    {t(`leaderboard.hand.${side}`)}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -409,7 +449,7 @@ function MyEntryRow({
   const unit = useWeightUnit();
   const what =
     entry.board === 'dynamometer'
-      ? `${entry.dynamometers?.name ?? '—'} · ${Math.round((fromKg(entry.weight_kg, unit) ?? 0) * 10) / 10} ${t(`common.${unit}`)}`
+      ? `${entry.dynamometers?.name ?? '—'} · ${Math.round((fromKg(entry.weight_kg, unit) ?? 0) * 10) / 10} ${t(`common.${unit}`)}${entry.hand ? ` · ${t(`leaderboard.hand.${entry.hand}`)}` : ''}`
       : `${entry.grippers?.brand ? `${entry.grippers.brand} ` : ''}${entry.grippers?.name ?? '—'} · ${t(`setTypes.${entry.set_type ?? 'tns'}`)}`;
   const statusColor =
     entry.status === 'approved' ? '#1FB89A' : entry.status === 'rejected' ? '#F87171' : '#EAB308';
@@ -452,21 +492,23 @@ export default function LeaderboardScreen() {
 
   const [board, setBoard] = useState<Board>('dynamometer');
   const [dynFilter, setDynFilter] = useState<string | null>(null); // stable code; null = справочник ещё грузится
+  const [dynView, setDynView] = useState<DynamometerView>('device_all');
   const [setTypeFilter, setSetTypeFilter] = useState<GripSetType>('tns');
   const [submitting, setSubmitting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null); // тап по строке → дата энтри
 
-  const { data: dynamometers } = useQuery({
+  const { data: dynamometers, isLoading: isDynamometersLoading } = useQuery({
     // v2 сбрасывает часовой persisted-кэш общей XF-300 после разделения 14/18 мм.
     queryKey: ['dynamometers', 'v2'],
     queryFn: listDynamometers,
     staleTime: 1000 * 60 * 60,
   });
   const selectedDynCode = dynFilter ?? dynamometers?.[0]?.code ?? null;
+  const queryDynCode = dynView === 'absolute' ? null : selectedDynCode;
   const { data: rows, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['leaderboard', board, board === 'dynamometer' ? selectedDynCode : setTypeFilter],
-    queryFn: () => getLeaderboard(board, selectedDynCode, setTypeFilter),
-    enabled: board !== 'dynamometer' || selectedDynCode != null,
+    queryKey: ['leaderboard', board, board === 'dynamometer' ? [dynView, queryDynCode] : setTypeFilter],
+    queryFn: () => getLeaderboard(board, queryDynCode, setTypeFilter, dynView),
+    enabled: board !== 'dynamometer' || dynView === 'absolute' || selectedDynCode != null,
   });
   // серт-лейблы живут в заявках эспандерного борда, но показываем их и на динамометре
   // (тот же queryKey, что и основной запрос при board==='gripper' — второго фетча нет)
@@ -542,9 +584,43 @@ export default function LeaderboardScreen() {
         }
       >
         {/* фильтры */}
-        <View className="flex-row flex-wrap gap-2">
-          {board === 'dynamometer' ? (
-            <>
+        {board === 'dynamometer' ? (
+          <View>
+            <View className="flex-row flex-wrap gap-2">
+              {DYNAMOMETER_VIEWS.map((view) => {
+                const active = dynView === view;
+                return (
+                  <Pressable
+                    key={view}
+                    onPress={() => setDynView(view)}
+                    className="rounded-full px-3 py-2 active:opacity-80"
+                    style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
+                  >
+                    <Text className="text-sm font-semibold" style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>
+                      {t(`leaderboard.views.${view}`)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Pressable
+              onPress={() => setDynView('absolute')}
+              className="mt-2 flex-row items-center justify-center rounded-xl border px-4 py-2.5 active:opacity-80"
+              style={{
+                borderColor: dynView === 'absolute' ? '#1FB89A' : '#3A3F49',
+                backgroundColor: dynView === 'absolute' ? 'rgba(31,184,154,0.12)' : 'rgba(255,255,255,0.025)',
+              }}
+            >
+              <Ionicons name="flash" size={15} color={dynView === 'absolute' ? '#1FB89A' : '#848D9A'} />
+              <Text className={`ml-2 text-sm font-bold ${dynView === 'absolute' ? 'text-accent' : 'text-graphite-300'}`}>
+                {t('leaderboard.views.absolute')}
+              </Text>
+              <Text className="ml-2 text-xs text-graphite-500">{t('leaderboard.absoluteHint')}</Text>
+            </Pressable>
+
+            {dynView !== 'absolute' && (
+              <View className="mt-3 flex-row flex-wrap gap-2">
               {(dynamometers ?? []).map((device) => {
                 const active = selectedDynCode === device.code;
                 return (
@@ -560,9 +636,12 @@ export default function LeaderboardScreen() {
                   </Pressable>
                 );
               })}
-            </>
-          ) : (
-            SET_TYPES.map((s) => {
+              </View>
+            )}
+          </View>
+        ) : (
+          <View className="flex-row flex-wrap gap-2">
+            {SET_TYPES.map((s) => {
               const active = setTypeFilter === s;
               return (
                 <Pressable
@@ -576,12 +655,12 @@ export default function LeaderboardScreen() {
                   </Text>
                 </Pressable>
               );
-            })
-          )}
-        </View>
+            })}
+          </View>
+        )}
 
         {/* борд */}
-        {isLoading ? (
+        {isLoading || (board === 'dynamometer' && dynView !== 'absolute' && isDynamometersLoading) ? (
           <View className="items-center py-12">
             <ActivityIndicator color="#848D9A" />
           </View>
@@ -624,7 +703,7 @@ export default function LeaderboardScreen() {
                       )}
                     </View>
                     <Text className="mt-0.5 text-sm text-graphite-400">
-                      {rowResult(r, unit, t)}
+                      {rowResult(r, unit, t, board === 'dynamometer' ? dynView : undefined)}
                       {bw != null && (
                         <Text className="text-graphite-600">
                           {'  ·  '}
@@ -638,9 +717,22 @@ export default function LeaderboardScreen() {
                       </Text>
                     )}
                   </View>
-                  <Pressable onPress={() => openVideo(r.video_url)} hitSlop={8} className="pl-2 active:opacity-60">
-                    <Ionicons name="play-circle-outline" size={26} color="#1FB89A" />
-                  </Pressable>
+                  {r.left_video_url && r.right_video_url ? (
+                    <View className="ml-1 flex-row">
+                      <Pressable onPress={() => openVideo(r.left_video_url!)} hitSlop={6} className="items-center px-1 active:opacity-60">
+                        <Text className="text-[10px] font-bold text-graphite-500">{t('leaderboard.leftShort')}</Text>
+                        <Ionicons name="play-circle-outline" size={22} color="#1FB89A" />
+                      </Pressable>
+                      <Pressable onPress={() => openVideo(r.right_video_url!)} hitSlop={6} className="items-center px-1 active:opacity-60">
+                        <Text className="text-[10px] font-bold text-graphite-500">{t('leaderboard.rightShort')}</Text>
+                        <Ionicons name="play-circle-outline" size={22} color="#1FB89A" />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable onPress={() => openVideo(r.video_url)} hitSlop={8} className="pl-2 active:opacity-60">
+                      <Ionicons name="play-circle-outline" size={26} color="#1FB89A" />
+                    </Pressable>
+                  )}
                 </Pressable>
               );
             })}

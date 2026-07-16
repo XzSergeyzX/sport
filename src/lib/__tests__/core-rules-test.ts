@@ -57,20 +57,30 @@ describe('leaderboard category boundaries', () => {
       p_board: 'dynamometer',
       p_dynamometer_code: 'xf300_14mm',
       p_set_type: null,
+      p_dynamometer_view: 'device_all',
     });
     expect(leaderboardRpcFilters('dynamometer', 'xf300_18mm', 'deep')).toEqual({
       p_board: 'dynamometer',
       p_dynamometer_code: 'xf300_18mm',
       p_set_type: null,
+      p_dynamometer_view: 'device_all',
     });
     expect(leaderboardRpcFilters('gripper', 'xf300_14mm', 'card')).toEqual({
       p_board: 'gripper',
       p_dynamometer_code: null,
       p_set_type: 'card',
+      p_dynamometer_view: null,
     });
     expect(() => leaderboardRpcFilters('dynamometer', null, 'tns')).toThrow(
       'dynamometer_category_required',
     );
+    expect(leaderboardRpcFilters('dynamometer', null, null, 'absolute')).toEqual({
+      p_board: 'dynamometer',
+      p_dynamometer_code: null,
+      p_set_type: null,
+      p_dynamometer_view: 'absolute',
+    });
+    expect(leaderboardRpcFilters('dynamometer', 'gm150', null, 'sum').p_dynamometer_view).toBe('sum');
   });
 });
 

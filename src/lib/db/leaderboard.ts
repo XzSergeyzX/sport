@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase';
 
 export type Board = 'dynamometer' | 'gripper';
 export type GripSetType = 'tns' | 'card' | 'deep';
+export type Hand = 'left' | 'right';
+export type DynamometerView = 'device_all' | Hand | 'sum' | 'absolute';
 export type EntryStatus = 'pending' | 'approved' | 'rejected';
 
 export type Dynamometer = {
@@ -27,7 +29,10 @@ export type LeaderboardRow = {
   board?: Board; // только в pending-RPC
   dynamometer_code?: string | null; // стабильный ключ категории approved-витрины
   dynamometer: string | null;
+  hand?: Hand | null;
   weight_kg: number | null;
+  left_weight_kg?: number | null;
+  right_weight_kg?: number | null;
   gripper_brand: string | null;
   gripper_name: string | null;
   gripper_rgc: number | null;
@@ -35,6 +40,8 @@ export type LeaderboardRow = {
   set_type: GripSetType | null;
   certified: boolean;
   video_url: string;
+  left_video_url?: string | null;
+  right_video_url?: string | null;
   note?: string | null;
   performed_at: string | null;
   verified_at?: string | null;
@@ -45,6 +52,7 @@ export type LeaderboardRow = {
 export type MyEntry = {
   id: string;
   board: Board;
+  hand: Hand | null;
   weight_kg: number | null;
   set_type: GripSetType | null;
   certified: boolean;
@@ -71,14 +79,16 @@ export function leaderboardRpcFilters(
   board: Board,
   dynamometerCode: string | null = null,
   setType: GripSetType | null = null,
+  dynamometerView: DynamometerView = 'device_all',
 ) {
-  if (board === 'dynamometer' && dynamometerCode == null) {
+  if (board === 'dynamometer' && dynamometerView !== 'absolute' && dynamometerCode == null) {
     throw new Error('dynamometer_category_required');
   }
   return {
     p_board: board,
     p_dynamometer_code: board === 'dynamometer' ? dynamometerCode : null,
     p_set_type: board === 'gripper' ? setType : null,
+    p_dynamometer_view: board === 'dynamometer' ? dynamometerView : null,
   };
 }
 
@@ -86,10 +96,11 @@ export async function getLeaderboard(
   board: Board,
   dynamometerCode: string | null = null,
   setType: GripSetType | null = null,
+  dynamometerView: DynamometerView = 'device_all',
 ): Promise<LeaderboardRow[]> {
   const { data, error } = await supabase.rpc(
     'get_leaderboard',
-    leaderboardRpcFilters(board, dynamometerCode, setType),
+    leaderboardRpcFilters(board, dynamometerCode, setType, dynamometerView),
   );
   if (error) throw error;
   return (data ?? []) as LeaderboardRow[];
@@ -99,7 +110,7 @@ export async function listMyEntries(userId: string): Promise<MyEntry[]> {
   const { data, error } = await supabase
     .from('leaderboard_entries')
     .select(
-      'id, board, weight_kg, set_type, certified, video_url, note, performed_at, status, created_at, dynamometers(name), grippers(brand, name, rgc, rgc_unit)',
+      'id, board, hand, weight_kg, set_type, certified, video_url, note, performed_at, status, created_at, dynamometers(name), grippers(brand, name, rgc, rgc_unit)',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
@@ -119,7 +130,7 @@ export type SubmitInput = {
   certified: boolean;
   performedAt?: string | null; // ISO yyyy-mm-dd, когда выступил (борд показывает вместо created_at)
 } & (
-  | { board: 'dynamometer'; dynamometerId: string; weightKg: number }
+  | { board: 'dynamometer'; dynamometerId: string; hand: Hand; weightKg: number }
   | { board: 'gripper'; gripperId: string; setType: GripSetType }
 );
 
@@ -134,6 +145,7 @@ export async function submitEntry(input: SubmitInput): Promise<void> {
   };
   if (input.board === 'dynamometer') {
     row.dynamometer_id = input.dynamometerId;
+    row.hand = input.hand;
     row.weight_kg = input.weightKg;
   } else {
     row.gripper_id = input.gripperId;

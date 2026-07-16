@@ -41,6 +41,7 @@ const { data: ins, error: insErr } = await db.from('leaderboard_entries').insert
   user_id: user.id,
   board: 'dynamometer',
   dynamometer_id: dyno.id,
+  hand: 'right',
   weight_kg: 99.5,
   video_url: 'https://youtube.com/watch?v=smoketest',
   status: 'pending',

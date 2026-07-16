@@ -23,7 +23,8 @@ import { useRole } from '@/lib/use-role';
 function result(r: LeaderboardRow, unit: WeightUnit, t: (k: string) => string): string {
   if (r.weight_kg != null) {
     const v = Math.round((fromKg(r.weight_kg, unit) as number) * 10) / 10;
-    return `${r.dynamometer ?? '—'} · ${Number.isInteger(v) ? v : v.toFixed(1)} ${t(`common.${unit}`)}`;
+    const hand = r.hand ? ` · ${t(`leaderboard.hand.${r.hand}`)}` : '';
+    return `${r.dynamometer ?? '—'} · ${Number.isInteger(v) ? v : v.toFixed(1)} ${t(`common.${unit}`)}${hand}`;
   }
   const name = r.gripper_brand ? `${r.gripper_brand} ${r.gripper_name}` : (r.gripper_name ?? '—');
   const kg = rowRgcKg(r);

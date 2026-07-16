@@ -80,6 +80,7 @@ for (let i = 0; i < FIRST.length; i++) {
     };
     if (isDyno) {
       row.dynamometer_id = rnd(dynos).id;
+      row.hand = rnd(['left', 'right']);
       row.weight_kg = rndInt(35, 95) + (Math.random() < 0.4 ? 0.5 : 0);
     } else {
       row.gripper_id = rnd(grips).id;
