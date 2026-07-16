@@ -1,11 +1,11 @@
 // Локальный прогон промпта workout-import (импорт прошлой тренировки) без деплоя.
 // Берёт SYSTEM прямо из supabase/functions/workout-import/index.ts (без дубля → не дрейфует),
-// повторяет боевой вызов OpenAI (gpt-5.4-mini, json_object) и печатает разбор каждой
+// повторяет боевой вызов Anthropic (Claude Sonnet 4.6, JSON-only) и печатает разбор каждой
 // тренировки + компактную сводку (дата / блоки-типы / стороны / множители) для глаз.
 //
 // Запуск:
-//   OPENAI_API_KEY=sk-... node scripts/test-import-prompt.mjs
-//   (PowerShell)  $env:OPENAI_API_KEY="sk-..."; node scripts/test-import-prompt.mjs
+//   ANTHROPIC_API_KEY=sk-ant-... node scripts/test-import-prompt.mjs
+//   (PowerShell)  $env:ANTHROPIC_API_KEY="sk-ant-..."; node scripts/test-import-prompt.mjs
 //
 // Фикстуры: каждая тренировка — отдельный .txt в scripts/import-fixtures/ (как из блокнота).
 // Один файл = один вызов. Имя файла попадает в заголовок прогона.
@@ -19,11 +19,11 @@ const ROOT = resolve(__dirname, '..');
 const INDEX_TS = join(ROOT, 'supabase', 'functions', 'workout-import', 'index.ts');
 const FIXTURES_DIR = join(__dirname, 'import-fixtures');
 
-const MODEL = process.env.IMPORT_MODEL || 'gpt-5.4-mini'; // = ai_model_routes['program_import']
-// Ключ: из окружения, иначе из gitignored scripts/.openai-key (чтобы не светить в команде).
-const KEY_FILE = join(__dirname, '.openai-key');
+const MODEL = process.env.IMPORT_MODEL || 'claude-sonnet-4-6'; // = ai_model_routes['program_import']
+// Ключ: из окружения, иначе из gitignored scripts/.anthropic-key (чтобы не светить в команде).
+const KEY_FILE = join(__dirname, '.anthropic-key');
 const KEY =
-  process.env.OPENAI_API_KEY ||
+  process.env.ANTHROPIC_API_KEY ||
   (existsSync(KEY_FILE) ? readFileSync(KEY_FILE, 'utf8').trim() : undefined);
 
 // Небольшой представительный каталог, чтобы catalog_index был осмысленным.
@@ -60,22 +60,26 @@ function loadFixtures() {
 }
 
 async function callModel(system, text) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    headers: {
+      'x-api-key': KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       model: MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: text.slice(0, 12000) },
-      ],
-      max_completion_tokens: 4096,
-      response_format: { type: 'json_object' },
+      system: `${system}\n\nRespond with valid JSON only, no prose.`,
+      messages: [{ role: 'user', content: text.slice(0, 12000) }],
+      max_tokens: 4096,
     }),
   });
-  if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) throw new Error(`anthropic ${res.status}: ${(await res.text()).slice(0, 500)}`);
   const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? '';
+  return (data.content ?? [])
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text ?? '')
+    .join('');
 }
 
 function safeParse(t) {
@@ -113,7 +117,9 @@ function summarize(p) {
 
 async function main() {
   if (!KEY) {
-    console.error('✗ Нет ключа. Положи его в scripts/.openai-key или $env:OPENAI_API_KEY="sk-..."');
+    console.error(
+      '✗ Нет ключа. Положи его в scripts/.anthropic-key или $env:ANTHROPIC_API_KEY="sk-ant-..."',
+    );
     process.exit(1);
   }
   const system =

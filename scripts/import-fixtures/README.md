@@ -6,10 +6,10 @@
 Запуск (PowerShell):
 
 ```powershell
-$env:OPENAI_API_KEY="sk-..."; node scripts/test-import-prompt.mjs
+$env:ANTHROPIC_API_KEY="sk-ant-..."; node scripts/test-import-prompt.mjs
 ```
 
 Раннер берёт `SYSTEM`-промпт прямо из `supabase/functions/workout-import/index.ts`,
-зовёт `gpt-5.4-mini` в JSON-режиме и печатает разбор + сводку по сторонам/суперсетам/множителям.
+зовёт `claude-sonnet-4-6` через Anthropic Messages API в JSON-only режиме и печатает разбор + сводку по сторонам/суперсетам/множителям.
 
 Это локальный тест-харнесс, не часть приложения. Сами `.txt` не коммитим (личные данные).
