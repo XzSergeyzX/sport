@@ -1,12 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/lib/auth/auth-context';
-import { WORKOUT_START } from '@/lib/db/workout-mutations';
+import { enqueueWorkoutStart } from '@/lib/db/workout-mutations';
 import {
   buildEmptyWorkout,
+  findActiveWorkoutSummary,
   summarizeWorkout,
-  type WorkoutDetail,
   type WorkoutSummary,
 } from '@/lib/db/workouts';
 
@@ -22,16 +22,23 @@ export function useStartEmptyWorkout(): () => void {
   const router = useRouter();
   const { session } = useAuth();
   const userId = session?.user.id;
-  const startMut = useMutation<void, Error, WorkoutDetail>({ mutationKey: WORKOUT_START });
-
   return () => {
     if (!userId) return;
+    const active = findActiveWorkoutSummary(
+      qc.getQueryData<WorkoutSummary[]>(['workouts', userId]),
+    );
+    if (active) {
+      router.push({ pathname: '/workout/[id]', params: { id: active.id } });
+      return;
+    }
     const workout = buildEmptyWorkout(userId);
     qc.setQueryData(['workout', workout.id], workout);
     qc.setQueryData<WorkoutSummary[]>(['workouts', userId], (old) =>
       old ? [summarizeWorkout(workout), ...old] : [summarizeWorkout(workout)],
     );
-    startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
+    enqueueWorkoutStart(qc, workout, (activeWorkoutId) =>
+      router.replace({ pathname: '/workout/[id]', params: { id: activeWorkoutId } }),
+    );
     router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
   };
 }

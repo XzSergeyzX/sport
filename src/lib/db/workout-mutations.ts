@@ -16,6 +16,7 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import type { Exercise } from './exercises';
 import {
+  ActiveWorkoutExistsError,
   addSet,
   addWorkoutExercise,
   deleteSet,
@@ -27,7 +28,7 @@ import {
   setSetLogged,
   updateSet,
 } from './workouts';
-import type { SetInput, SetRow, WorkoutDetail } from './workouts';
+import type { SetInput, SetRow, WorkoutDetail, WorkoutSummary } from './workouts';
 
 export const SET_ADD = ['workout', 'set', 'add'] as const;
 export const SET_UPDATE = ['workout', 'set', 'update'] as const;
@@ -43,6 +44,12 @@ export const WE_REMOVE = ['workout', 'exercise', 'remove'] as const;
 export const WE_REORDER = ['workout', 'exercise', 'reorder'] as const;
 export const WE_DONE = ['workout', 'exercise', 'done'] as const;
 export const WORKOUT_FINISH = ['workout', 'finish'] as const;
+
+/** Все durable-операции одной тренировки делят scope: родитель создаётся раньше ребёнка,
+ * INSERT set раньше UPDATE/LOG/DELETE, а FINISH идёт после последних правок. */
+export const workoutMutationScope = (workoutId: string) => ({
+  id: `workout-${workoutId}-sets`,
+});
 
 // Таймстемпы действий (completedAt/at/endedAt) едут В vars, а не вычисляются в mutationFn:
 // у queued-оффлайн-мутации mutationFn исполняется в момент РЕКОННЕКТА (возможно через сутки),
@@ -75,6 +82,17 @@ export type ReorderWeVars = { workoutId: string; ids: string[]; orders: number[]
 export type DoneWeVars = { workoutId: string; weId: string; done: boolean; at: string };
 export type FinishVars = { workoutId: string; endedAt: string };
 
+/** UPDATE должен попасть в durable-очередь раньше LOG того же подхода. */
+export function enqueueSetDraftMutations(
+  enqueueUpdate: (vars: UpdateSetVars) => void,
+  enqueueLog: () => void,
+  vars: UpdateSetVars,
+  shouldLog: boolean,
+): void {
+  enqueueUpdate(vars);
+  if (shouldLog) enqueueLog();
+}
+
 const wkey = (workoutId: string) => ['workout', workoutId];
 
 // Ретрай транзиентных сбоев — ТОЛЬКО у durable-мутаций логирования: единичный сетевой blip
@@ -83,9 +101,40 @@ const wkey = (workoutId: string) => ['workout', workoutId];
 // сами). Глобального ретрая мутаций НЕТ намеренно: неидемпотентные insert'ы (заявка борда,
 // кастомна вправа) задваивались бы, а платные ИИ-вызовы дважды списывали бы кост.
 const durableRetry = {
-  retry: 3,
+  retry: (failureCount: number, error: Error) =>
+    !(error instanceof ActiveWorkoutExistsError) && failureCount < 3,
   retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000),
 };
+
+/** Убрать локальную phantom-тренировку, которую БД отклонила из-за уже активной сессии. */
+export function discardConflictingWorkout(qc: QueryClient, workout: WorkoutDetail): void {
+  qc.removeQueries({ queryKey: wkey(workout.id), exact: true });
+  qc.setQueriesData<WorkoutSummary[]>({ queryKey: ['workouts'] }, (old) =>
+    old?.filter((item) => item.id !== workout.id),
+  );
+  qc.invalidateQueries({ queryKey: ['workouts'] });
+}
+
+/** Создать START mutation с динамическим scope конкретной тренировки. Обычный useMutation
+ * задаёт scope на уровне hook и не может узнать client UUID, который создаётся только по тапу. */
+export function enqueueWorkoutStart(
+  qc: QueryClient,
+  workout: WorkoutDetail,
+  onConflict: (activeWorkoutId: string) => void,
+): void {
+  const mutation = qc.getMutationCache().build<void, Error, WorkoutDetail, unknown>(qc, {
+    mutationKey: WORKOUT_START,
+    scope: workoutMutationScope(workout.id),
+    onError: (error, variables) => {
+      if (!(error instanceof ActiveWorkoutExistsError)) return;
+      discardConflictingWorkout(qc, variables);
+      onConflict(error.activeWorkoutId);
+    },
+  });
+  // useMutation.mutate тоже намеренно глотает rejected promise: состояние ошибки остаётся
+  // в MutationCache/SyncStatus, но не превращается в unhandled rejection.
+  void mutation.execute(workout).catch(() => {});
+}
 
 export function registerWorkoutMutationDefaults(qc: QueryClient): void {
   const patch = (workoutId: string, fn: (w: WorkoutDetail) => WorkoutDetail) =>
@@ -169,6 +218,9 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
     onSuccess: (_data, d: WorkoutDetail) => {
       qc.invalidateQueries({ queryKey: wkey(d.id) });
       qc.invalidateQueries({ queryKey: ['workouts'] });
+    },
+    onError: (error, d: WorkoutDetail) => {
+      if (error instanceof ActiveWorkoutExistsError) discardConflictingWorkout(qc, d);
     },
   });
 
@@ -255,6 +307,11 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
     onMutate: async (v: FinishVars) => {
       await cancel(v.workoutId);
       patch(v.workoutId, (w) => (w.ended_at ? w : { ...w, ended_at: v.endedAt }));
+      qc.setQueriesData<WorkoutSummary[]>({ queryKey: ['workouts'] }, (old) =>
+        old?.map((item) =>
+          item.id === v.workoutId && !item.ended_at ? { ...item, ended_at: v.endedAt } : item,
+        ),
+      );
     },
     onSuccess: (_d, v: FinishVars) => {
       settle(v.workoutId);

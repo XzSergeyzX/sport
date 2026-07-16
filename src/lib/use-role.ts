@@ -8,6 +8,12 @@ import { supabase } from '@/lib/supabase';
 // (сервер), клиент по роли только показывает/прячет UI: настоящий гейт ИИ — в Edge Functions.
 export type AppRole = 'grip' | 'full' | 'admin';
 
+/** Private-фичи доступны только после явной загрузки full/admin. undefined тоже deny:
+ *  новый/медленный клиент не должен на мгновение показывать Programs/AI/Health. */
+export function hasPrivateAccess(role: AppRole | undefined): role is 'full' | 'admin' {
+  return role === 'full' || role === 'admin';
+}
+
 export async function getMyRole(userId: string): Promise<AppRole> {
   const { data, error } = await supabase
     .from('user_roles')
@@ -25,11 +31,12 @@ export async function getMyRole(userId: string): Promise<AppRole> {
 export function useRole(): AppRole | undefined {
   const { session } = useAuth();
   const userId = session?.user.id;
-  const { data } = useQuery({
+  const { data, isError } = useQuery({
     queryKey: ['role', userId],
     queryFn: () => getMyRole(userId as string),
     enabled: !!userId,
     staleTime: 1000 * 60 * 30,
   });
-  return data;
+  // Ошибка чтения роли тоже fail-closed, но не должна оставлять приложение на вечном spinner.
+  return data ?? (isError ? 'grip' : undefined);
 }

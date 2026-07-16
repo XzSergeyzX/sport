@@ -31,7 +31,7 @@ import { showLeaderboardKey, useShowLeaderboard } from '@/lib/use-show-leaderboa
 import i18n, { type AppLanguage } from '@/lib/i18n';
 import { applyLanguage, applyUnit } from '@/lib/prefs';
 import { formatWeight, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
-import { useRole } from '@/lib/use-role';
+import { hasPrivateAccess, useRole } from '@/lib/use-role';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -100,7 +100,7 @@ export default function AccountScreen() {
   const { data: trackCycle } = useQuery({
     queryKey: ['track-cycle', userId],
     queryFn: () => getTrackCycle(userId as string),
-    enabled: !!userId,
+    enabled: !!userId && hasPrivateAccess(role),
   });
   const cycleMut = useMutation({
     mutationFn: (v: boolean) => setTrackCycle(userId as string, v),
@@ -361,7 +361,7 @@ export default function AccountScreen() {
           </View>
 
           {/* цикл — фича full-профиля (health/коуч); grip-комьюнити это не показываем */}
-          {gender?.gender === 'female' && role !== 'grip' && (
+          {gender?.gender === 'female' && hasPrivateAccess(role) && (
             <>
               <Divider />
               <View className="flex-row items-center justify-between px-4 py-4">

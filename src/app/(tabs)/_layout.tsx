@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { BlurView } from 'expo-blur';
-import { Redirect, Tabs } from 'expo-router';
+import { Redirect, Tabs, useSegments } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { getHealthRelevant } from '@/lib/db/profile';
 import { useShowLeaderboard } from '@/lib/use-show-leaderboard';
 import { TAB_BAR_BASE_HEIGHT } from '@/lib/tab-bar';
-import { useRole } from '@/lib/use-role';
+import { hasPrivateAccess, useRole } from '@/lib/use-role';
 
 const ACTIVE = '#1FB89A';
 const INACTIVE = '#5C6675';
@@ -28,18 +28,18 @@ export default function TabsLayout() {
   const { t } = useTranslation();
   const { session, initializing } = useAuth();
   const insets = useSafeAreaInsets();
-  // grip (комьюнити) видит урезанный набор табов. Пока роль не загружена (undefined —
-  // только самый первый запуск, дальше кэш персистится) показываем полный набор:
-  // реальный гейт ИИ — на сервере, спрятанные табы — только UX.
+  const segments = useSegments();
+  // Private-табы показываем только после явного full/admin. undefined = deny by default,
+  // поэтому на холодном старте нет короткой вспышки Programs/AI/Health у grip.
   const role = useRole();
-  const grip = role === 'grip';
+  const privateAccess = hasPrivateAccess(role);
   // «Здоров'я» осмыслен только с OURA/циклом (у Маши) — остальным таб не показываем.
   // Пока не загружено — прячем (не мигать пустым табом у тех, кому он не нужен).
   const userId = session?.user.id;
   const { data: healthRelevant } = useQuery({
     queryKey: ['health-relevant', userId],
     queryFn: () => getHealthRelevant(userId as string),
-    enabled: !!userId,
+    enabled: !!userId && privateAccess,
     staleTime: 1000 * 60 * 30,
   });
   // «Лідерборд» — по тумблеру в Акаунте. Пока не загружено (undefined) — показываем
@@ -48,7 +48,7 @@ export default function TabsLayout() {
 
   // Гард: на табы можно попасть прямым deep-link (скан QR), минуя гейт index.tsx.
   // Без сессии — выкидываем на вход, иначе экраны грузятся «без пользователя».
-  if (initializing) {
+  if (initializing || (!!session && role === undefined)) {
     return (
       <View className="flex-1 items-center justify-center bg-graphite-950">
         <ActivityIndicator color="#848D9A" />
@@ -56,6 +56,10 @@ export default function TabsLayout() {
     );
   }
   if (!session) return <Redirect href="/auth" />;
+  const directPrivateTab = segments.some((segment) =>
+    ['programs', 'coach', 'health'].includes(segment),
+  );
+  if (!privateAccess && directPrivateTab) return <Redirect href="/(tabs)/workouts" />;
 
   return (
     <Tabs
@@ -100,7 +104,7 @@ export default function TabsLayout() {
         options={{
           title: t('tabs.programs'),
           tabBarIcon: icon('clipboard-outline'),
-          href: grip ? null : undefined, // href:null прячет таб (expo-router), роут остаётся
+          href: privateAccess ? undefined : null,
         }}
       />
       <Tabs.Screen
@@ -109,7 +113,7 @@ export default function TabsLayout() {
           title: t('tabs.coach'),
           tabBarIcon: icon('chatbubble-ellipses-outline'),
           tabBarHideOnKeyboard: true,
-          href: grip ? null : undefined,
+          href: privateAccess ? undefined : null,
         }}
       />
       <Tabs.Screen
@@ -121,7 +125,7 @@ export default function TabsLayout() {
         options={{
           title: t('tabs.health'),
           tabBarIcon: icon('heart-outline'),
-          href: grip || !healthRelevant ? null : undefined,
+          href: !privateAccess || !healthRelevant ? null : undefined,
         }}
       />
       <Tabs.Screen

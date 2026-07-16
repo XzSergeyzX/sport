@@ -4,6 +4,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { corsHeaders } from '../_shared/cors.ts';
+import { hasPrivateAccess } from '../_shared/roles.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -30,6 +31,9 @@ Deno.serve(async (req) => {
     if (userErr || !userData.user) return json({ error: 'unauthorized' }, 401);
     const userId = userData.user.id;
 
+    const admin = createClient(url, serviceKey);
+    if (!(await hasPrivateAccess(admin, userId))) return json({ error: 'forbidden' }, 403);
+
     const body = await req.json().catch(() => ({}));
     const token = typeof body.token === 'string' ? body.token.trim() : '';
     if (!token) return json({ error: 'token_required' }, 400);
@@ -40,7 +44,6 @@ Deno.serve(async (req) => {
     });
     if (!probe.ok) return json({ error: 'invalid_oura_token' }, 400);
 
-    const admin = createClient(url, serviceKey);
     const { error: rpcErr } = await admin.rpc('store_oura_token', {
       p_user: userId,
       p_token: token,

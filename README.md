@@ -1,56 +1,62 @@
-# Welcome to your Expo app 👋
+# Sporty_SM
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo/React Native приложение для тренировок, grip-рекордов и лидерборда. Private-режим Сергея и
+Марии дополнительно включает программы, AI Coach, OURA и цикл.
 
-## Get started
+## Продуктовые роли
 
-1. Install dependencies
+- `grip` — роль всех новых пользователей: свободные тренировки, эспандеры, рекорды, аналитика и
+  лидерборд; без Programs/AI/Health/Cycle.
+- `full` — private athlete; сейчас только Мария.
+- `admin` — `full` + moderation; сейчас только Сергей.
 
-   ```bash
-   npm install
-   ```
+Источник роли — защищённая таблица `user_roles`. Роль не хранится в редактируемом профиле.
 
-2. Start the app
+## Стек
 
-   ```bash
-   npx expo start
-   ```
+- Expo SDK 54, React Native 0.81, TypeScript, Expo Router;
+- NativeWind, TanStack Query + AsyncStorage persistence;
+- Supabase Postgres/Auth/Edge Functions/RLS;
+- AI gateway с Claude/OpenAI/Gemini adapters;
+- UI локали: только `en` и `uk`.
 
-In the output, you'll find options to open the app in a
+SDK 54 зафиксирован ради Expo Go. Не обновляйте Expo/React Native без отдельного согласования.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Локальный запуск
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```powershell
+npm install
+npx expo start --port 8090
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Нужен `.env` на основе `.env.example` с публичными Supabase URL/anon key. Серверные AI/OURA ключи
+хранятся только в Supabase Edge secrets и никогда не добавляются в клиентский `.env`.
 
-### Other setup steps
+## Проверки
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```powershell
+npx tsc --noEmit
+npm run check:functions
+npm test
+```
 
-## Learn more
+Автоматические тесты должны защищать спортивные расчёты, роли/RLS, offline replay и критические
+пользовательские пути. Полная стратегия описана в `docs/USER_FLOWS.md` §7.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Документация
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- `docs/SPEC.md` — продуктовый и архитектурный контракт;
+- `docs/BACKLOG.md` — открытые решения и порядок работ;
+- `docs/USER_FLOWS.md` — актуальные экраны, роли и сценарии;
+- `docs/PROGRESS.md` — состояние main, деплой и журнал сессий;
+- `AGENTS.md` — обязательные правила работы с проектом.
 
-## Join the community
+## Supabase и EAS
 
-Join our community of developers creating universal apps.
+```powershell
+npx supabase db push
+npx supabase functions deploy <name>
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+`eas.json` содержит development/preview/production профили. Android package настроен; iOS
+bundle identifier и TestFlight выполняются только по явной команде владельца проекта.

@@ -10,11 +10,11 @@ import { SettingsButton } from '@/components/settings-button';
 import { SyncStatus } from '@/components/sync-status';
 import { useAuth } from '@/lib/auth/auth-context';
 import { humanDate } from '@/lib/dates';
-import { importPastWorkout, listWorkoutSummaries } from '@/lib/db/workouts';
+import { findActiveWorkoutSummary, importPastWorkout, listWorkoutSummaries } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
 import { useTabBarHeight } from '@/lib/tab-bar';
-import { useRole } from '@/lib/use-role';
+import { hasPrivateAccess, useRole } from '@/lib/use-role';
 import { useStartEmptyWorkout } from '@/lib/use-start-workout';
 import { fromKg, useWeightUnit } from '@/lib/use-unit';
 
@@ -34,7 +34,8 @@ export default function WorkoutsScreen() {
   const { session } = useAuth();
   const userId = session?.user.id;
   // grip (комьюнити) — без ИИ: кнопку импорта не показываем (сервер и так вернёт 403)
-  const canUseAi = useRole() !== 'grip';
+  const role = useRole();
+  const canUseAi = hasPrivateAccess(role);
   const tabBarHeight = useTabBarHeight();
 
   const { data: workouts, isLoading } = useQuery({
@@ -76,7 +77,7 @@ export default function WorkoutsScreen() {
 
   const list = workouts ?? [];
   const total = list.length;
-  const active = list.find((w) => !w.ended_at); // незавершене тренування (підняти нагору)
+  const active = findActiveWorkoutSummary(list); // незавершене тренування (підняти нагору)
 
   // понеділок поточного тижня (00:00) для зведення «цього тижня»
   const weekStart = new Date();
@@ -125,8 +126,10 @@ export default function WorkoutsScreen() {
         )}
 
         <Pressable
+          disabled={isLoading}
           onPress={onStart}
           className="mt-4 items-center rounded-2xl bg-accent py-4 active:opacity-80"
+          style={{ opacity: isLoading ? 0.5 : 1 }}
         >
           <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
         </Pressable>

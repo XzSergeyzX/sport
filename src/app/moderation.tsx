@@ -109,8 +109,15 @@ export default function ModerationScreen() {
   };
 
   if (!initializing && !session) return <Redirect href="/auth" />;
+  if (session && role === undefined) {
+    return (
+      <View className="flex-1 items-center justify-center bg-graphite-950">
+        <ActivityIndicator color="#848D9A" />
+      </View>
+    );
+  }
   // не-админа сюда не ведёт UI; на прямой заход — назад на табы (RPC всё равно не отдаст)
-  if (role && role !== 'admin') return <Redirect href="/(tabs)/leaderboard" />;
+  if (session && role !== 'admin') return <Redirect href="/(tabs)/leaderboard" />;
 
   return (
     <SafeAreaView edges={['top', 'left', 'right', 'bottom']} className="flex-1 bg-graphite-950">

@@ -44,9 +44,15 @@ import {
   updateProgramExercise,
   updateProgramSet,
 } from '@/lib/db/programs';
-import { WORKOUT_START } from '@/lib/db/workout-mutations';
-import { summarizeWorkout, type WorkoutDetail, type WorkoutSummary } from '@/lib/db/workouts';
+import { enqueueWorkoutStart } from '@/lib/db/workout-mutations';
+import {
+  findActiveWorkoutSummary,
+  listWorkoutSummaries,
+  summarizeWorkout,
+  type WorkoutSummary,
+} from '@/lib/db/workouts';
 import { repsLabel } from '@/lib/i18n/plural';
+import { hasPrivateAccess, useRole } from '@/lib/use-role';
 import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 function setLine(s: ProgramSet, unit: 'kg' | 'lb', t: (k: string) => string): string {
@@ -351,6 +357,8 @@ export default function ProgramDetailScreen() {
   const unit = useWeightUnit();
   const insets = useSafeAreaInsets();
   const { session, initializing } = useAuth();
+  const role = useRole();
+  const privateAccess = hasPrivateAccess(role);
   const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
   // свежесозданная вручную программа приходит с ?edit=1 → сразу открываем на добавление упражнений
   const [editMode, setEditMode] = useState(edit === '1');
@@ -363,16 +371,22 @@ export default function ProgramDetailScreen() {
   const { data: program, isLoading } = useQuery({
     queryKey: ['program', id],
     queryFn: () => getProgramDetail(id),
-    enabled: !!id && !!session,
+    enabled: !!id && !!session && privateAccess,
   });
 
   // каталог упражнений (кэш ['exercises-all']) — для верной метрики/имени в оптимистичном дереве
   const { data: catalog } = useQuery({
     queryKey: ['exercises-all'],
     queryFn: listExercises,
-    enabled: !!session,
+    enabled: !!session && privateAccess,
   });
   const catalogById = useMemo(() => new Map((catalog ?? []).map((e) => [e.id, e])), [catalog]);
+
+  const { isLoading: workoutsLoading } = useQuery({
+    queryKey: ['workouts', session?.user.id],
+    queryFn: () => listWorkoutSummaries(session!.user.id),
+    enabled: !!session && privateAccess,
+  });
 
   // включённые дисциплины — фильтр видимости в пикере (как в логировании тренировки)
   const { data: disciplines } = useQuery({
@@ -443,12 +457,15 @@ export default function ProgramDetailScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['program', id] }),
   });
 
-  // старт регистрируется через mutationKey → переживает перезапуск (доживёт в оффлайн-очереди)
-  // дженерики явно: при mutationKey без mutationFn TS иначе выводит variables как void
-  const startMut = useMutation<void, Error, WorkoutDetail>({ mutationKey: WORKOUT_START });
-
   const onStart = () => {
     if (!program || !session) return;
+    const active = findActiveWorkoutSummary(
+      qc.getQueryData<WorkoutSummary[]>(['workouts', session.user.id]),
+    );
+    if (active) {
+      router.replace({ pathname: '/workout/[id]', params: { id: active.id } });
+      return;
+    }
     const workout = buildWorkoutFromProgram(session.user.id, program, unit, catalogById);
     // посев СИНХРОННО до навигации: дерево тренировки + список недавних → экран тренировки
     // открывается мгновенно и работает оффлайн; серверная запись уходит фоном (см. ниже)
@@ -456,7 +473,9 @@ export default function ProgramDetailScreen() {
     qc.setQueryData<WorkoutSummary[]>(['workouts', session.user.id], (old) =>
       old ? [summarizeWorkout(workout), ...old] : [summarizeWorkout(workout)],
     );
-    startMut.mutate(workout); // оффлайн — встанет в очередь и доиграется на реконнекте
+    enqueueWorkoutStart(qc, workout, (activeWorkoutId) =>
+      router.replace({ pathname: '/workout/[id]', params: { id: activeWorkoutId } }),
+    );
     router.replace({ pathname: '/workout/[id]', params: { id: workout.id } });
   };
 
@@ -582,6 +601,14 @@ export default function ProgramDetailScreen() {
   });
 
   if (!initializing && !session) return <Redirect href="/auth" />;
+  if (session && role === undefined) {
+    return (
+      <View className="flex-1 items-center justify-center bg-graphite-950">
+        <ActivityIndicator color="#848D9A" />
+      </View>
+    );
+  }
+  if (session && !privateAccess) return <Redirect href="/(tabs)/workouts" />;
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-graphite-950">
@@ -802,8 +829,10 @@ export default function ProgramDetailScreen() {
           ) : (
             program.program_exercises.length > 0 && (
               <Pressable
+                disabled={workoutsLoading}
                 onPress={onStart}
                 className="items-center rounded-2xl bg-accent py-4 active:opacity-80"
+                style={{ opacity: workoutsLoading ? 0.5 : 1 }}
               >
                 <Text className="text-base font-bold text-graphite-950">{t('home.start')}</Text>
               </Pressable>

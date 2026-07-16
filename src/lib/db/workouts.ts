@@ -62,6 +62,17 @@ export type SetInput = {
   meta?: Record<string, unknown> | null;
 };
 
+export class ActiveWorkoutExistsError extends Error {
+  constructor(public readonly activeWorkoutId: string) {
+    super('active_workout_exists');
+    this.name = 'ActiveWorkoutExistsError';
+  }
+}
+
+export function isActiveWorkoutExistsError(error: unknown): error is ActiveWorkoutExistsError {
+  return error instanceof ActiveWorkoutExistsError;
+}
+
 const DETAIL_SELECT = '*, workout_exercises(*, exercise:exercises(*), sets(*))';
 
 /**
@@ -91,7 +102,22 @@ export async function persistStartedWorkout(d: WorkoutDetail): Promise<void> {
   const { error: wErr } = await supabase
     .from('workouts')
     .upsert({ id: d.id, user_id: d.user_id, started_at: d.started_at });
-  if (wErr) throw wErr;
+  if (wErr) {
+    if (wErr.code === '23505') {
+      const { data: active } = await supabase
+        .from('workouts')
+        .select('id')
+        .eq('user_id', d.user_id)
+        .is('ended_at', null)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (active?.id && active.id !== d.id) {
+        throw new ActiveWorkoutExistsError(active.id as string);
+      }
+    }
+    throw wErr;
+  }
   if (d.workout_exercises.length === 0) return;
 
   const weRows = d.workout_exercises.map((we) => ({
@@ -178,6 +204,14 @@ export type WorkoutSummary = {
   hold_sec: number;
   tonnage: number;
 };
+
+/** Единый selector активной тренировки для всех точек старта. Список отсортирован newest-first,
+ *  поэтому при старых дублях возвращаем самую свежую и не создаём ещё одну. */
+export function findActiveWorkoutSummary(
+  workouts: readonly WorkoutSummary[] | null | undefined,
+): WorkoutSummary | undefined {
+  return workouts?.find((workout) => workout.ended_at == null);
+}
 
 /** Список тренировок для главного экрана — лёгкие сводки из вью (RLS через security_invoker).
  *  Без limit: строка крошечная, показываем всю историю; нумерация считается от полного списка. */

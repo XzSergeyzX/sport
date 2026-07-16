@@ -2,7 +2,7 @@
 // не может дёрнуть ИИ-функции даже напрямую (спрятанные табы — не защита), бюджет закрыт.
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
-export async function hasAiAccess(admin: SupabaseClient, userId: string): Promise<boolean> {
+export async function hasPrivateAccess(admin: SupabaseClient, userId: string): Promise<boolean> {
   const { data, error } = await admin
     .from('user_roles')
     .select('role')
@@ -13,3 +13,7 @@ export async function hasAiAccess(admin: SupabaseClient, userId: string): Promis
   // нет строки → запрет по умолчанию (deny by default)
   return data?.role === 'full' || data?.role === 'admin';
 }
+
+// Сейчас AI является частью того же закрытого private-режима. Оставляем отдельное имя для
+// call sites: если продуктовые права разойдутся, гейт можно будет разделить в одном месте.
+export const hasAiAccess = hasPrivateAccess;

@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
+  AppState,
   Keyboard,
   type KeyboardTypeOptions,
   Modal,
@@ -37,7 +38,6 @@ import { type Gripper, gripperMatches, gripperName, listGripperCatalog, rgcInKg 
 import {
   getWorkoutDetail,
   isClusteredWorkoutExercise,
-  type SetInput,
   type SetRow as SetRowType,
   type WorkoutExercise,
 } from '@/lib/db/workouts';
@@ -49,6 +49,7 @@ import {
   type AddWeVars,
   type DeleteSetVars,
   type DoneWeVars,
+  enqueueSetDraftMutations,
   type FinishVars,
   type LogSetVars,
   type RemoveWeVars,
@@ -63,9 +64,11 @@ import {
   WE_REMOVE,
   WE_REORDER,
   WORKOUT_FINISH,
+  workoutMutationScope,
 } from '@/lib/db/workout-mutations';
 import i18n from '@/lib/i18n';
 import { setsLabel } from '@/lib/i18n/plural';
+import { flushPendingCallbacks, useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { formatWeight, fromKg, toKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
 
 const PLACEHOLDER = '#848D9A';
@@ -382,7 +385,8 @@ function SetRow({
   metric,
   logKind,
   grippers,
-  onSave,
+  workoutId,
+  registerPendingFlush,
   onToggleDone,
   onAutoLog,
   onDelete,
@@ -396,7 +400,8 @@ function SetRow({
   metric: Metric;
   logKind: string | null;
   grippers: Gripper[];
-  onSave: (id: string, input: SetInput) => void;
+  workoutId: string;
+  registerPendingFlush: (flush: () => void) => () => void;
   onToggleDone: (set: SetRowType) => void;
   onAutoLog: (set: SetRowType) => void;
   onDelete: (id: string) => void;
@@ -405,6 +410,13 @@ function SetRow({
   locked?: boolean; // блок/упражнение завершён → только чтение (правка после «Відновити»)
 }) {
   const { t } = useTranslation();
+  // Mutation scope сериализует все апдейты конкретного set. Быстрый ввод coalesce'ится ниже,
+  // а итоговая запись всё равно попадает в durable-очередь и переживает офлайн/перезапуск.
+  const updateSetMut = useMutation<void, Error, UpdateSetVars>({
+    mutationKey: SET_UPDATE,
+    // Общий scope с ADD/LOG/DELETE этой тренировки: UPDATE не обгонит INSERT нового set.
+    scope: workoutMutationScope(workoutId),
+  });
   // временной подход: дефолт упражнения = 'time' ИЛИ у подхода уже есть длительность.
   // per-set: режим переопределяется тумблером (натяжку можно держать статикой на сек,
   // а следующий подход делать на повторы — в одном упражнении).
@@ -421,35 +433,61 @@ function SetRow({
   const [gripOpen, setGripOpen] = useState(false);
   const done = !!set.logged_at;
 
+  const debouncedUpdate = useDebouncedCallback(
+    (vars: UpdateSetVars, shouldAutoLog: boolean) =>
+      enqueueSetDraftMutations(
+        (next) => updateSetMut.mutate(next),
+        () => onAutoLog(set),
+        vars,
+        shouldAutoLog,
+      ),
+    400,
+  );
+  useEffect(() => registerPendingFlush(debouncedUpdate.flush), [debouncedUpdate.flush, registerPendingFlush]);
+
   const save = (
     nextRpe: number | null = rpe,
     nextMeta: GripMeta = meta,
     timeMode: boolean = isTime,
+    debounced = false,
+    shouldAutoLog = false,
   ) => {
     const n = parseNum(amount);
     const rounded = n === null ? null : Math.round(n);
-    onSave(set.id, {
-      weight: isGripper ? null : toKg(parseNum(weight), unit),
-      reps: timeMode ? null : rounded,
-      duration_sec: timeMode ? rounded : null,
-      rpe: nextRpe,
-      // meta теперь общий: эспандер + читинг/сторона. Сохраняем, когда есть что сохранять.
-      meta: Object.keys(nextMeta).length > 0 ? nextMeta : undefined,
-    });
+    const vars: UpdateSetVars = {
+      workoutId,
+      id: set.id,
+      input: {
+        weight: isGripper ? null : toKg(parseNum(weight), unit),
+        reps: timeMode ? null : rounded,
+        duration_sec: timeMode ? rounded : null,
+        rpe: nextRpe,
+        // Пустой meta отправляем как null: undefined Supabase исключает из UPDATE и оставляет
+        // старые side/cheat/gripper значения на сервере.
+        meta: Object.keys(nextMeta).length > 0 ? nextMeta : null,
+      },
+    };
+    if (debounced) debouncedUpdate.schedule(vars, shouldAutoLog);
+    else {
+      debouncedUpdate.cancel();
+      enqueueSetDraftMutations(
+        (next) => updateSetMut.mutate(next),
+        () => onAutoLog(set),
+        vars,
+        shouldAutoLog,
+      );
+    }
   };
-  // коммитим вес/повторы «на лету» при каждом изменении — НЕ зависим от blur/onEndEditing
-  // (Keyboard.dismiss их не триггерит надёжно). Поэтому «завершити» никогда не теряет
-  // введённое: к моменту тапа значение уже записано. Первый рендер пропускаем.
+  // Вес/повторы сохраняются после короткой паузы вместо mutation на каждый символ. Blur и
+  // действия ниже вызывают немедленный save; unmount flush'ит pending callback в самом hook.
   const firstRun = useRef(true);
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
       return;
     }
-    save();
-    // ввёл повторы/сек → подход автоматически «зроблений» (иначе без тапа ✓ он не в зачёте
-    // тоннажа/счётчиков → «завершив, а всё 0»). Явный ✓ по-прежнему считает отдых.
-    if (!done && parseNum(amount) != null) onAutoLog(set);
+    // UPDATE и авто-LOG coalesce'ятся вместе: при flush UPDATE всегда раньше LOG.
+    save(rpe, meta, isTime, true, !done && parseNum(amount) != null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weight, amount]);
 
@@ -501,7 +539,7 @@ function SetRow({
       <TextInput
         value={value}
         onChangeText={onChange}
-        onEndEditing={() => save()}
+        onEndEditing={() => save(rpe, meta, isTime, false, !done && parseNum(amount) != null)}
         editable={!locked}
         placeholder={placeholder}
         placeholderTextColor={PLACEHOLDER}
@@ -657,9 +695,25 @@ type WGroup = {
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const workoutId = String(id);
+  const mutationScope = workoutMutationScope(workoutId);
   const { t } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
+  const pendingSetFlushes = useRef(new Set<() => void>());
+  const registerPendingFlush = useCallback((flush: () => void) => {
+    pendingSetFlushes.current.add(flush);
+    return () => pendingSetFlushes.current.delete(flush);
+  }, []);
+  const flushPendingSetUpdates = useCallback(
+    () => flushPendingCallbacks(pendingSetFlushes.current),
+    [],
+  );
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') flushPendingSetUpdates();
+    });
+    return () => subscription.remove();
+  }, [flushPendingSetUpdates]);
   const unit = useWeightUnit();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
@@ -717,7 +771,10 @@ export default function WorkoutScreen() {
   // Структурные мутации тренировки — все по mutationKey; fn+оптимистика живут в defaults на
   // QueryClient (registerWorkoutMutationDefaults), чтобы оффлайн-запись (старт/подходы/добавление/
   // удаление/перестановка/«готово»/завершение) пережила перезапуск и доиграла на реконнекте (SPEC §4).
-  const addExerciseMut = useMutation<string, Error, AddWeVars>({ mutationKey: WE_ADD });
+  const addExerciseMut = useMutation<string, Error, AddWeVars>({
+    mutationKey: WE_ADD,
+    scope: mutationScope,
+  });
 
   // добавить упражнение в тренировку: оптимистика и доживание — в дефолте WE_ADD; здесь только
   // UI-побочки (закрыть пикер, освежить «недавние») сразу, не дожидаясь сети.
@@ -762,14 +819,25 @@ export default function WorkoutScreen() {
     addExerciseToWorkout(ex);
   };
 
-  const addSetMut = useMutation<SetRowType, Error, AddSetVars>({ mutationKey: SET_ADD });
-  const updateSetMut = useMutation<void, Error, UpdateSetVars>({ mutationKey: SET_UPDATE });
-  const deleteSetMut = useMutation<void, Error, DeleteSetVars>({ mutationKey: SET_DELETE });
+  const addSetMut = useMutation<SetRowType, Error, AddSetVars>({
+    mutationKey: SET_ADD,
+    scope: mutationScope,
+  });
+  const deleteSetMut = useMutation<void, Error, DeleteSetVars>({
+    mutationKey: SET_DELETE,
+    scope: mutationScope,
+  });
 
   // убрать упражнение/блок из тренировки целиком (для кластера — все его упражнения)
-  const removeExerciseMut = useMutation<void, Error, RemoveWeVars>({ mutationKey: WE_REMOVE });
+  const removeExerciseMut = useMutation<void, Error, RemoveWeVars>({
+    mutationKey: WE_REMOVE,
+    scope: mutationScope,
+  });
 
-  const moveWorkoutExMut = useMutation<void, Error, ReorderWeVars>({ mutationKey: WE_REORDER });
+  const moveWorkoutExMut = useMutation<void, Error, ReorderWeVars>({
+    mutationKey: WE_REORDER,
+    scope: mutationScope,
+  });
   // переставить упражнение внутри кластера на dir (-1 вверх / +1 вниз).
   // order_index в тренировке глобальный → переиспользуем существующие слоты группы (не 0..n-1).
   const moveClusterItem = (items: WorkoutExercise[], i: number, dir: number) => {
@@ -781,9 +849,15 @@ export default function WorkoutScreen() {
     moveWorkoutExMut.mutate({ workoutId, ids, orders });
   };
 
-  const setLoggedMut = useMutation<void, Error, LogSetVars>({ mutationKey: SET_LOG });
+  const setLoggedMut = useMutation<void, Error, LogSetVars>({
+    mutationKey: SET_LOG,
+    scope: mutationScope,
+  });
 
-  const finishExerciseMut = useMutation<void, Error, DoneWeVars>({ mutationKey: WE_DONE });
+  const finishExerciseMut = useMutation<void, Error, DoneWeVars>({
+    mutationKey: WE_DONE,
+    scope: mutationScope,
+  });
 
   // отметить/снять «подход сделан»; при отметке отдых = разрыв с прошлым сделанным.
   // Авто-отдых по настенным часам осмыслен ТОЛЬКО в живой тренировке. При правке завершённой
@@ -820,11 +894,15 @@ export default function WorkoutScreen() {
 
   // Завершить тренировку: запись (ended_at + оптимистика + доживание) — в дефолте WORKOUT_FINISH;
   // на сводку уходим СРАЗУ, не дожидаясь сети (offline-first), как старт тренировки.
-  const finishMut = useMutation<void, Error, FinishVars>({ mutationKey: WORKOUT_FINISH });
+  const finishMut = useMutation<void, Error, FinishVars>({
+    mutationKey: WORKOUT_FINISH,
+    scope: mutationScope,
+  });
   // любое «завершення» (тренування/вправу/кластер) сначала блюрит сфокусированный инпут →
   // onEndEditing→save (durable) успевает записать последнее введённое, потом уже действие.
   // Иначе значение в фокусе терялось при коллапсе/навигации (как отмечал Сергей).
   const flushThen = (fn: () => void) => {
+    flushPendingSetUpdates();
     Keyboard.dismiss();
     requestAnimationFrame(fn);
   };
@@ -901,9 +979,10 @@ export default function WorkoutScreen() {
             metric={we.exercise?.metric ?? 'reps'}
             logKind={we.exercise?.log_kind ?? null}
             grippers={grippers ?? []}
+            workoutId={workoutId}
+            registerPendingFlush={registerPendingFlush}
             sided={exerciseSided(we.exercise, we.display_name)}
             locked={!!we.done_at}
-            onSave={(setId, input) => updateSetMut.mutate({ workoutId, id: setId, input })}
             onToggleDone={onToggleDone}
             onAutoLog={markSetLogged}
             onDelete={(setId) => deleteSetMut.mutate({ workoutId, setId })}
@@ -1063,10 +1142,11 @@ export default function WorkoutScreen() {
                         metric={it.exercise?.metric ?? 'reps'}
                         logKind={it.exercise?.log_kind ?? null}
                         grippers={grippers ?? []}
+                        workoutId={workoutId}
+                        registerPendingFlush={registerPendingFlush}
                         headerLabel={exName(it)}
                         sided={exerciseSided(it.exercise, it.display_name)}
                         locked={allDone}
-                        onSave={(setId, input) => updateSetMut.mutate({ workoutId, id: setId, input })}
                         onToggleDone={onToggleDone}
                         onAutoLog={markSetLogged}
                         onDelete={(setId) => deleteSetMut.mutate({ workoutId, setId })}
