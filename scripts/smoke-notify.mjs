@@ -36,7 +36,7 @@ if (cmd === 'cleanup') {
 
 if (cmd !== 'insert') { console.log('usage: insert|cleanup'); process.exit(1); }
 
-const { data: dyno } = await db.from('dynamometers').select('id, code').limit(1).single();
+const { data: dyno } = await db.from('dynamometers').select('id, code').eq('is_active', true).limit(1).single();
 const { data: ins, error: insErr } = await db.from('leaderboard_entries').insert({
   user_id: user.id,
   board: 'dynamometer',

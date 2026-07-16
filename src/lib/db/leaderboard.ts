@@ -25,6 +25,7 @@ export type LeaderboardRow = {
   avatar: string | null;
   bodyweight?: number | null; // кг, из профиля участника (только в approved-витрине)
   board?: Board; // только в pending-RPC
+  dynamometer_code?: string | null; // стабильный ключ категории approved-витрины
   dynamometer: string | null;
   weight_kg: number | null;
   gripper_brand: string | null;
@@ -66,8 +67,30 @@ export async function listDynamometers(): Promise<Dynamometer[]> {
   return (data ?? []) as Dynamometer[];
 }
 
-export async function getLeaderboard(board: Board): Promise<LeaderboardRow[]> {
-  const { data, error } = await supabase.rpc('get_leaderboard', { p_board: board });
+export function leaderboardRpcFilters(
+  board: Board,
+  dynamometerCode: string | null = null,
+  setType: GripSetType | null = null,
+) {
+  if (board === 'dynamometer' && dynamometerCode == null) {
+    throw new Error('dynamometer_category_required');
+  }
+  return {
+    p_board: board,
+    p_dynamometer_code: board === 'dynamometer' ? dynamometerCode : null,
+    p_set_type: board === 'gripper' ? setType : null,
+  };
+}
+
+export async function getLeaderboard(
+  board: Board,
+  dynamometerCode: string | null = null,
+  setType: GripSetType | null = null,
+): Promise<LeaderboardRow[]> {
+  const { data, error } = await supabase.rpc(
+    'get_leaderboard',
+    leaderboardRpcFilters(board, dynamometerCode, setType),
+  );
   if (error) throw error;
   return (data ?? []) as LeaderboardRow[];
 }

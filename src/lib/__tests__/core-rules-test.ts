@@ -3,6 +3,9 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import { cyclePhase, daysBetween } from '@/lib/db/cycle';
 import {
+  leaderboardRpcFilters,
+} from '@/lib/db/leaderboard';
+import {
   discardConflictingWorkout,
   enqueueSetDraftMutations,
   type FinishVars,
@@ -45,6 +48,29 @@ describe('product role policy', () => {
     ['admin', true],
   ] as const)('%s private access = %s', (role, expected) => {
     expect(hasPrivateAccess(role)).toBe(expected);
+  });
+});
+
+describe('leaderboard category boundaries', () => {
+  test('XF-300 handle codes are sent as independent server-side filters', () => {
+    expect(leaderboardRpcFilters('dynamometer', 'xf300_14mm', 'tns')).toEqual({
+      p_board: 'dynamometer',
+      p_dynamometer_code: 'xf300_14mm',
+      p_set_type: null,
+    });
+    expect(leaderboardRpcFilters('dynamometer', 'xf300_18mm', 'deep')).toEqual({
+      p_board: 'dynamometer',
+      p_dynamometer_code: 'xf300_18mm',
+      p_set_type: null,
+    });
+    expect(leaderboardRpcFilters('gripper', 'xf300_14mm', 'card')).toEqual({
+      p_board: 'gripper',
+      p_dynamometer_code: null,
+      p_set_type: 'card',
+    });
+    expect(() => leaderboardRpcFilters('dynamometer', null, 'tns')).toThrow(
+      'dynamometer_category_required',
+    );
   });
 });
 

@@ -451,19 +451,22 @@ export default function LeaderboardScreen() {
   const { showDialog, dialog } = useAppDialog();
 
   const [board, setBoard] = useState<Board>('dynamometer');
-  const [dynFilter, setDynFilter] = useState<string | null>(null); // name; null = все
+  const [dynFilter, setDynFilter] = useState<string | null>(null); // stable code; null = справочник ещё грузится
   const [setTypeFilter, setSetTypeFilter] = useState<GripSetType>('tns');
   const [submitting, setSubmitting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null); // тап по строке → дата энтри
 
   const { data: dynamometers } = useQuery({
-    queryKey: ['dynamometers'],
+    // v2 сбрасывает часовой persisted-кэш общей XF-300 после разделения 14/18 мм.
+    queryKey: ['dynamometers', 'v2'],
     queryFn: listDynamometers,
     staleTime: 1000 * 60 * 60,
   });
+  const selectedDynCode = dynFilter ?? dynamometers?.[0]?.code ?? null;
   const { data: rows, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['leaderboard', board],
-    queryFn: () => getLeaderboard(board),
+    queryKey: ['leaderboard', board, board === 'dynamometer' ? selectedDynCode : setTypeFilter],
+    queryFn: () => getLeaderboard(board, selectedDynCode, setTypeFilter),
+    enabled: board !== 'dynamometer' || selectedDynCode != null,
   });
   // серт-лейблы живут в заявках эспандерного борда, но показываем их и на динамометре
   // (тот же queryKey, что и основной запрос при board==='gripper' — второго фетча нет)
@@ -502,12 +505,7 @@ export default function LeaderboardScreen() {
     });
 
   // фильтр + лучший результат на юзера
-  const filtered = (rows ?? []).filter((r) =>
-    board === 'dynamometer'
-      ? dynFilter == null || r.dynamometer === dynFilter
-      : r.set_type === setTypeFilter,
-  );
-  const ranked = bestPerUser(filtered, (r) => (board === 'dynamometer' ? r.weight_kg : rowRgcKg(r)));
+  const ranked = bestPerUser(rows ?? [], (r) => (board === 'dynamometer' ? r.weight_kg : rowRgcKg(r)));
   // «CoC 3, 3.5 Certified» у ника — из всех approved-заявок эспандерного борда (видно на обоих)
   const certByUser = certLabels(gripRows ?? []);
 
@@ -547,17 +545,17 @@ export default function LeaderboardScreen() {
         <View className="flex-row flex-wrap gap-2">
           {board === 'dynamometer' ? (
             <>
-              {[null, ...(dynamometers ?? []).map((d) => d.name)].map((name) => {
-                const active = dynFilter === name;
+              {(dynamometers ?? []).map((device) => {
+                const active = selectedDynCode === device.code;
                 return (
                   <Pressable
-                    key={name ?? 'all'}
-                    onPress={() => setDynFilter(name)}
+                    key={device.code}
+                    onPress={() => setDynFilter(device.code)}
                     className="rounded-full px-3 py-1.5 active:opacity-80"
                     style={{ backgroundColor: active ? '#1FB89A' : 'rgba(255,255,255,0.06)' }}
                   >
                     <Text className="text-sm" style={{ color: active ? '#0B0F14' : '#C7CDD6' }}>
-                      {name ?? t('leaderboard.allDevices')}
+                      {device.name}
                     </Text>
                   </Pressable>
                 );

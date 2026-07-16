@@ -48,7 +48,7 @@ const SET_TYPES = ['tns', 'card', 'deep'];
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const rndInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
-const { data: dynos } = await db.from('dynamometers').select('id, code');
+const { data: dynos } = await db.from('dynamometers').select('id, code').eq('is_active', true);
 const { data: grips } = await db.from('grippers').select('id, rgc').eq('is_global', true).not('rgc', 'is', null);
 
 let users = 0;
