@@ -4,7 +4,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { corsHeaders } from '../_shared/cors.ts';
-import { hasPrivateAccess } from '../_shared/roles.ts';
+import { getRole, hasPrivateAccess } from '../_shared/roles.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -57,16 +57,51 @@ Deno.serve(async (req) => {
     });
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData.user) return json({ error: 'unauthorized' }, 401);
-    const userId = userData.user.id;
+    const callerId = userData.user.id;
 
     const admin = createClient(url, serviceKey);
-    if (!(await hasPrivateAccess(admin, userId))) return json({ error: 'forbidden' }, 403);
+    if (!(await hasPrivateAccess(admin, callerId))) return json({ error: 'forbidden' }, 403);
+
+    const body = await req.json().catch(() => ({}));
+    const partner = body?.partner === true;
+    const readOnly = body?.readOnly === true;
+    let userId = callerId;
+
+    // «Ведмідь+»: только admin может читать/синкать OURA единственного private-пользователя full.
+    // PAT остаётся на сервере, клиент не получает ни токен, ни произвольный user_id.
+    if (partner) {
+      if ((await getRole(admin, callerId)) !== 'admin') return json({ error: 'forbidden' }, 403);
+      const { data: partners, error: partnerErr } = await admin
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'full')
+        .limit(2);
+      if (partnerErr) return json({ error: partnerErr.message }, 500);
+      if (partners?.length !== 1) return json({ error: 'bear_plus_partner_not_configured' }, 409);
+      userId = partners[0].user_id;
+    }
+
+    if (partner && readOnly) {
+      const { data: rows, error: rowsErr } = await admin
+        .from('health_snapshots')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(7);
+      if (rowsErr) return json({ error: rowsErr.message }, 500);
+      const safeRows = (rows ?? []).map(({ raw: _raw, user_id: _userId, ...row }) => row);
+      const scored = safeRows.find((r) => r.readiness != null || r.sleep_score != null);
+      const nightly = safeRows.find((r) => r.hrv != null || r.rhr != null || r.sleep_total_min != null);
+      const snap = scored ?? nightly ?? safeRows[0] ?? null;
+      const pendingDate = snap && safeRows[0]?.date > snap.date ? safeRows[0].date : null;
+      return json({ snap, pendingDate });
+    }
+
     const { data: token, error: tokErr } = await admin.rpc('get_oura_token', { p_user: userId });
     if (tokErr) return json({ error: tokErr.message }, 500);
     if (!token) return json({ error: 'not_connected' }, 400);
 
     // диапазон бэкафилла (по умолчанию 30 дней; body.days до ~5.5 лет для разовой полной истории)
-    const body = await req.json().catch(() => ({}));
     const days = Math.min(Math.max(Number(body?.days) || 30, 1), 2000);
     const end = new Date();
     const start = new Date(end.getTime() - days * 86400000);

@@ -90,6 +90,25 @@ export async function syncOura(days?: number): Promise<SyncResult | null> {
   return (data ?? null) as SyncResult | null;
 }
 
+export async function getBearPlusSnapshot(): Promise<LatestSnapshot> {
+  const { data, error } = await supabase.functions.invoke('oura-sync', {
+    body: { partner: true, readOnly: true },
+  });
+  if (error) throw error;
+  return {
+    snap: (data?.snap ?? null) as HealthSnapshot | null,
+    pendingDate: typeof data?.pendingDate === 'string' ? data.pendingDate : null,
+  };
+}
+
+export async function syncBearPlus(days = 30): Promise<SyncResult | null> {
+  const { data, error } = await supabase.functions.invoke('oura-sync', {
+    body: { partner: true, days },
+  });
+  if (error) throw error;
+  return (data ?? null) as SyncResult | null;
+}
+
 export async function getOuraConnected(userId: string): Promise<boolean> {
   const { data } = await supabase
     .from('profile')

@@ -21,7 +21,7 @@ import {
   type WorkoutDetail,
   type WorkoutSummary,
 } from '@/lib/db/workouts';
-import { hasPrivateAccess } from '@/lib/use-role';
+import { canViewBearPlus, hasPrivateAccess } from '@/lib/use-role';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { flushPendingCallbacks } from '@/lib/use-debounced-callback';
 import { fromKg, toKg } from '@/lib/use-unit';
@@ -48,6 +48,15 @@ describe('product role policy', () => {
     ['admin', true],
   ] as const)('%s private access = %s', (role, expected) => {
     expect(hasPrivateAccess(role)).toBe(expected);
+  });
+
+  test.each([
+    [undefined, false],
+    ['grip', false],
+    ['full', false],
+    ['admin', true],
+  ] as const)('%s Bear+ access = %s', (role, expected) => {
+    expect(canViewBearPlus(role)).toBe(expected);
   });
 });
 

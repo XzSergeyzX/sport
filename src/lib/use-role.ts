@@ -14,6 +14,10 @@ export function hasPrivateAccess(role: AppRole | undefined): role is 'full' | 'a
   return role === 'full' || role === 'admin';
 }
 
+export function canViewBearPlus(role: AppRole | undefined): role is 'admin' {
+  return role === 'admin';
+}
+
 export async function getMyRole(userId: string): Promise<AppRole> {
   const { data, error } = await supabase
     .from('user_roles')

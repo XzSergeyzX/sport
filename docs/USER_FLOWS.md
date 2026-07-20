@@ -148,6 +148,11 @@ morning/weekly brief и понятное отображение лимитов.
 3. Health и Analytics показывают readiness/sleep/HRV/RHR/temp, trends и correlations.
 4. Cycle tracking хранит даты дня 1 в `cycle_periods`; current day/phase вычисляется из истории.
 5. В Analytics можно отметить день 1 задним числом.
+6. Только Сергей (`admin`) видит в Analytics суб-таб «Ведмідь+»: сервер находит единственный
+   аккаунт `full` (Мария), отдаёт последний полный OURA-снимок без `raw`, PAT и `user_id`.
+   «Сталкернути лапку» запускает 30-дневный синк Машиного PAT и перечитывает карточки.
+7. Мария (`full`), `grip` и неавторизованный запрос партнёрского режима получают deny; прямой
+   RLS-доступ к чужим `health_snapshots` не расширяется.
 
 Открыто: OAuth + refresh/disconnect, daily cron, индивидуальные фазы и восстановление UI для
 edit/delete/history дат цикла. DB-функции edit/delete есть, но текущий экран их не вызывает.

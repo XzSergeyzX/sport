@@ -21,10 +21,16 @@ import {
   phaseForDate,
 } from '@/lib/db/cycle';
 import { type Cluster, CLUSTER_ORDER, clusterKey, exerciseName } from '@/lib/db/exercises';
-import { getSnapshotsRange, type HealthSnapshot } from '@/lib/db/oura';
+import {
+  getBearPlusSnapshot,
+  getSnapshotsRange,
+  syncBearPlus,
+  type HealthSnapshot,
+} from '@/lib/db/oura';
 import i18n from '@/lib/i18n';
 import { useTabBarHeight } from '@/lib/tab-bar';
 import { formatWeight, fromKg, useWeightUnit, type WeightUnit } from '@/lib/use-unit';
+import { canViewBearPlus, useRole } from '@/lib/use-role';
 
 // стабильная пустышка, чтобы memo не пересчитывался на каждом рендере до прихода данных
 const EMPTY_SUMMARY: AnalyticsSummary = { workouts: [], rep_records: [], time_records: [], grip_records: [] };
@@ -336,6 +342,23 @@ function RecoveryCard({ m }: { m: RecoveryMetric }) {
   );
 }
 
+function BearMetricCard({ spec, snap }: { spec: RecoverySpec; snap: HealthSnapshot }) {
+  const { t } = useTranslation();
+  const value = spec.get(snap);
+  if (value == null) return null;
+  return (
+    <View className="mb-3 w-[48%] rounded-2xl bg-graphite-900 p-4">
+      <View className="flex-row items-baseline">
+        <Text className="text-2xl font-extrabold text-graphite-50">{spec.fmt(value)}</Text>
+        {spec.unit ? (
+          <Text className="ml-1 text-xs text-graphite-500">{t(`health.units.${spec.unit}`)}</Text>
+        ) : null}
+      </View>
+      <Text className="mt-1 text-xs text-graphite-400">{t(`health.metrics.${spec.key}`)}</Text>
+    </View>
+  );
+}
+
 // ——— Кореляція «тренування × відновлення × цикл»: сшиваем по дате ———
 
 function ymdLocal(iso: string): string {
@@ -448,7 +471,7 @@ const PHASE_ORDER: CyclePhase[] = ['menstrual', 'follicular', 'ovulation', 'lute
 
 // суб-табы: экран был перегружен одной лентой (фидбек день-53) — статы/тоннаж/календарь,
 // рекорды и восстановление разнесены; «Відновлення» — только при данных OURA (как таб Здоров'я)
-type SubTab = 'training' | 'records' | 'recovery';
+type SubTab = 'training' | 'records' | 'recovery' | 'bear_plus';
 
 function CompareStat({ label, value, vs }: { label: string; value: string; vs: string | null }) {
   return (
@@ -680,6 +703,8 @@ export default function AnalyticsScreen() {
   const lang = i18n.language;
   const { session } = useAuth();
   const userId = session?.user.id;
+  const role = useRole();
+  const showBearPlus = canViewBearPlus(role);
   const tabBarHeight = useTabBarHeight();
   const [openClusters, setOpenClusters] = useState<Record<string, boolean>>({});
   const [openEx, setOpenEx] = useState<Record<string, boolean>>({});
@@ -701,6 +726,16 @@ export default function AnalyticsScreen() {
     enabled: !!userId,
   });
 
+  const {
+    data: bearLatest,
+    isLoading: isBearLoading,
+    isError: isBearError,
+  } = useQuery({
+    queryKey: ['bear-plus', userId],
+    queryFn: getBearPlusSnapshot,
+    enabled: !!userId && showBearPlus,
+  });
+
   const { data: cycleStarts } = useQuery({
     queryKey: ['analytics-cycle-starts', userId],
     queryFn: () => getPeriodStarts(userId as string),
@@ -711,6 +746,11 @@ export default function AnalyticsScreen() {
   const router = useRouter();
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  const bearSyncMut = useMutation({
+    mutationFn: () => syncBearPlus(30),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bear-plus', userId] }),
+  });
 
   const { data: trackCycle } = useQuery({
     queryKey: ['track-cycle', userId],
@@ -741,7 +781,10 @@ export default function AnalyticsScreen() {
   const hasOura = (snaps?.length ?? 0) > 0;
   const showRecoveryTab = hasOura;
   // если данные OURA пропали (сменился аккаунт/кэш) — с «Відновлення» тихо падаем на первый таб
-  const activeTab: SubTab = tab === 'recovery' && !showRecoveryTab ? 'training' : tab;
+  const activeTab: SubTab =
+    (tab === 'recovery' && !showRecoveryTab) || (tab === 'bear_plus' && !showBearPlus)
+      ? 'training'
+      : tab;
   const switchTab = (next: SubTab) => {
     setTab(next);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -749,6 +792,7 @@ export default function AnalyticsScreen() {
   const tabItems: SegmentOption<SubTab>[] = [
     { value: 'training', label: t('analytics.tabTraining') },
     { value: 'records', label: t('analytics.records') },
+    ...(showBearPlus ? [{ value: 'bear_plus' as const, label: t('analytics.bearPlus') }] : []),
     ...(showRecoveryTab ? [{ value: 'recovery' as const, label: t('analytics.recovery') }] : []),
   ];
 
@@ -756,7 +800,12 @@ export default function AnalyticsScreen() {
   // применения параметр сбрасывается, чтобы повторный переход сработал снова
   const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
   useEffect(() => {
-    if (tabParam === 'training' || tabParam === 'records' || tabParam === 'recovery') {
+    if (
+      tabParam === 'training' ||
+      tabParam === 'records' ||
+      tabParam === 'recovery' ||
+      tabParam === 'bear_plus'
+    ) {
       switchTab(tabParam);
       router.setParams({ tab: '' });
     }
@@ -847,7 +896,7 @@ export default function AnalyticsScreen() {
           <View className="mt-10 items-center">
             <ActivityIndicator color="#848D9A" />
           </View>
-        ) : a.workouts === 0 && !hasOura ? (
+        ) : a.workouts === 0 && !hasOura && !showBearPlus ? (
           <EmptyCard text={t('analytics.empty')} />
         ) : (
           <>
@@ -1126,6 +1175,69 @@ export default function AnalyticsScreen() {
                   </>
                 )}
               </>
+            )}
+
+            {activeTab === 'bear_plus' && (
+              <View className="mt-5">
+                <View className="rounded-2xl border border-accent/20 bg-graphite-900 p-5">
+                  <Text className="text-lg font-extrabold text-graphite-50">
+                    {t('analytics.bearPlusTitle')}
+                  </Text>
+                  <Text className="mt-1 text-sm leading-5 text-graphite-400">
+                    {t('analytics.bearPlusHint')}
+                  </Text>
+                  {bearLatest?.snap?.date ? (
+                    <Text className="mt-3 text-xs text-graphite-500">
+                      {t('health.asOf', {
+                        date: new Date(bearLatest.snap.date).toLocaleDateString(
+                          i18n.language === 'uk' ? 'uk-UA' : 'en-US',
+                          { day: 'numeric', month: 'long' },
+                        ),
+                      })}
+                    </Text>
+                  ) : null}
+                  {bearLatest?.pendingDate ? (
+                    <Text className="mt-1 text-xs leading-4 text-amber-500/80">
+                      {t('health.pendingCloud')}
+                    </Text>
+                  ) : null}
+                </View>
+
+                {isBearLoading ? (
+                  <View className="mt-8 items-center">
+                    <ActivityIndicator color="#848D9A" />
+                  </View>
+                ) : isBearError ? (
+                  <EmptyCard text={t('analytics.bearPlusError')} />
+                ) : bearLatest?.snap ? (
+                  <View className="mt-4 flex-row flex-wrap justify-between">
+                    {RECOVERY_SPECS.map((spec) => (
+                      <BearMetricCard key={spec.key} spec={spec} snap={bearLatest.snap as HealthSnapshot} />
+                    ))}
+                  </View>
+                ) : (
+                  <EmptyCard text={t('analytics.bearPlusEmpty')} />
+                )}
+
+                <Pressable
+                  disabled={bearSyncMut.isPending}
+                  onPress={() => bearSyncMut.mutate()}
+                  className="mt-1 items-center rounded-xl bg-accent py-3 active:opacity-80"
+                >
+                  {bearSyncMut.isPending ? (
+                    <ActivityIndicator color="#0C0E12" />
+                  ) : (
+                    <Text className="text-sm font-bold text-graphite-950">
+                      {t('analytics.stalkPaw')}
+                    </Text>
+                  )}
+                </Pressable>
+                {bearSyncMut.isError ? (
+                  <Text className="mt-2 text-center text-sm text-red-400">
+                    {t('analytics.bearPlusSyncError')}
+                  </Text>
+                ) : null}
+              </View>
             )}
           </>
         )}
