@@ -280,7 +280,7 @@
       "records": "Records",
       "bearPlus": "Bear+",
       "bearPlusTitle": "How's the paw?",
-      "bearPlusHint": "Maria's latest complete morning OURA snapshot. Visible only to Sergey.",
+      "bearPlusHint": "Maria's latest complete morning OURA snapshot.",
       "stalkPaw": "Stalk the paw",
       "bearPlusEmpty": "No Maria data yet — stalk the paw to pull it from OURA.",
       "bearPlusError": "Couldn't load Bear+. Try again.",
