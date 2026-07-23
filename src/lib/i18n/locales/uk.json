@@ -226,7 +226,12 @@
     "replacing": "Заміна…",
     "metric": "Вимірюється в",
     "metricReps": "Повтори",
-    "metricTime": "Секунди"
+    "metricTime": "Секунди",
+    "sideTracking": "Облік сторони",
+    "sideTrackingOff": "Без сторони",
+    "sideTrackingOn": "Ліва / права / обидві",
+    "sideTrackingHintOff": "Підхід записується один раз без вибору сторони.",
+    "sideTrackingHintOn": "У кожному підході можна обрати ліву, праву або обидві."
   },
   "programs": {
     "title": "Програми",

@@ -188,6 +188,7 @@ export type ExerciseEdit = {
   cluster: Cluster | null;
   category: Category | null;
   metric: Metric;
+  unilateral: boolean;
 };
 
 /** Вид установки эспандера (для словника «Сила хвата»). */
@@ -227,6 +228,7 @@ export async function updateExercise(id: string, patch: ExerciseEdit): Promise<v
       cluster: patch.cluster,
       category: patch.category,
       metric: patch.metric,
+      unilateral: patch.unilateral,
     })
     .eq('id', id);
   if (error) throw error;
@@ -265,7 +267,11 @@ export async function replaceExercise(oldId: string, newId: string): Promise<voi
  * Создать своё (приватное) упражнение. RLS делает его видимым только владельцу;
  * дневной лимит на спам — триггер enforce_exercise_daily_cap (код ошибки 'exercise_daily_cap').
  */
-export async function createCustomExercise(userId: string, name: string): Promise<Exercise> {
+export async function createCustomExercise(
+  userId: string,
+  name: string,
+  unilateral?: boolean,
+): Promise<Exercise> {
   const trimmed = name.trim().slice(0, 200);
   // авто-капитализация первой буквы (пользователь ввёл с маленькой)
   const clean = trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed;
@@ -276,7 +282,7 @@ export async function createCustomExercise(userId: string, name: string): Promis
       name_en: clean,
       name_uk: clean,
       is_global: false,
-      unilateral: exerciseSided({ name_en: clean, name_uk: clean }),
+      unilateral: unilateral ?? exerciseSided({ name_en: clean, name_uk: clean }),
     })
     .select('*')
     .single();

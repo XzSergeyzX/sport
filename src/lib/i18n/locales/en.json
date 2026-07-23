@@ -226,7 +226,12 @@
     "replacing": "Replacing…",
     "metric": "Measured in",
     "metricReps": "Reps",
-    "metricTime": "Seconds"
+    "metricTime": "Seconds",
+    "sideTracking": "Side tracking",
+    "sideTrackingOff": "No side",
+    "sideTrackingOn": "Left / right / both",
+    "sideTrackingHintOff": "Sets are logged once, without choosing a side.",
+    "sideTrackingHintOn": "Each set lets you choose left, right, or both."
   },
   "programs": {
     "title": "Programs",

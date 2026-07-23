@@ -431,9 +431,11 @@ export default function ProgramDetailScreen() {
   // «+ своё» в пикере — создаём кастомное упражнение (серверный каталог), затем добавляем в прогу
   const { showDialog, dialog } = useAppDialog();
   const createExMut = useMutation({
-    mutationFn: (name: string) => createCustomExercise(session!.user.id, name),
+    mutationFn: (input: { name: string; unilateral: boolean }) =>
+      createCustomExercise(session!.user.id, input.name, input.unilateral),
     onSuccess: (ex) => {
       qc.invalidateQueries({ queryKey: ['exercises-all'] });
+      qc.invalidateQueries({ queryKey: ['my-exercises'] });
       addExerciseToProgram(ex);
     },
     onError: (e: Error) =>
@@ -850,7 +852,7 @@ export default function ProgramDetailScreen() {
           setPickerBlockId(null);
         }}
         onSelect={onPickExercise}
-        onCreate={(name) => createExMut.mutate(name)}
+        onCreate={(input) => createExMut.mutate(input)}
         creating={createExMut.isPending}
       />
 

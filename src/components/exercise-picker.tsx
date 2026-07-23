@@ -36,12 +36,13 @@ export function ExercisePicker({
   disciplines: string[];
   onClose: () => void;
   onSelect: (ex: Exercise) => void;
-  onCreate: (name: string) => void;
+  onCreate: (input: { name: string; unilateral: boolean }) => void;
   creating: boolean;
 }) {
   const { t } = useTranslation();
   const lang = i18n.language;
   const [term, setTerm] = useState('');
+  const [customSided, setCustomSided] = useState(false);
   const searching = term.trim() !== '';
   const { data, isFetching } = useQuery({
     queryKey: ['exercises-all'],
@@ -56,7 +57,10 @@ export function ExercisePicker({
 
   // сбрасываем поиск при каждом открытии — заново то же упражнение почти не выбирают
   useEffect(() => {
-    if (visible) setTerm('');
+    if (visible) {
+      setTerm('');
+      setCustomSided(false);
+    }
   }, [visible]);
 
   const groups = useMemo(() => {
@@ -111,22 +115,64 @@ export function ExercisePicker({
             {isFetching && <ActivityIndicator color="#848D9A" />}
 
             {searching && (
-              <Pressable
-                onPress={() => onCreate(term.trim())}
-                disabled={creating}
-                className="mb-2 flex-row items-center gap-2 rounded-xl bg-graphite-800 px-3 py-3 active:opacity-80"
-              >
-                {creating ? (
-                  <ActivityIndicator color="#848D9A" />
-                ) : (
-                  <>
-                    <Text className="text-base text-accent">＋</Text>
-                    <Text className="flex-1 text-base text-graphite-100">
-                      {t('workout.createCustom', { name: term.trim() })}
+              <View className="mb-2 rounded-xl bg-graphite-800 p-3">
+                <Text className="text-xs font-semibold uppercase tracking-wide text-graphite-500">
+                  {t('exercises.sideTracking')}
+                </Text>
+                <View className="mt-2 flex-row gap-2">
+                  <Pressable
+                    onPress={() => setCustomSided(false)}
+                    className="flex-1 items-center rounded-xl border px-2 py-2.5 active:opacity-80"
+                    style={{
+                      borderColor: customSided ? '#343B46' : '#1FB89A',
+                      backgroundColor: customSided ? 'transparent' : 'rgba(31,184,154,0.12)',
+                    }}
+                  >
+                    <Text
+                      className="text-center text-sm"
+                      style={{ color: customSided ? '#C7CDD6' : '#1FB89A' }}
+                    >
+                      {t('exercises.sideTrackingOff')}
                     </Text>
-                  </>
-                )}
-              </Pressable>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setCustomSided(true)}
+                    className="flex-1 items-center rounded-xl border px-2 py-2.5 active:opacity-80"
+                    style={{
+                      borderColor: customSided ? '#1FB89A' : '#343B46',
+                      backgroundColor: customSided ? 'rgba(31,184,154,0.12)' : 'transparent',
+                    }}
+                  >
+                    <Text
+                      className="text-center text-sm"
+                      style={{ color: customSided ? '#1FB89A' : '#C7CDD6' }}
+                    >
+                      {t('exercises.sideTrackingOn')}
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text className="mt-2 text-xs text-graphite-500">
+                  {customSided
+                    ? t('exercises.sideTrackingHintOn')
+                    : t('exercises.sideTrackingHintOff')}
+                </Text>
+                <Pressable
+                  onPress={() => onCreate({ name: term.trim(), unilateral: customSided })}
+                  disabled={creating}
+                  className="mt-3 flex-row items-center gap-2 rounded-xl bg-graphite-700 px-3 py-3 active:opacity-80"
+                >
+                  {creating ? (
+                    <ActivityIndicator color="#848D9A" />
+                  ) : (
+                    <>
+                      <Text className="text-base text-accent">＋</Text>
+                      <Text className="flex-1 text-base text-graphite-100">
+                        {t('workout.createCustom', { name: term.trim() })}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
             )}
 
             {!isFetching && !searching && groups.length === 0 && (

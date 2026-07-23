@@ -12,6 +12,8 @@ import {
   ScrollView,
   Text,
   TextInput,
+  UIManager,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -387,6 +389,8 @@ function SetRow({
   grippers,
   workoutId,
   registerPendingFlush,
+  onInputFocus,
+  onInputBlur,
   onToggleDone,
   onAutoLog,
   onDelete,
@@ -402,6 +406,8 @@ function SetRow({
   grippers: Gripper[];
   workoutId: string;
   registerPendingFlush: (flush: () => void) => () => void;
+  onInputFocus: (target: number) => void;
+  onInputBlur: (target: number) => void;
   onToggleDone: (set: SetRowType) => void;
   onAutoLog: (set: SetRowType) => void;
   onDelete: (id: string) => void;
@@ -539,6 +545,8 @@ function SetRow({
       <TextInput
         value={value}
         onChangeText={onChange}
+        onFocus={(event) => onInputFocus(event.nativeEvent.target)}
+        onBlur={(event) => onInputBlur(event.nativeEvent.target)}
         onEndEditing={() => save(rpe, meta, isTime, false, !done && parseNum(amount) != null)}
         editable={!locked}
         placeholder={placeholder}
@@ -699,6 +707,10 @@ export default function WorkoutScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
+  const { height: windowHeight } = useWindowDimensions();
+  const workoutScrollRef = useRef<ScrollView>(null);
+  const workoutScrollOffset = useRef(0);
+  const focusedInputTarget = useRef<number | null>(null);
   const pendingSetFlushes = useRef(new Set<() => void>());
   const registerPendingFlush = useCallback((flush: () => void) => {
     pendingSetFlushes.current.add(flush);
@@ -718,6 +730,51 @@ export default function WorkoutScreen() {
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
   const keyboardVisible = keyboardHeight > 0;
+  const revealInputAboveKeyboard = useCallback((target: number) => {
+    focusedInputTarget.current = target;
+    requestAnimationFrame(() => {
+      if (focusedInputTarget.current !== target) return;
+      const scrollView = workoutScrollRef.current;
+      if (!scrollView) return;
+      const nativeScrollView = scrollView.getNativeScrollRef();
+      nativeScrollView?.measureInWindow((_scrollX, scrollY, _scrollWidth, scrollHeight) => {
+        if (focusedInputTarget.current !== target) return;
+        UIManager.measureInWindow(target, (_inputX, inputY, _inputWidth, inputHeight) => {
+          if (focusedInputTarget.current !== target) return;
+          const keyboardTop = windowHeight - keyboardHeight;
+          const visibleBottom = Math.min(scrollY + scrollHeight, keyboardTop);
+          const inputBottomWithContext = inputY + inputHeight + 104;
+          const overlap = inputBottomWithContext - visibleBottom;
+
+          if (overlap > 0) {
+            scrollView.scrollTo({
+              y: Math.max(0, workoutScrollOffset.current + overlap),
+              animated: true,
+            });
+          }
+        });
+      });
+    });
+  }, [keyboardHeight, windowHeight]);
+  const clearFocusedInput = useCallback((target: number) => {
+    if (focusedInputTarget.current === target) {
+      focusedInputTarget.current = null;
+    }
+  }, []);
+  useEffect(() => {
+    if (!keyboardVisible) {
+      focusedInputTarget.current = null;
+      return;
+    }
+    // Android edge-to-edge: onFocus приходит раньше keyboardDidShow. Повтор после изменения
+    // keyboardHeight использует уже фактическую рамку клавиатуры и доскролливает поле точно.
+    const timeout = setTimeout(() => {
+      if (focusedInputTarget.current != null) {
+        revealInputAboveKeyboard(focusedInputTarget.current);
+      }
+    }, 50);
+    return () => clearTimeout(timeout);
+  }, [keyboardVisible, keyboardHeight, revealInputAboveKeyboard]);
   const lang = i18n.language;
   const { session, initializing } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -794,9 +851,11 @@ export default function WorkoutScreen() {
   // после создания добавляем его в тренировку уже durable-путём.
   const { showDialog, dialog } = useAppDialog();
   const createExerciseMut = useMutation({
-    mutationFn: (name: string) => createCustomExercise(session!.user.id, name),
+    mutationFn: (input: { name: string; unilateral: boolean }) =>
+      createCustomExercise(session!.user.id, input.name, input.unilateral),
     onSuccess: (ex) => {
       qc.invalidateQueries({ queryKey: ['exercises-all'] });
+      qc.invalidateQueries({ queryKey: ['my-exercises'] });
       addExerciseToWorkout(ex);
     },
     onError: (e: Error) => {
@@ -981,6 +1040,8 @@ export default function WorkoutScreen() {
             grippers={grippers ?? []}
             workoutId={workoutId}
             registerPendingFlush={registerPendingFlush}
+            onInputFocus={revealInputAboveKeyboard}
+            onInputBlur={clearFocusedInput}
             sided={exerciseSided(we.exercise, we.display_name)}
             locked={!!we.done_at}
             onToggleDone={onToggleDone}
@@ -1144,6 +1205,8 @@ export default function WorkoutScreen() {
                         grippers={grippers ?? []}
                         workoutId={workoutId}
                         registerPendingFlush={registerPendingFlush}
+                        onInputFocus={revealInputAboveKeyboard}
+                        onInputBlur={clearFocusedInput}
                         headerLabel={exName(it)}
                         sided={exerciseSided(it.exercise, it.display_name)}
                         locked={allDone}
@@ -1245,9 +1308,14 @@ export default function WorkoutScreen() {
         {!workout.ended_at && <RestNow anchor={anchor} />}
 
         <ScrollView
+          ref={workoutScrollRef}
           className="mt-4 flex-1"
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ gap: 16, paddingBottom: 24 }}
+          contentContainerStyle={{ gap: 16, paddingBottom: keyboardVisible ? 160 : 24 }}
+          onScroll={(event) => {
+            workoutScrollOffset.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
         >
           {workout.workout_exercises.length === 0 && (
@@ -1282,7 +1350,7 @@ export default function WorkoutScreen() {
         disciplines={disciplines ?? []}
         onClose={() => setPickerOpen(false)}
         onSelect={onPickExercise}
-        onCreate={(name) => createExerciseMut.mutate(name)}
+        onCreate={(input) => createExerciseMut.mutate(input)}
         creating={createExerciseMut.isPending}
       />
 

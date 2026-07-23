@@ -51,10 +51,14 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
   const [cluster, setCluster] = useState<Cluster | null>(exercise.cluster);
   const [category, setCategory] = useState<Category | null>(exercise.category);
   const [metric, setMetric] = useState<Metric>(exercise.metric);
+  const [unilateral, setUnilateral] = useState(exercise.unilateral);
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ['my-exercises'] });
     qc.invalidateQueries({ queryKey: ['exercises-all'] });
+    qc.invalidateQueries({ queryKey: ['exercises-recent'] });
+    qc.invalidateQueries({ queryKey: ['workout'] });
+    qc.invalidateQueries({ queryKey: ['program'] });
     onClose();
   };
 
@@ -66,6 +70,7 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
         cluster,
         category,
         metric,
+        unilateral,
       }),
     onSuccess: done,
   });
@@ -167,6 +172,27 @@ function EditExercise({ exercise, onClose }: { exercise: Exercise; onClose: () =
               onPress={() => setMetric('time')}
             />
           </View>
+
+          <Text className="mt-5 text-xs font-semibold uppercase tracking-wide text-graphite-500">
+            {t('exercises.sideTracking')}
+          </Text>
+          <View className="mt-2 flex-row flex-wrap gap-2">
+            <Chip
+              label={t('exercises.sideTrackingOff')}
+              active={!unilateral}
+              onPress={() => setUnilateral(false)}
+            />
+            <Chip
+              label={t('exercises.sideTrackingOn')}
+              active={unilateral}
+              onPress={() => setUnilateral(true)}
+            />
+          </View>
+          <Text className="mt-2 text-xs text-graphite-500">
+            {unilateral
+              ? t('exercises.sideTrackingHintOn')
+              : t('exercises.sideTrackingHintOff')}
+          </Text>
 
           <Pressable
             disabled={saveMut.isPending || nameUk.trim().length === 0}

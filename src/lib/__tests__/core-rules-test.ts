@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react-native';
 
 import { cyclePhase, daysBetween } from '@/lib/db/cycle';
+import { exerciseSided } from '@/lib/db/exercises';
 import {
   leaderboardRpcFilters,
 } from '@/lib/db/leaderboard';
@@ -93,6 +94,13 @@ describe('leaderboard category boundaries', () => {
       p_dynamometer_view: 'absolute',
     });
     expect(leaderboardRpcFilters('dynamometer', 'gm150', null, 'sum').p_dynamometer_view).toBe('sum');
+  });
+});
+
+describe('exercise side tracking', () => {
+  test('explicit custom-exercise choice overrides name heuristics', () => {
+    expect(exerciseSided({ name_uk: 'Зрив з кута 90 градусів через натяжку', unilateral: true })).toBe(true);
+    expect(exerciseSided({ name_uk: 'Тяга однією рукою', unilateral: false })).toBe(false);
   });
 });
 
