@@ -504,8 +504,8 @@ function SetRow({
     save(rpe, next);
   };
 
-  // сторона циклится тапом: нет → ліва → права → обидві → нет (без лишних окон).
-  // «Обидві» = сделано на обе стороны на ОДНОМ весе → объём (повт/тоннаж) считается ×2.
+  // сторона циклится тапом: не вказано → ліва → права → обидві → не вказано.
+  // Пустота = одна сторона, но неизвестно какая (×1); «Обидві» = обе стороны на одном весе (×2).
   const cycleSide = () => {
     const order: (SetSide | undefined)[] = [undefined, 'left', 'right', 'both'];
     const i = order.indexOf(meta.side);
@@ -654,7 +654,7 @@ function SetRow({
             className="rounded-md bg-graphite-800 px-2.5 py-1 active:opacity-70"
           >
             <Text className="text-[11px]" style={{ color: meta.side ? '#E5E7EB' : PLACEHOLDER }}>
-              {meta.side ? t(`workout.side_${meta.side}`) : t('workout.side')}
+              {meta.side ? t(`workout.side_${meta.side}`) : t('workout.side_unspecified_short')}
             </Text>
           </Pressable>
         )}

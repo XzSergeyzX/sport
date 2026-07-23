@@ -52,7 +52,14 @@
     "signOut": "Sign out",
     "delete": "Delete",
     "deleteTitle": "Delete workout?",
-    "deleteWarn": "This permanently deletes the workout from the database. This can't be undone."
+    "deleteWarn": "This permanently deletes the workout from the database. This can't be undone.",
+    "workoutDateEdit": "Change workout date and time",
+    "workoutDateTitle": "Workout date and time",
+    "workoutDateHint": "The workout duration stays the same. Its place in history and analytics will update.",
+    "workoutDate": "Date",
+    "workoutTime": "Time",
+    "workoutDateSave": "Save",
+    "workoutDateFuture": "A workout can't end in the future."
   },
   "tabs": {
     "workouts": "Workouts",
@@ -513,6 +520,8 @@
     "side_left": "Left",
     "side_right": "Right",
     "side_both": "Both",
+    "side_unspecified": "Side unspecified",
+    "side_unspecified_short": "Unspecified",
     "set": "Set",
     "search": "Search exercise…",
     "noResults": "Nothing found",

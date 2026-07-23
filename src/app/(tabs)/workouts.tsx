@@ -8,8 +8,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SettingsButton } from '@/components/settings-button';
 import { SyncStatus } from '@/components/sync-status';
+import { WorkoutDateEditor } from '@/components/workout-date-editor';
 import { useAuth } from '@/lib/auth/auth-context';
 import { humanDate } from '@/lib/dates';
+import {
+  type RescheduleVars,
+  WORKOUT_RESCHEDULE,
+  workoutMutationScope,
+} from '@/lib/db/workout-mutations';
 import { findActiveWorkoutSummary, importPastWorkout, listWorkoutSummaries } from '@/lib/db/workouts';
 import i18n from '@/lib/i18n';
 import { pluralCount } from '@/lib/plural';
@@ -49,6 +55,15 @@ export default function WorkoutsScreen() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [scheduleTarget, setScheduleTarget] = useState<{
+    id: string;
+    startedAt: string;
+    endedAt: string;
+  } | null>(null);
+  const scheduleMut = useMutation<void, Error, RescheduleVars>({
+    mutationKey: WORKOUT_RESCHEDULE,
+    scope: scheduleTarget ? workoutMutationScope(scheduleTarget.id) : undefined,
+  });
   const importMut = useMutation({
     mutationFn: () => importPastWorkout(importText.trim()),
     // платный НЕидемпотентный вызов ИИ: повтор дважды списал бы кост. retry фиксируем в 0 явно
@@ -206,41 +221,74 @@ export default function WorkoutsScreen() {
                 pluralCount(t, lang, 'reps', w.rep_count ?? 0),
               ].join(' · ');
               return (
-                <Pressable
+                <View
                   key={w.id}
-                  onPress={() =>
-                    router.push(
-                      done
-                        ? { pathname: '/summary/[id]', params: { id: w.id } }
-                        : { pathname: '/workout/[id]', params: { id: w.id } },
-                    )
-                  }
-                  className="rounded-2xl bg-graphite-900 p-4 active:opacity-80"
+                  className="flex-row items-center rounded-2xl bg-graphite-900"
                 >
-                  <View className="flex-row items-center justify-between">
-                    <Text className="flex-1 text-base font-semibold capitalize text-graphite-100">
-                      <Text className="text-xs font-bold text-graphite-600">№{num}  </Text>
-                      {humanDate(w.started_at, locale)}
-                    </Text>
-                    <View className="flex-row items-center gap-2">
-                      {!done && (
-                        <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
-                      )}
-                      <Ionicons name="chevron-forward" size={16} color="#3A3F49" />
+                  <Pressable
+                    onPress={() =>
+                      router.push(
+                        done
+                          ? { pathname: '/summary/[id]', params: { id: w.id } }
+                          : { pathname: '/workout/[id]', params: { id: w.id } },
+                      )
+                    }
+                    className="flex-1 p-4 active:opacity-80"
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <Text className="flex-1 text-base font-semibold capitalize text-graphite-100">
+                        <Text className="text-xs font-bold text-graphite-600">№{num}  </Text>
+                        {humanDate(w.started_at, locale)}
+                      </Text>
+                      <View className="flex-row items-center gap-2">
+                        {!done && (
+                          <Text className="text-xs font-semibold text-accent">{t('home.inProgress')}</Text>
+                        )}
+                        <Ionicons name="chevron-forward" size={16} color="#3A3F49" />
+                      </View>
                     </View>
-                  </View>
-                  <Text className="mt-1 text-sm text-graphite-400">{counts}</Text>
-                  {(w.tonnage ?? 0) > 0 && (
-                    <Text className="mt-0.5 text-sm text-graphite-500">
-                      {Math.round(fromKg(w.tonnage, unit) ?? 0)} {unitLabel}
-                    </Text>
+                    <Text className="mt-1 text-sm text-graphite-400">{counts}</Text>
+                    {(w.tonnage ?? 0) > 0 && (
+                      <Text className="mt-0.5 text-sm text-graphite-500">
+                        {Math.round(fromKg(w.tonnage, unit) ?? 0)} {unitLabel}
+                      </Text>
+                    )}
+                  </Pressable>
+                  {done && (
+                    <Pressable
+                      accessibilityLabel={t('home.workoutDateEdit')}
+                      hitSlop={6}
+                      onPress={() =>
+                        setScheduleTarget({
+                          id: w.id,
+                          startedAt: w.started_at,
+                          endedAt: w.ended_at!,
+                        })
+                      }
+                      className="mr-3 h-11 w-11 items-center justify-center rounded-xl bg-graphite-800 active:opacity-70"
+                    >
+                      <Ionicons name="calendar-outline" size={19} color="#9CA3AF" />
+                    </Pressable>
                   )}
-                </Pressable>
+                </View>
               );
             })}
           </View>
         )}
       </ScrollView>
+
+      {scheduleTarget && (
+        <WorkoutDateEditor
+          visible
+          startedAt={scheduleTarget.startedAt}
+          endedAt={scheduleTarget.endedAt}
+          onCancel={() => setScheduleTarget(null)}
+          onSave={(startedAt) => {
+            scheduleMut.mutate({ workoutId: scheduleTarget.id, startedAt });
+            setScheduleTarget(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }

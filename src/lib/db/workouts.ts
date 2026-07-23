@@ -410,6 +410,47 @@ export async function finishWorkout(id: string, endedAt: string): Promise<void> 
   if (error) throw error;
 }
 
+export function rescheduledWorkoutTimes(
+  startedAt: string,
+  endedAt: string | null,
+  nextStartedAt: string,
+): { started_at: string; ended_at: string | null } {
+  const previousStartMs = new Date(startedAt).getTime();
+  const nextStartMs = new Date(nextStartedAt).getTime();
+  if (!Number.isFinite(previousStartMs) || !Number.isFinite(nextStartMs)) {
+    throw new Error('invalid_workout_date');
+  }
+  const durationMs = endedAt ? Math.max(0, new Date(endedAt).getTime() - previousStartMs) : null;
+  return {
+    started_at: new Date(nextStartMs).toISOString(),
+    ended_at: durationMs == null ? null : new Date(nextStartMs + durationMs).toISOString(),
+  };
+}
+
+/** Перенести дату/время тренировки, сохранив её длительность. Повтор идемпотентен: целевой
+ * started_at хранится в vars durable-мутации, а актуальная длительность читается с сервера. */
+export async function updateWorkoutSchedule(id: string, nextStartedAt: string): Promise<void> {
+  const { data, error: readError } = await supabase
+    .from('workouts')
+    .select('started_at, ended_at')
+    .eq('id', id)
+    .single();
+  if (readError) throw readError;
+  if (!data.ended_at) throw new Error('completed_workout_required');
+
+  const next = rescheduledWorkoutTimes(data.started_at, data.ended_at, nextStartedAt);
+  const { data: updated, error } = await supabase
+    .from('workouts')
+    .update(next)
+    .eq('id', id)
+    .eq('started_at', data.started_at)
+    .eq('ended_at', data.ended_at)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) throw new Error('workout_schedule_conflict');
+}
+
 export type WorkoutStats = {
   tonnage: number;
   sets: number;

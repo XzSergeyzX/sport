@@ -9,14 +9,17 @@ import {
   discardConflictingWorkout,
   enqueueSetDraftMutations,
   type FinishVars,
+  type RescheduleVars,
   registerWorkoutMutationDefaults,
   workoutMutationScope,
   WORKOUT_FINISH,
+  WORKOUT_RESCHEDULE,
 } from '@/lib/db/workout-mutations';
 import {
   ActiveWorkoutExistsError,
   findActiveWorkoutSummary,
   isActiveWorkoutExistsError,
+  rescheduledWorkoutTimes,
   workoutStats,
   type WorkoutDetail,
   type WorkoutSummary,
@@ -137,6 +140,43 @@ describe('active workout invariant', () => {
     expect(findActiveWorkoutSummary(qc.getQueryData(['workouts', active.user_id]))).toBeUndefined();
     expect(qc.getQueryData<WorkoutDetail>(['workout', active.id])?.ended_at).toBe(
       '2026-07-16T11:00:00.000Z',
+    );
+    qc.clear();
+  });
+
+  test('rescheduling preserves duration and immediately reorders the offline summary cache', async () => {
+    expect(
+      rescheduledWorkoutTimes(
+        '2025-07-16T10:00:00.000Z',
+        '2025-07-16T11:30:00.000Z',
+        '2026-07-16T08:00:00.000Z',
+      ),
+    ).toEqual({
+      started_at: '2026-07-16T08:00:00.000Z',
+      ended_at: '2026-07-16T09:30:00.000Z',
+    });
+
+    const qc = new QueryClient();
+    const target = summary('1', '2026-07-16T11:00:00.000Z');
+    const newer = summary('2', '2026-07-16T12:00:00.000Z');
+    const detail: WorkoutDetail = {
+      ...target,
+      workout_exercises: [],
+    };
+    qc.setQueryData(['workout', target.id], detail);
+    qc.setQueryData(['workouts', target.user_id], [newer, target]);
+    registerWorkoutMutationDefaults(qc);
+
+    const onMutate = qc.getMutationDefaults(WORKOUT_RESCHEDULE).onMutate as (
+      vars: RescheduleVars,
+    ) => Promise<unknown>;
+    await onMutate({ workoutId: target.id, startedAt: '2026-07-17T10:00:00.000Z' });
+
+    const list = qc.getQueryData<WorkoutSummary[]>(['workouts', target.user_id]);
+    expect(list?.map((w) => w.id)).toEqual([target.id, newer.id]);
+    expect(list?.[0].ended_at).toBe('2026-07-17T10:59:00.000Z');
+    expect(qc.getQueryData<WorkoutDetail>(['workout', target.id])?.started_at).toBe(
+      '2026-07-17T10:00:00.000Z',
     );
     qc.clear();
   });
@@ -267,6 +307,19 @@ describe('workout metrics', () => {
             {
               id: 'set-2',
               workout_exercise_id: 'we-1',
+              reps: 3,
+              duration_sec: null,
+              weight: 10,
+              rest_sec: null,
+              rpe: null,
+              note: null,
+              meta: null,
+              completed_at: '2026-07-16T10:11:00.000Z',
+              logged_at: '2026-07-16T10:11:00.000Z',
+            },
+            {
+              id: 'set-3',
+              workout_exercise_id: 'we-1',
               reps: 99,
               duration_sec: null,
               weight: 99,
@@ -274,7 +327,7 @@ describe('workout metrics', () => {
               rpe: null,
               note: null,
               meta: null,
-              completed_at: '2026-07-16T10:11:00.000Z',
+              completed_at: '2026-07-16T10:12:00.000Z',
               logged_at: null,
             },
           ],
@@ -283,9 +336,9 @@ describe('workout metrics', () => {
     };
 
     expect(workoutStats(workout)).toEqual({
-      tonnage: 200,
-      sets: 1,
-      reps: 10,
+      tonnage: 230,
+      sets: 2,
+      reps: 13,
       holdSec: 0,
       exercises: 1,
       durationMin: 45,

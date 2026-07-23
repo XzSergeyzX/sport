@@ -23,9 +23,11 @@ import {
   deleteWorkoutExercise,
   finishWorkout,
   persistStartedWorkout,
+  rescheduledWorkoutTimes,
   reorderWorkoutExercises,
   setExerciseDone,
   setSetLogged,
+  updateWorkoutSchedule,
   updateSet,
 } from './workouts';
 import type { SetInput, SetRow, WorkoutDetail, WorkoutSummary } from './workouts';
@@ -44,6 +46,7 @@ export const WE_REMOVE = ['workout', 'exercise', 'remove'] as const;
 export const WE_REORDER = ['workout', 'exercise', 'reorder'] as const;
 export const WE_DONE = ['workout', 'exercise', 'done'] as const;
 export const WORKOUT_FINISH = ['workout', 'finish'] as const;
+export const WORKOUT_RESCHEDULE = ['workout', 'reschedule'] as const;
 
 /** Все durable-операции одной тренировки делят scope: родитель создаётся раньше ребёнка,
  * INSERT set раньше UPDATE/LOG/DELETE, а FINISH идёт после последних правок. */
@@ -81,6 +84,7 @@ export type RemoveWeVars = { workoutId: string; ids: string[] };
 export type ReorderWeVars = { workoutId: string; ids: string[]; orders: number[] };
 export type DoneWeVars = { workoutId: string; weId: string; done: boolean; at: string };
 export type FinishVars = { workoutId: string; endedAt: string };
+export type RescheduleVars = { workoutId: string; startedAt: string };
 
 /** UPDATE должен попасть в durable-очередь раньше LOG того же подхода. */
 export function enqueueSetDraftMutations(
@@ -317,6 +321,29 @@ export function registerWorkoutMutationDefaults(qc: QueryClient): void {
       settle(v.workoutId);
       qc.invalidateQueries({ queryKey: ['workouts'] });
       // завершённая тренировка меняет тоннаж/рекорды → сводка аналитики (RPC) устарела
+      qc.invalidateQueries({ queryKey: ['analytics'] });
+    },
+  });
+
+  qc.setMutationDefaults(WORKOUT_RESCHEDULE, {
+    ...durableRetry,
+    mutationFn: (v: RescheduleVars) => updateWorkoutSchedule(v.workoutId, v.startedAt),
+    onMutate: async (v: RescheduleVars) => {
+      await cancel(v.workoutId);
+      const shift = <T extends { started_at: string; ended_at: string | null }>(item: T): T => ({
+        ...item,
+        ...rescheduledWorkoutTimes(item.started_at, item.ended_at, v.startedAt),
+      });
+      patch(v.workoutId, shift);
+      qc.setQueriesData<WorkoutSummary[]>({ queryKey: ['workouts'] }, (old) =>
+        old
+          ?.map((item) => (item.id === v.workoutId ? shift(item) : item))
+          .sort((a, b) => b.started_at.localeCompare(a.started_at)),
+      );
+    },
+    onSuccess: (_d, v: RescheduleVars) => {
+      settle(v.workoutId);
+      qc.invalidateQueries({ queryKey: ['workouts'] });
       qc.invalidateQueries({ queryKey: ['analytics'] });
     },
   });

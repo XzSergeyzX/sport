@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/lib/auth/auth-context';
-import { exerciseName } from '@/lib/db/exercises';
+import { exerciseName, exerciseSided } from '@/lib/db/exercises';
 import { gripperName, listGripperCatalog, rgcInKg } from '@/lib/db/grippers';
 import { getBodyweight } from '@/lib/db/profile';
 import { pluralCount } from '@/lib/plural';
@@ -121,6 +121,11 @@ export default function SummaryScreen() {
           };
           const grip = m.gripper_id ? gripMap.get(m.gripper_id) : undefined;
           const gripRgc = grip ? rgcInKg(grip) : null;
+          const sideLabel = m.side
+            ? t(`workout.side_${m.side}`)
+            : exerciseSided(we.exercise, we.display_name)
+              ? t('workout.side_unspecified')
+              : null;
           const label = (
             <Text className="text-sm text-graphite-400">
               {t('workout.set')} {i + 1}
@@ -142,7 +147,7 @@ export default function SummaryScreen() {
               set.reps != null ? pluralCount(t, lang, 'reps', set.reps) : null,
               set.rpe != null ? `RPE ${set.rpe}` : null,
               set.rest_sec != null ? fmtRest(set.rest_sec) : null,
-              m.side ? t(`workout.side_${m.side}`) : null,
+              sideLabel,
               m.cheat ? t('workout.cheat') : null,
             ]
               .filter(Boolean)
@@ -177,7 +182,7 @@ export default function SummaryScreen() {
                   ? `${wStr} ${unitLabel}` // подконтрольный подход без счёта — просто вес, без «× –»
                   : '–';
           const tags =
-            (m.side ? `  · ${t(`workout.side_${m.side}`)}` : '') +
+            (sideLabel ? `  · ${sideLabel}` : '') +
             (m.cheat ? `  · ${t('workout.cheat')}` : '');
           const detail = done
             ? `${main}${set.rpe != null ? `  · RPE ${set.rpe}` : ''}${
